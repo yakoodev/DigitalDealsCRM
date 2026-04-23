@@ -77,3 +77,4 @@
 - `docs/spec/technical-specification.md`
 - `docs/standards/documentation-governance.md`
 - `docs/standards/runtime-configuration.md`
+- `docs/standards/source-of-truth-map.md`

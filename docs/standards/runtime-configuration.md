@@ -35,6 +35,7 @@
 - проверить связанные OpenAPI-контракты и contract-tests.
 
 ## 5. Связанные документы
+- `docs/standards/source-of-truth-map.md`
 - `docs/standards/openapi-governance.md`
 - `docs/standards/documentation-governance.md`
 - `docs/operations/rollout-rollback-plan.md`

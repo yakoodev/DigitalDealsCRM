@@ -43,6 +43,7 @@
 - [access-control-matrix.md](./standards/access-control-matrix.md) — каноническая матрица ролей и прав
 - [openapi-governance.md](./standards/openapi-governance.md) — каноника правил OpenAPI-совместимости и contract quality gates
 - [runtime-configuration.md](./standards/runtime-configuration.md) — каноника runtime env-конфигурации
+- [source-of-truth-map.md](./standards/source-of-truth-map.md) — карта канонических источников по темам
 - [documentation-governance.md](./standards/documentation-governance.md) — правила сопровождения канонических документов
 
 ## Обязательные артефакты уровня C
