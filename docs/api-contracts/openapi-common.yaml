@@ -17,7 +17,7 @@ components:
       name: X-Service-Token
       description: >-
         Service-to-service токен.
-        Runtime-значения задаются через env-конфигурацию (см. .env.worker-api.example).
+        Runtime-значения задаются через env-конфигурацию (см. docs/standards/runtime-configuration.md).
 
   parameters:
     ProjectId:

@@ -14,14 +14,13 @@
 - `docs/api-contracts/openapi-worker.yaml` — унифицированный контракт worker API.
 
 ## 1.1 Runtime env-источники
-- `.env.external-api.example` — канонический шаблон CORS-переменных external API;
-- `.env.worker-api.example` — канонический шаблон service-auth переменных worker API;
+- runtime env-источники и их конвенции определяются в `docs/standards/runtime-configuration.md`;
 - в OpenAPI-спеках разрешены только ссылки на env-источник, без хардкода environment-специфичных значений.
 
 ## 2. Обязательные правила контракта
 - формат спецификаций: только OpenAPI 3.1;
 - security-схемы должны быть явно описаны для каждого контура API;
-- для `worker` контура `service-auth` через `X-Service-Token` обязателен для всех endpoint-ов, runtime-значения берутся из `.env.worker-api.example`;
+- для `worker` контура `service-auth` через `X-Service-Token` обязателен для всех endpoint-ов, runtime-значения задаются по `docs/standards/runtime-configuration.md`;
 - mutating-операции обязаны принимать `Idempotency-Key`, кроме входящих webhook-callback endpoint-ов;
 - ответы об ошибках должны использовать единый error envelope из `openapi-common.yaml`;
 - критические flow обязаны иметь `examples` для request/response;
@@ -30,7 +29,7 @@
 ## 3. CORS-политика внешнего API
 - `external` контур обязан поддерживать CORS для browser-клиентов;
 - в `docs/api-contracts/openapi-external.yaml` (корневой `x-cors`) хранится только ссылка на env-источник;
-- канонические runtime-значения CORS задаются в `.env.external-api.example`;
+- канонические runtime-значения CORS задаются по `docs/standards/runtime-configuration.md`;
 - preflight (`OPTIONS`) должен корректно обрабатываться Gateway;
 - CORS должен работать по allowlist origins и не открываться wildcard-правилом в production.
 
@@ -72,5 +71,4 @@
 - `docs/testing/test-strategy.md`
 - `docs/spec/technical-specification.md`
 - `docs/standards/documentation-governance.md`
-- `.env.external-api.example`
-- `.env.worker-api.example`
+- `docs/standards/runtime-configuration.md`

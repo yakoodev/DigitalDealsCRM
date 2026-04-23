@@ -81,7 +81,7 @@
 - рост неуспешных `OPTIONS` запросов
 
 ### Действия
-- сверить runtime-конфиг среды с `.env.external-api.example`
+- сверить runtime-конфиг среды с `docs/standards/runtime-configuration.md`
 - проверить allowlist origins и отсутствие wildcard в production
 - проверить заголовки preflight-ответа (`Access-Control-Allow-*`)
 - при необходимости вернуть последнюю валидную CORS-конфигурацию
@@ -96,8 +96,8 @@
 - резкий рост ошибок `WORKER_AUTH_FAILED`
 
 ### Действия
-- сверить runtime-конфиг среды с `.env.worker-api.example`
-- проверить согласованность клиентского service-auth токена и списка разрешённых токенов из `.env.worker-api.example`
+- сверить runtime-конфиг среды с `docs/standards/runtime-configuration.md`
+- проверить согласованность клиентского service-auth токена и списка разрешённых токенов по `docs/standards/runtime-configuration.md`
 - проверить, что заголовок `X-Service-Token` передается Gateway при вызове worker API
 - при необходимости выполнить controlled token-rotation с overlap-периодом
 

@@ -32,6 +32,7 @@
 - [openapi-worker.yaml](./api-contracts/openapi-worker.yaml) — контракт воркеров
 
 ## Runtime Env Templates
+- [runtime-configuration.md](./standards/runtime-configuration.md) — каноника runtime env-конфигурации
 - [../.env.external-api.example](../.env.external-api.example) — CORS-конфигурация external API
 - [../.env.worker-api.example](../.env.worker-api.example) — service-auth конфигурация worker API
 
@@ -40,6 +41,7 @@
 - [worker-action-conventions.md](./standards/worker-action-conventions.md) — каноника action-key для Gateway/worker
 - [access-control-matrix.md](./standards/access-control-matrix.md) — каноническая матрица ролей и прав
 - [openapi-governance.md](./standards/openapi-governance.md) — каноника правил OpenAPI-совместимости и contract quality gates
+- [runtime-configuration.md](./standards/runtime-configuration.md) — каноника runtime env-конфигурации
 - [documentation-governance.md](./standards/documentation-governance.md) — правила сопровождения канонических документов
 
 ## Обязательные артефакты уровня C

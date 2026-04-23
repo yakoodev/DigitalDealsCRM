@@ -27,9 +27,7 @@
 - каноника action-key вынесена в `docs/standards/worker-action-conventions.md`.
 
 ### 3.1 Runtime env-конфигурация
-- канонические env-шаблоны:
-  - `.env.external-api.example` (CORS для external API)
-  - `.env.worker-api.example` (service-auth для worker API)
+- канонические env-шаблоны и правила формата определяются в `docs/standards/runtime-configuration.md`;
 - environment-специфичные значения не хардкодятся в OpenAPI-спеках.
 
 ## 4. Базовые правила контракта
@@ -56,5 +54,4 @@
 - `docs/testing/test-strategy.md`
 - `docs/standards/openapi-governance.md`
 - `docs/state-machines/subscription-state-machine.md`
-- `.env.external-api.example`
-- `.env.worker-api.example`
+- `docs/standards/runtime-configuration.md`
