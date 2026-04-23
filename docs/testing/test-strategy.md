@@ -43,6 +43,7 @@
 - повтор webhook не меняет состояние повторно
 - worker публикует capability-набор и не принимает неподдерживаемые действия
 - типовые worker-операции покрыты ресурсными endpoint-тестами, extension-сценарии покрыты отдельно
+- extension endpoint worker-а принимает только `ext.*` action-key
 - action-key в Gateway валидируется по `docs/standards/worker-action-conventions.md`
 
 ## 4. Технические требования к тестам

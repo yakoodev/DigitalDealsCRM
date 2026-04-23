@@ -185,7 +185,7 @@ paths:
         Extension endpoint для платформенно-специфичных операций, которые не покрыты
         типовыми ресурсными endpoint-ами.
       parameters:
-        - $ref: '#/components/parameters/Action'
+        - $ref: '#/components/parameters/ExtensionAction'
         - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
         required: false
@@ -209,6 +209,8 @@ components:
   parameters:
     Action:
       $ref: './openapi-common.yaml#/components/parameters/Action'
+    ExtensionAction:
+      $ref: './openapi-common.yaml#/components/parameters/ExtensionAction'
     ListingId:
       $ref: './openapi-common.yaml#/components/parameters/ListingId'
     OrderId:

@@ -61,6 +61,17 @@ components:
         Канонический action-key.
         Полные правила namespace и extension-политики:
         docs/standards/worker-action-conventions.md
+    ExtensionAction:
+      name: action
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: "^ext\\.[a-z0-9._-]+$"
+      description: >-
+        Action-key только для extension endpoint-ов.
+        Должен иметь префикс ext. по правилам:
+        docs/standards/worker-action-conventions.md
     ListingId:
       name: listingId
       in: path
