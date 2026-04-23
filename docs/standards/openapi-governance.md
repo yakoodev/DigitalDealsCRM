@@ -20,6 +20,7 @@
 ## 2. Обязательные правила контракта
 - формат спецификаций: только OpenAPI 3.1;
 - security-схемы должны быть явно описаны для каждого контура API;
+- для `internal` контура `service-auth` через `X-Service-Token` обязателен для всех endpoint-ов, runtime-значения задаются по `docs/standards/runtime-configuration.md`;
 - для `worker` контура `service-auth` через `X-Service-Token` обязателен для всех endpoint-ов, runtime-значения задаются по `docs/standards/runtime-configuration.md`;
 - mutating-операции обязаны принимать `Idempotency-Key`, кроме входящих webhook-callback endpoint-ов;
 - ответы об ошибках должны использовать единый error envelope из `openapi-common.yaml`;
@@ -55,6 +56,7 @@
 - `OAG-TEST-CONTRACT-SERVICES`: contract-tests сервисов зелёные для `external/internal`;
 - `OAG-TEST-CONTRACT-WORKER`: contract-tests worker-реализаций зелёные;
 - `OAG-TEST-CAPABILITY-ACTION`: extension action и capability-набор согласованы;
+- `OAG-TEST-INTERNAL-SERVICE-AUTH`: internal API недоступен без валидного `X-Service-Token`;
 - `OAG-TEST-WORKER-SERVICE-AUTH`: worker API недоступен без валидного `X-Service-Token`;
 - `OAG-TEST-CORS-EXTERNAL`: CORS/preflight проверки для `external` API зелёные.
 

@@ -109,6 +109,7 @@
 - ограничения UI и API по ролям определяются в `docs/standards/access-control-matrix.md`
 - доступ к proxy credentials регулируется `project.accounts.proxyCredentials.reveal` и `project.accounts.proxyCredentials.update`
 - CORS для browser-доступа к external API определяется канонически в `docs/standards/openapi-governance.md`, runtime-значения задаются по `docs/standards/runtime-configuration.md`
+- service-auth internal API через `X-Service-Token` обязателен, runtime-значения задаются по `docs/standards/runtime-configuration.md`
 - service-auth worker API через `X-Service-Token` обязателен, runtime-значения задаются по `docs/standards/runtime-configuration.md`
 
 ## 9. Критерии готовности документации к старту разработки (уровень C)

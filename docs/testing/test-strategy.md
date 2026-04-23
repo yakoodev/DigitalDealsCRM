@@ -44,10 +44,12 @@
 - worker публикует capability-набор и не принимает неподдерживаемые действия
 - типовые worker-операции покрыты ресурсными endpoint-тестами, extension-сценарии покрыты отдельно
 - extension endpoint worker-а принимает только `ext.*` action-key
+- internal API недоступен без валидного `X-Service-Token`
 - worker API недоступен без валидного `X-Service-Token`
 - action-key в Gateway валидируется по `docs/standards/worker-action-conventions.md`
 - external API корректно обрабатывает CORS preflight и применяет allowlist origins
 - CORS runtime-настройки external API читаются по `docs/standards/runtime-configuration.md`
+- service-auth runtime-настройки internal API читаются по `docs/standards/runtime-configuration.md`
 - service-auth runtime-настройки worker API читаются по `docs/standards/runtime-configuration.md`
 
 ## 4. Технические требования к тестам

@@ -34,6 +34,7 @@
 ## Runtime Env Templates
 - [runtime-configuration.md](./standards/runtime-configuration.md) — каноника runtime env-конфигурации
 - [../.env.external-api.example](../.env.external-api.example) — CORS-конфигурация external API
+- [../.env.internal-api.example](../.env.internal-api.example) — service-auth конфигурация internal API
 - [../.env.worker-api.example](../.env.worker-api.example) — service-auth конфигурация worker API
 
 ## Стандарты

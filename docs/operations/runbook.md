@@ -90,18 +90,20 @@
 - preflight-запросы завершаются успешно для разрешённых origins
 - браузерные запросы к external API проходят без CORS-блокировки
 
-## 7. Инцидент: отказ service-auth worker API
+## 7. Инцидент: отказ service-auth internal/worker API
 ### Симптомы
+- внутренние сервисы получают `401/403` от internal API
 - Gateway получает `401/403` от worker API на валидных маршрутах
 - резкий рост ошибок `WORKER_AUTH_FAILED`
 
 ### Действия
 - сверить runtime-конфиг среды с `docs/standards/runtime-configuration.md`
-- проверить согласованность клиентского service-auth токена и списка разрешённых токенов по `docs/standards/runtime-configuration.md`
-- проверить, что заголовок `X-Service-Token` передается Gateway при вызове worker API
+- проверить согласованность клиентских service-auth токенов и списков разрешённых токенов по `docs/standards/runtime-configuration.md`
+- проверить, что заголовок `X-Service-Token` передается при вызовах internal и worker API
 - при необходимости выполнить controlled token-rotation с overlap-периодом
 
 ### Критерий восстановления
+- internal API принимает запросы с валидным `X-Service-Token`
 - worker API принимает запросы с валидным `X-Service-Token`
 - нет повторного роста `WORKER_AUTH_FAILED`
 

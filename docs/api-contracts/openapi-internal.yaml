@@ -7,6 +7,12 @@ jsonSchemaDialect: https://json-schema.org/draft/2020-12/schema
 servers:
   - url: https://internal.ddcrm.local
     description: Internal API
+security:
+  - internalToken: []
+x-service-auth:
+  mode: env
+  envFile: .env.internal-api.example
+  envPrefix: INTERNAL_API_SERVICE_AUTH_
 tags:
   - name: routes
   - name: lifecycle
@@ -19,8 +25,6 @@ paths:
     put:
       tags: [routes]
       operationId: routeUpsert
-      security:
-        - internalToken: []
       parameters:
         - $ref: '#/components/parameters/AccountId'
         - $ref: '#/components/parameters/IdempotencyKey'
@@ -42,8 +46,6 @@ paths:
     delete:
       tags: [routes]
       operationId: routeDelete
-      security:
-        - internalToken: []
       parameters:
         - $ref: '#/components/parameters/AccountId'
         - $ref: '#/components/parameters/IdempotencyKey'
@@ -61,8 +63,6 @@ paths:
     post:
       tags: [routes]
       operationId: routeSwitch
-      security:
-        - internalToken: []
       parameters:
         - $ref: '#/components/parameters/AccountId'
         - $ref: '#/components/parameters/IdempotencyKey'
@@ -86,8 +86,6 @@ paths:
     post:
       tags: [routes]
       operationId: routeResolveBulk
-      security:
-        - internalToken: []
       requestBody:
         required: true
         content:
@@ -108,8 +106,6 @@ paths:
     post:
       tags: [lifecycle]
       operationId: lifecycleCreate
-      security:
-        - internalToken: []
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
@@ -132,8 +128,6 @@ paths:
     post:
       tags: [lifecycle]
       operationId: lifecycleUpdate
-      security:
-        - internalToken: []
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
@@ -156,8 +150,6 @@ paths:
     post:
       tags: [lifecycle]
       operationId: lifecycleDelete
-      security:
-        - internalToken: []
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
@@ -180,8 +172,6 @@ paths:
     post:
       tags: [lifecycle]
       operationId: lifecycleMigrate
-      security:
-        - internalToken: []
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
@@ -204,8 +194,6 @@ paths:
     post:
       tags: [billing]
       operationId: internalPaymentsCreate
-      security:
-        - internalToken: []
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
@@ -228,8 +216,6 @@ paths:
     post:
       tags: [billing]
       operationId: internalPaymentsWebhook
-      security:
-        - internalToken: []
       requestBody:
         required: true
         content:
@@ -250,8 +236,6 @@ paths:
     post:
       tags: [billing]
       operationId: internalPaymentsRefund
-      security:
-        - internalToken: []
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
@@ -274,8 +258,6 @@ paths:
     post:
       tags: [billing]
       operationId: internalSubscriptionsManualActivate
-      security:
-        - internalToken: []
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
@@ -298,8 +280,6 @@ paths:
     post:
       tags: [billing]
       operationId: internalSubscriptionsReconcile
-      security:
-        - internalToken: []
       requestBody:
         required: true
         content:
@@ -320,8 +300,6 @@ paths:
     post:
       tags: [entitlement]
       operationId: entitlementCheck
-      security:
-        - internalToken: []
       requestBody:
         required: true
         content:
@@ -342,8 +320,6 @@ paths:
     post:
       tags: [entitlement]
       operationId: entitlementRecalculate
-      security:
-        - internalToken: []
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
@@ -366,8 +342,6 @@ paths:
     post:
       tags: [entitlement]
       operationId: entitlementOverride
-      security:
-        - internalToken: []
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
@@ -390,8 +364,6 @@ paths:
     get:
       tags: [entitlement]
       operationId: entitlementGet
-      security:
-        - internalToken: []
       parameters:
         - $ref: '#/components/parameters/ProjectId'
       responses:
@@ -408,8 +380,6 @@ paths:
     post:
       tags: [iam]
       operationId: iamCheckPermission
-      security:
-        - internalToken: []
       requestBody:
         required: true
         content:
@@ -430,8 +400,6 @@ paths:
     get:
       tags: [iam]
       operationId: iamProjectMembership
-      security:
-        - internalToken: []
       parameters:
         - $ref: '#/components/parameters/ProjectId'
         - $ref: '#/components/parameters/UserId'
@@ -449,8 +417,6 @@ paths:
     post:
       tags: [iam]
       operationId: iamMembershipCacheInvalidate
-      security:
-        - internalToken: []
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:

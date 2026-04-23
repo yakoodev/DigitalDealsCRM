@@ -15,6 +15,7 @@
 - runbook обновлён под релизные изменения
 - runtime-переменные из `docs/standards/runtime-configuration.md` заданы в целевой среде
 - проверены CORS preflight и allowlist origins для external API
+- проверено, что internal API отклоняет запросы без валидного `X-Service-Token`
 - проверено, что worker API отклоняет запросы без валидного `X-Service-Token`
 - есть нагрузочный прогон staging с проверкой `QG-SLO-LAT-GW-CHECK-P95`, `QG-SLO-LAT-CORE-P95`, `QG-SLO-WEBHOOK-P95`, `QG-SLO-ENT-RECALC-P95`
 
