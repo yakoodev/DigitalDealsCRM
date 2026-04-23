@@ -10,6 +10,8 @@ jsonSchemaDialect: https://json-schema.org/draft/2020-12/schema
 servers:
   - url: http://worker.local
     description: Worker runtime API
+security:
+  - internalToken: []
 tags:
   - name: worker-health
   - name: worker-meta
@@ -206,6 +208,10 @@ paths:
           $ref: '#/components/responses/Error'
 
 components:
+  securitySchemes:
+    internalToken:
+      $ref: './openapi-common.yaml#/components/securitySchemes/internalToken'
+
   parameters:
     Action:
       $ref: './openapi-common.yaml#/components/parameters/Action'

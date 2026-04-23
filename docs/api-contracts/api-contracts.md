@@ -17,11 +17,12 @@
 
 ## 3. Scope текущих спецификаций
 - `openapi-common.yaml` содержит общие компоненты (`security`, `parameters`, `requestId/error/ack/generic schemas`).
-- `openapi-external.yaml` покрывает публичный Core API и публичный Gateway proxy endpoint.
+- `openapi-external.yaml` покрывает публичный Core API и публичный Gateway proxy endpoint; каноническая CORS-конфигурация зафиксирована в корневом `x-cors`.
 - `openapi-internal.yaml` покрывает service-to-service endpoint-ы (`/internal/...`).
 - `openapi-worker.yaml` фиксирует единый контракт, который обязаны поддерживать все worker-ы:
   - типовые доменные операции (`account/listings/messages/orders`) задаются ресурсными endpoint-ами;
   - платформенно-специфичные операции выполняются через `actions/{action}`;
+  - все endpoint-ы worker API требуют `service-auth` через `X-Service-Token`;
   - обязательна публикация `capabilities` для проверки поддерживаемых операций.
 - каноника action-key вынесена в `docs/standards/worker-action-conventions.md`.
 

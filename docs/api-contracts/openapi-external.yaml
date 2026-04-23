@@ -7,6 +7,20 @@ jsonSchemaDialect: https://json-schema.org/draft/2020-12/schema
 servers:
   - url: https://api.ddcrm.local
     description: External API
+x-cors:
+  enabled: true
+  allowCredentials: true
+  allowOrigins:
+    - https://app.ddcrm.local
+  allowMethods: [GET, POST, PATCH, DELETE, OPTIONS]
+  allowHeaders:
+    - Authorization
+    - Content-Type
+    - Idempotency-Key
+    - X-Request-Id
+  exposeHeaders:
+    - X-Request-Id
+  maxAgeSeconds: 600
 tags:
   - name: projects
   - name: members
