@@ -1,0 +1,645 @@
+openapi: 3.1.0
+info:
+  title: DDCRM External API
+  version: 0.1.0
+  description: Публичный API-контур DDCRM (frontend/client -> platform).
+jsonSchemaDialect: https://json-schema.org/draft/2020-12/schema
+servers:
+  - url: https://api.ddcrm.local
+    description: External API
+tags:
+  - name: projects
+  - name: members
+  - name: accounts
+  - name: billing
+  - name: gateway-proxy
+
+paths:
+  /v1/projects:
+    get:
+      tags: [projects]
+      operationId: listProjects
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Список проектов
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectListResponse'
+        default:
+          $ref: '#/components/responses/Error'
+    post:
+      tags: [projects]
+      operationId: createProject
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProjectCreateRequest'
+      responses:
+        '201':
+          description: Проект создан
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectResponse'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /v1/projects/{projectId}:
+    get:
+      tags: [projects]
+      operationId: getProject
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+      responses:
+        '200':
+          description: Проект
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectResponse'
+        default:
+          $ref: '#/components/responses/Error'
+    patch:
+      tags: [projects]
+      operationId: updateProject
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GenericObjectRequest'
+      responses:
+        '200':
+          description: Проект обновлен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectResponse'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /v1/projects/{projectId}/members:
+    post:
+      tags: [members]
+      operationId: addMember
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GenericObjectRequest'
+      responses:
+        '200':
+          description: Участник добавлен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AckResponse'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /v1/projects/{projectId}/members/{userId}/role:
+    patch:
+      tags: [members]
+      operationId: changeMemberRole
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - $ref: '#/components/parameters/UserId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RoleChangeRequest'
+      responses:
+        '200':
+          description: Роль изменена
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AckResponse'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /v1/projects/{projectId}/members/{userId}:
+    delete:
+      tags: [members]
+      operationId: removeMember
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - $ref: '#/components/parameters/UserId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: Участник удален
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AckResponse'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /v1/projects/{projectId}/accounts:
+    get:
+      tags: [accounts]
+      operationId: listAccounts
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+      responses:
+        '200':
+          description: Список аккаунтов
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountListResponse'
+        default:
+          $ref: '#/components/responses/Error'
+    post:
+      tags: [accounts]
+      operationId: createAccount
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AccountCreateRequest'
+      responses:
+        '201':
+          description: Аккаунт создан
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountResponse'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /v1/projects/{projectId}/accounts/{accountId}:
+    patch:
+      tags: [accounts]
+      operationId: updateAccount
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - $ref: '#/components/parameters/AccountId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GenericObjectRequest'
+      responses:
+        '200':
+          description: Аккаунт обновлен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountResponse'
+        default:
+          $ref: '#/components/responses/Error'
+    delete:
+      tags: [accounts]
+      operationId: deleteAccount
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - $ref: '#/components/parameters/AccountId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: Аккаунт удален
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AckResponse'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /v1/projects/{projectId}/accounts/{accountId}/proxy-credentials:
+    get:
+      tags: [accounts]
+      operationId: getAccountProxyCredentialsMasked
+      description: Возвращает только маскированные proxy credentials.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - $ref: '#/components/parameters/AccountId'
+      responses:
+        '200':
+          description: Маскированные proxy credentials
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProxyCredentialsMaskedResponse'
+        default:
+          $ref: '#/components/responses/Error'
+    patch:
+      tags: [accounts]
+      operationId: updateAccountProxyCredentials
+      description: Явное изменение proxy credentials.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - $ref: '#/components/parameters/AccountId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProxyCredentialsUpdateRequest'
+      responses:
+        '200':
+          description: Proxy credentials обновлены
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AckResponse'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /v1/projects/{projectId}/accounts/{accountId}/proxy-credentials/reveal:
+    post:
+      tags: [accounts]
+      operationId: revealAccountProxyCredentials
+      description: Явный просмотр полных proxy credentials (аудит обязателен; доступ по RBAC при активной сессии, без step-up).
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - $ref: '#/components/parameters/AccountId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProxyCredentialsRevealRequest'
+      responses:
+        '200':
+          description: Полные proxy credentials
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProxyCredentialsRevealResponse'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /v1/projects/{projectId}/billing/payments:
+    post:
+      tags: [billing]
+      operationId: createPayment
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GenericObjectRequest'
+      responses:
+        '200':
+          description: Платеж создан
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericObjectResponse'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /v1/projects/{projectId}/billing/addons/{addonId}/purchase:
+    post:
+      tags: [billing]
+      operationId: purchaseAddon
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - $ref: '#/components/parameters/AddonId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GenericObjectRequest'
+      responses:
+        '200':
+          description: Add-on куплен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericObjectResponse'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /v1/projects/{projectId}/billing/subscription/change-plan:
+    post:
+      tags: [billing]
+      operationId: changePlan
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GenericObjectRequest'
+      responses:
+        '200':
+          description: План изменен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AckResponse'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /v1/account-api/{routeKey}/{action}:
+    post:
+      tags: [gateway-proxy]
+      operationId: proxyAccountApiAction
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/RouteKey'
+        - $ref: '#/components/parameters/Action'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProxyRequest'
+      responses:
+        '200':
+          description: Ответ account API
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProxyResponse'
+        default:
+          $ref: '#/components/responses/Error'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      $ref: './openapi-common.yaml#/components/securitySchemes/bearerAuth'
+
+  parameters:
+    ProjectId:
+      $ref: './openapi-common.yaml#/components/parameters/ProjectId'
+    AccountId:
+      $ref: './openapi-common.yaml#/components/parameters/AccountId'
+    UserId:
+      $ref: './openapi-common.yaml#/components/parameters/UserId'
+    AddonId:
+      $ref: './openapi-common.yaml#/components/parameters/AddonId'
+    RouteKey:
+      $ref: './openapi-common.yaml#/components/parameters/RouteKey'
+    Action:
+      $ref: './openapi-common.yaml#/components/parameters/Action'
+    IdempotencyKey:
+      $ref: './openapi-common.yaml#/components/parameters/IdempotencyKey'
+
+  responses:
+    Error:
+      $ref: './openapi-common.yaml#/components/responses/Error'
+
+  schemas:
+    RequestMeta:
+      $ref: './openapi-common.yaml#/components/schemas/RequestMeta'
+
+    ErrorResponse:
+      $ref: './openapi-common.yaml#/components/schemas/ErrorResponse'
+
+    AckResponse:
+      $ref: './openapi-common.yaml#/components/schemas/AckResponse'
+
+    Project:
+      type: object
+      required: [id, name, status]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        status:
+          type: string
+          enum: [active, archived, blocked]
+
+    ProjectCreateRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+
+    ProjectResponse:
+      allOf:
+        - $ref: '#/components/schemas/RequestMeta'
+        - type: object
+          required: [project]
+          properties:
+            project:
+              $ref: '#/components/schemas/Project'
+
+    ProjectListResponse:
+      allOf:
+        - $ref: '#/components/schemas/RequestMeta'
+        - type: object
+          required: [items]
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/Project'
+
+    ProxyConfig:
+      type: object
+      required: [host, port, login, password]
+      properties:
+        host:
+          type: string
+        port:
+          type: integer
+          minimum: 1
+          maximum: 65535
+        login:
+          type: string
+        password:
+          type: string
+
+    AccountCreateRequest:
+      type: object
+      required: [platform, displayName, proxyConfig]
+      properties:
+        platform:
+          type: string
+        displayName:
+          type: string
+        proxyConfig:
+          $ref: '#/components/schemas/ProxyConfig'
+
+    Account:
+      type: object
+      required: [id, projectId, platform, displayName, businessStatus]
+      properties:
+        id:
+          type: string
+          format: uuid
+        projectId:
+          type: string
+          format: uuid
+        platform:
+          type: string
+        displayName:
+          type: string
+        businessStatus:
+          type: string
+        proxyConfigured:
+          type: boolean
+        proxyHostMasked:
+          type: string
+        proxyLoginMasked:
+          type: string
+
+    AccountResponse:
+      allOf:
+        - $ref: '#/components/schemas/RequestMeta'
+        - type: object
+          required: [account]
+          properties:
+            account:
+              $ref: '#/components/schemas/Account'
+
+    AccountListResponse:
+      allOf:
+        - $ref: '#/components/schemas/RequestMeta'
+        - type: object
+          required: [items]
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/Account'
+
+    RoleChangeRequest:
+      type: object
+      required: [role]
+      properties:
+        role:
+          type: string
+          enum: [owner, admin, moderator]
+
+    ProxyRequest:
+      type: object
+      additionalProperties: true
+      description: Унифицированное тело запроса к account API через Gateway.
+
+    ProxyResponse:
+      allOf:
+        - $ref: '#/components/schemas/RequestMeta'
+        - type: object
+          properties:
+            result:
+              type: object
+              additionalProperties: true
+
+    GenericObjectRequest:
+      $ref: './openapi-common.yaml#/components/schemas/GenericObjectRequest'
+
+    GenericObjectResponse:
+      $ref: './openapi-common.yaml#/components/schemas/GenericObjectResponse'
+
+    ProxyCredentialsMasked:
+      type: object
+      required: [configured]
+      properties:
+        configured:
+          type: boolean
+        hostMasked:
+          type: string
+        loginMasked:
+          type: string
+
+    ProxyCredentialsMaskedResponse:
+      allOf:
+        - $ref: '#/components/schemas/RequestMeta'
+        - type: object
+          required: [proxyCredentials]
+          properties:
+            proxyCredentials:
+              $ref: '#/components/schemas/ProxyCredentialsMasked'
+
+    ProxyCredentialsRevealRequest:
+      type: object
+      required: [reason]
+      properties:
+        reason:
+          type: string
+          minLength: 3
+          description: Причина запроса reveal для аудита.
+
+    ProxyCredentialsRevealResponse:
+      allOf:
+        - $ref: '#/components/schemas/RequestMeta'
+        - type: object
+          required: [proxyConfig]
+          properties:
+            proxyConfig:
+              $ref: '#/components/schemas/ProxyConfig'
+
+    ProxyCredentialsUpdateRequest:
+      type: object
+      required: [reason, proxyConfig]
+      properties:
+        reason:
+          type: string
+          minLength: 3
+        proxyConfig:
+          $ref: '#/components/schemas/ProxyConfig'

@@ -1,0 +1,168 @@
+openapi: 3.1.0
+info:
+  title: DDCRM OpenAPI Common Components
+  version: 0.1.0
+  description: Общие переиспользуемые компоненты для OpenAPI-контрактов DDCRM.
+jsonSchemaDialect: https://json-schema.org/draft/2020-12/schema
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+    internalToken:
+      type: apiKey
+      in: header
+      name: X-Service-Token
+
+  parameters:
+    ProjectId:
+      name: projectId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    AccountId:
+      name: accountId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    UserId:
+      name: userId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    AddonId:
+      name: addonId
+      in: path
+      required: true
+      schema:
+        type: string
+    RouteKey:
+      name: routeKey
+      in: path
+      required: true
+      schema:
+        type: string
+    Action:
+      name: action
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: "^[a-z0-9._-]+$"
+      description: >-
+        Канонический action-key.
+        Полные правила namespace и extension-политики:
+        docs/standards/worker-action-conventions.md
+    ListingId:
+      name: listingId
+      in: path
+      required: true
+      schema:
+        type: string
+    OrderId:
+      name: orderId
+      in: path
+      required: true
+      schema:
+        type: string
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema:
+        type: string
+        minLength: 8
+
+  responses:
+    Error:
+      description: Ошибка API
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    WorkerError:
+      description: Ошибка worker API
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/WorkerErrorResponse'
+    WorkerConflict:
+      description: Конфликт состояния worker/runtime
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/WorkerErrorResponse'
+
+  schemas:
+    RequestMeta:
+      type: object
+      required: [requestId]
+      properties:
+        requestId:
+          type: string
+
+    ErrorResponse:
+      type: object
+      required: [errorCode, message, requestId]
+      properties:
+        errorCode:
+          type: string
+        message:
+          type: string
+        requestId:
+          type: string
+        details:
+          type: object
+          additionalProperties: true
+
+    WorkerErrorResponse:
+      type: object
+      required: [errorCode, message, requestId]
+      properties:
+        errorCode:
+          type: string
+          enum:
+            - WORKER_UNAVAILABLE
+            - WORKER_INVALID_ACTION
+            - WORKER_AUTH_FAILED
+            - WORKER_RUNTIME_CONFLICT
+            - WORKER_PLATFORM_ERROR
+            - INTERNAL_ERROR
+        message:
+          type: string
+        requestId:
+          type: string
+        details:
+          type: object
+          additionalProperties: true
+
+    AckResponse:
+      allOf:
+        - $ref: '#/components/schemas/RequestMeta'
+        - type: object
+          required: [status]
+          properties:
+            status:
+              type: string
+              enum: [accepted, completed]
+
+    GenericObjectRequest:
+      type: object
+      additionalProperties: true
+
+    GenericObjectResponse:
+      allOf:
+        - $ref: '#/components/schemas/RequestMeta'
+        - type: object
+          properties:
+            data:
+              type: object
+              additionalProperties: true

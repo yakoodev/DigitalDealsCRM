@@ -1,0 +1,596 @@
+openapi: 3.1.0
+info:
+  title: DDCRM Internal API
+  version: 0.1.0
+  description: Внутренний API-контур DDCRM (service-to-service).
+jsonSchemaDialect: https://json-schema.org/draft/2020-12/schema
+servers:
+  - url: https://internal.ddcrm.local
+    description: Internal API
+tags:
+  - name: routes
+  - name: lifecycle
+  - name: billing
+  - name: entitlement
+  - name: iam
+
+paths:
+  /internal/v1/routes/{accountId}:
+    put:
+      tags: [routes]
+      operationId: routeUpsert
+      security:
+        - internalToken: []
+      parameters:
+        - $ref: '#/components/parameters/AccountId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RouteUpsertRequest'
+      responses:
+        '200':
+          description: Route upsert выполнен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AckResponse'
+        default:
+          $ref: '#/components/responses/Error'
+    delete:
+      tags: [routes]
+      operationId: routeDelete
+      security:
+        - internalToken: []
+      parameters:
+        - $ref: '#/components/parameters/AccountId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: Route удален
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AckResponse'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /internal/v1/routes/{accountId}/switch:
+    post:
+      tags: [routes]
+      operationId: routeSwitch
+      security:
+        - internalToken: []
+      parameters:
+        - $ref: '#/components/parameters/AccountId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RouteSwitchRequest'
+      responses:
+        '200':
+          description: Route переключен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AckResponse'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /internal/v1/routes/resolve-bulk:
+    post:
+      tags: [routes]
+      operationId: routeResolveBulk
+      security:
+        - internalToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RouteResolveBulkRequest'
+      responses:
+        '200':
+          description: Route bulk resolved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericObjectResponse'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /internal/v1/lifecycle/create:
+    post:
+      tags: [lifecycle]
+      operationId: lifecycleCreate
+      security:
+        - internalToken: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LifecycleCreateRequest'
+      responses:
+        '202':
+          description: Lifecycle create accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AckResponse'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /internal/v1/lifecycle/update:
+    post:
+      tags: [lifecycle]
+      operationId: lifecycleUpdate
+      security:
+        - internalToken: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LifecycleUpdateRequest'
+      responses:
+        '202':
+          description: Lifecycle update accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AckResponse'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /internal/v1/lifecycle/delete:
+    post:
+      tags: [lifecycle]
+      operationId: lifecycleDelete
+      security:
+        - internalToken: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LifecycleDeleteRequest'
+      responses:
+        '202':
+          description: Lifecycle delete accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AckResponse'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /internal/v1/lifecycle/migrate:
+    post:
+      tags: [lifecycle]
+      operationId: lifecycleMigrate
+      security:
+        - internalToken: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LifecycleMigrateRequest'
+      responses:
+        '202':
+          description: Lifecycle migrate accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AckResponse'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /internal/v1/payments/create:
+    post:
+      tags: [billing]
+      operationId: internalPaymentsCreate
+      security:
+        - internalToken: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GenericObjectRequest'
+      responses:
+        '200':
+          description: Payment created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericObjectResponse'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /internal/v1/payments/webhook:
+    post:
+      tags: [billing]
+      operationId: internalPaymentsWebhook
+      security:
+        - internalToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GenericObjectRequest'
+      responses:
+        '200':
+          description: Webhook processed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AckResponse'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /internal/v1/payments/refund:
+    post:
+      tags: [billing]
+      operationId: internalPaymentsRefund
+      security:
+        - internalToken: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GenericObjectRequest'
+      responses:
+        '200':
+          description: Refund created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AckResponse'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /internal/v1/subscriptions/manual-activate:
+    post:
+      tags: [billing]
+      operationId: internalSubscriptionsManualActivate
+      security:
+        - internalToken: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GenericObjectRequest'
+      responses:
+        '200':
+          description: Manual activate done
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AckResponse'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /internal/v1/subscriptions/reconcile:
+    post:
+      tags: [billing]
+      operationId: internalSubscriptionsReconcile
+      security:
+        - internalToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GenericObjectRequest'
+      responses:
+        '202':
+          description: Reconcile accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AckResponse'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /internal/v1/entitlement/check:
+    post:
+      tags: [entitlement]
+      operationId: entitlementCheck
+      security:
+        - internalToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GenericObjectRequest'
+      responses:
+        '200':
+          description: Check result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericObjectResponse'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /internal/v1/entitlement/recalculate:
+    post:
+      tags: [entitlement]
+      operationId: entitlementRecalculate
+      security:
+        - internalToken: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GenericObjectRequest'
+      responses:
+        '202':
+          description: Recalculate accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AckResponse'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /internal/v1/entitlement/override:
+    post:
+      tags: [entitlement]
+      operationId: entitlementOverride
+      security:
+        - internalToken: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GenericObjectRequest'
+      responses:
+        '200':
+          description: Override applied
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AckResponse'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /internal/v1/entitlement/{projectId}:
+    get:
+      tags: [entitlement]
+      operationId: entitlementGet
+      security:
+        - internalToken: []
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+      responses:
+        '200':
+          description: Entitlement snapshot
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericObjectResponse'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /internal/v1/iam/check-permission:
+    post:
+      tags: [iam]
+      operationId: iamCheckPermission
+      security:
+        - internalToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GenericObjectRequest'
+      responses:
+        '200':
+          description: Permission check result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericObjectResponse'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /internal/v1/iam/project-membership/{projectId}/{userId}:
+    get:
+      tags: [iam]
+      operationId: iamProjectMembership
+      security:
+        - internalToken: []
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - $ref: '#/components/parameters/UserId'
+      responses:
+        '200':
+          description: Membership
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericObjectResponse'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /internal/v1/iam/membership-cache/invalidate:
+    post:
+      tags: [iam]
+      operationId: iamMembershipCacheInvalidate
+      security:
+        - internalToken: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GenericObjectRequest'
+      responses:
+        '200':
+          description: Cache invalidated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AckResponse'
+        default:
+          $ref: '#/components/responses/Error'
+
+components:
+  securitySchemes:
+    internalToken:
+      $ref: './openapi-common.yaml#/components/securitySchemes/internalToken'
+
+  parameters:
+    ProjectId:
+      $ref: './openapi-common.yaml#/components/parameters/ProjectId'
+    AccountId:
+      $ref: './openapi-common.yaml#/components/parameters/AccountId'
+    UserId:
+      $ref: './openapi-common.yaml#/components/parameters/UserId'
+    IdempotencyKey:
+      $ref: './openapi-common.yaml#/components/parameters/IdempotencyKey'
+
+  responses:
+    Error:
+      $ref: './openapi-common.yaml#/components/responses/Error'
+
+  schemas:
+    RequestMeta:
+      $ref: './openapi-common.yaml#/components/schemas/RequestMeta'
+
+    ErrorResponse:
+      $ref: './openapi-common.yaml#/components/schemas/ErrorResponse'
+
+    AckResponse:
+      $ref: './openapi-common.yaml#/components/schemas/AckResponse'
+
+    WorkerBinding:
+      type: object
+      required: [serverId, workerId]
+      properties:
+        serverId:
+          type: string
+        workerId:
+          type: string
+        podId:
+          type: string
+
+    RouteUpsertRequest:
+      type: object
+      required: [projectId, routeKey, workerBinding, routeVersion]
+      properties:
+        projectId:
+          type: string
+          format: uuid
+        routeKey:
+          type: string
+        workerBinding:
+          $ref: '#/components/schemas/WorkerBinding'
+        routeVersion:
+          type: integer
+          minimum: 1
+
+    RouteSwitchRequest:
+      type: object
+      required: [workerBinding, routeVersion]
+      properties:
+        workerBinding:
+          $ref: '#/components/schemas/WorkerBinding'
+        routeVersion:
+          type: integer
+          minimum: 1
+
+    RouteResolveBulkRequest:
+      type: object
+      required: [routeKeys]
+      properties:
+        routeKeys:
+          type: array
+          minItems: 1
+          items:
+            type: string
+
+    LifecycleCreateRequest:
+      type: object
+      required: [accountId, projectId, platform, proxyConfig]
+      properties:
+        accountId:
+          type: string
+          format: uuid
+        projectId:
+          type: string
+          format: uuid
+        platform:
+          type: string
+        proxyConfig:
+          type: object
+          additionalProperties: true
+
+    LifecycleUpdateRequest:
+      type: object
+      required: [accountId]
+      properties:
+        accountId:
+          type: string
+          format: uuid
+        proxyConfig:
+          type: object
+          additionalProperties: true
+
+    LifecycleDeleteRequest:
+      type: object
+      required: [accountId]
+      properties:
+        accountId:
+          type: string
+          format: uuid
+
+    LifecycleMigrateRequest:
+      type: object
+      required: [accountId]
+      properties:
+        accountId:
+          type: string
+          format: uuid
+        targetServerId:
+          type: string
+
+    GenericObjectRequest:
+      $ref: './openapi-common.yaml#/components/schemas/GenericObjectRequest'
+
+    GenericObjectResponse:
+      $ref: './openapi-common.yaml#/components/schemas/GenericObjectResponse'

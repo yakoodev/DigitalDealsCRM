@@ -1,0 +1,68 @@
+# DDCRM — Test Strategy (черновик)
+
+## 1. Цели
+- предотвратить регресс в платежах, entitlement и account lifecycle
+- гарантировать корректность доступа по ролям и подписке
+- подтвердить устойчивость route и worker lifecycle-процессов
+
+## 2. Уровни тестирования
+### Unit
+- бизнес-правила ролей и прав
+- расчет entitlement
+- state-machine переходы
+- дедуп webhook
+
+### Integration
+- Core <-> IAM
+- Core <-> Billing
+- Billing <-> Entitlement
+- Core <-> Accounts Manager
+- Gateway <-> Route Registry DB
+- Gateway <-> Entitlement
+- проверка совместимости реализаций с OpenAPI 3.1 контрактами (`external/internal/worker`)
+
+### E2E
+- create/update/delete/migrate аккаунта
+- payment success -> entitlement activation
+- unpaid -> grace -> blocked
+- downgrade и частичная блокировка действий
+- override с истечением срока
+
+## 3. Обязательные регрессионные сценарии
+- модератор не видит финансовые данные
+- модератор не может выполнять `project.accounts.lifecycle.manage` (create/update/delete/migrate)
+- модератор может выполнять только `project.workers.operate` для существующих аккаунтов
+- proxy credentials в стандартных `accounts` read-response маскированы по умолчанию
+- только роли с `project.accounts.proxyCredentials.reveal` могут выполнить явный reveal credentials
+- reveal proxy credentials выполняется в рамках активной сессии и без step-up-челленджа (по политике из `docs/standards/access-control-matrix.md`)
+- только роли с `project.accounts.proxyCredentials.update` могут изменить credentials
+- модератор не может выполнять reveal/update proxy credentials
+- Gateway блокирует только запрещённые entitlement-операции
+- обязательный proxy-конфиг при создании аккаунта
+- route корректно переключается при миграции worker
+- повтор webhook не меняет состояние повторно
+- worker публикует capability-набор и не принимает неподдерживаемые действия
+- типовые worker-операции покрыты ресурсными endpoint-тестами, extension-сценарии покрыты отдельно
+- action-key в Gateway валидируется по `docs/standards/worker-action-conventions.md`
+
+## 4. Технические требования к тестам
+- все mutating API покрываются тестами идемпотентности
+- тесты на конфликтные события webhook/внутренних обновлений
+- contract-tests между Core/Gateway/AM/Billing/Entitlement
+- contract-tests строятся от `docs/api-contracts/openapi-external.yaml`, `docs/api-contracts/openapi-internal.yaml`, `docs/api-contracts/openapi-worker.yaml`
+- contract quality gates выполняются по ID из `docs/standards/openapi-governance.md` (`OAG-*`)
+- RBAC-тесты строятся от `docs/standards/access-control-matrix.md`
+- для worker API обязательны: schema validation запросов/ответов и backward compatibility проверки
+- performance/regression тесты обязаны проверять SLO-пороги по ID из `docs/standards/quality-gates.md`
+- минимум один DR-тест на релизный цикл обязан подтверждать `QG-DR-RTO-CRITICAL` и `QG-DR-RPO-STATE`
+
+## 5. Входной критерий релиза
+- нет блокирующих дефектов в платежных и lifecycle-потоках
+- E2E сценарии коммерческого контура зелёные
+- регресс роли/доступа зелёный
+- на staging подтверждены обязательные quality gates для релизного этапа
+
+## 6. Выходная аналитика по тестам
+- отчёт по покрытиям критических сценариев
+- список известных ограничений и исключений
+- список residual risks перед релизом

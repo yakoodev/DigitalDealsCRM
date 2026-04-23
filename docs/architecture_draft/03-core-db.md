@@ -7,9 +7,8 @@
 Core DB хранит:
 - бизнес-данные
 - проектные роли
-- подписки и коммерческие сущности
-- entitlement snapshot
-- route/binding-данные для текущей архитектуры
+- read-модели подписок и коммерческих сущностей
+- entitlement snapshot для UI/отчётности
 
 ## Основные группы данных
 
@@ -27,16 +26,11 @@ Core DB хранит:
 - business status
 - технический статус snapshot
 
-### Route / Binding metadata
-- routeKey
-- связь routeKey ↔ accountId
-- связь accountId ↔ worker binding
-
 ### Billing / Subscription data
 - plans
 - add-ons
-- subscriptions
-- payments
+- subscriptions (projection)
+- payments (projection)
 - payment history
 - refunds
 - manual billing actions
@@ -53,6 +47,9 @@ Core DB хранит:
 ## Логическое деление
 База логически разделяется на:
 - бизнес-данные
-- технические данные маршрутизации
 - коммерческие данные
 - entitlement-данные
+
+## Важная оговорка
+- Core DB **не** хранит канонические route/binding-данные.  
+- Каноническая маршрутизация хранится в отдельной Route Registry DB.

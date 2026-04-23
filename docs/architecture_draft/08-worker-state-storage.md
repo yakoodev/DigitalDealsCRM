@@ -6,7 +6,11 @@
 ## Что хранит
 - session state
 - cookies / токены площадки
-- proxy state
+- proxy credentials / proxy state
 - временные platform-specific данные
 - runtime cache
 - прочее служебное состояние account worker-а
+
+## Требования хранения
+- секреты хранятся только в зашифрованном виде
+- Core DB не хранит proxy credentials

@@ -20,11 +20,20 @@
 - действия над площадкой
 - любые прочие platform operations
 
+Практика контракта:
+- типовые операции (`account/listings/messages/orders`) идут через ресурсные endpoint-ы
+- платформенно-специфичные операции идут через extension endpoint `actions/{action}`
+
 ## Capability model
 У worker-а должны быть capability-флаги, чтобы отражать возможности конкретной площадки.
+Capability-модель обязательна для валидации extension-операций.
 
 ## Runtime-состояние
 Worker хранит своё runtime-состояние во **внешнем хранилище**.
+
+## Прокси
+- для каждого аккаунта площадки прокси обязателен
+- worker использует proxy-конфиг из runtime-состояния
 
 ## С кем общается
 - **Account API Gateway**

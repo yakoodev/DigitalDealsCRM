@@ -1,0 +1,474 @@
+openapi: 3.1.0
+info:
+  title: DDCRM Worker Contract API
+  version: 0.2.0
+  description: >-
+    Унифицированный контракт account worker-а.
+    Типовые операции описываются ресурсными endpoint-ами,
+    платформенно-специфичные операции выполняются через extension endpoint actions/{action}.
+jsonSchemaDialect: https://json-schema.org/draft/2020-12/schema
+servers:
+  - url: http://worker.local
+    description: Worker runtime API
+tags:
+  - name: worker-health
+  - name: worker-meta
+  - name: worker-account
+  - name: worker-listings
+  - name: worker-messages
+  - name: worker-orders
+  - name: worker-extensions
+
+paths:
+  /internal/v1/worker/health:
+    get:
+      tags: [worker-health]
+      operationId: workerHealth
+      responses:
+        '200':
+          description: Worker доступен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /internal/v1/worker/capabilities:
+    get:
+      tags: [worker-meta]
+      operationId: workerCapabilities
+      responses:
+        '200':
+          description: Список поддерживаемых возможностей worker-а
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CapabilitiesResponse'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /internal/v1/worker/account:
+    get:
+      tags: [worker-account]
+      operationId: workerAccountInfo
+      responses:
+        '200':
+          description: Сводная информация по аккаунту площадки
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountInfoResponse'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /internal/v1/worker/listings/search:
+    post:
+      tags: [worker-listings]
+      operationId: workerListingsSearch
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ListingsSearchRequest'
+      responses:
+        '200':
+          description: Результат поиска объявлений
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListingsSearchResponse'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /internal/v1/worker/listings/{listingId}:
+    patch:
+      tags: [worker-listings]
+      operationId: workerListingUpdate
+      parameters:
+        - $ref: '#/components/parameters/ListingId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ListingUpdateRequest'
+      responses:
+        '200':
+          description: Объявление обновлено
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListingResponse'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /internal/v1/worker/messages/send:
+    post:
+      tags: [worker-messages]
+      operationId: workerMessageSend
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MessageSendRequest'
+      responses:
+        '200':
+          description: Сообщение отправлено
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageSendResponse'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /internal/v1/worker/orders/search:
+    post:
+      tags: [worker-orders]
+      operationId: workerOrdersSearch
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrdersSearchRequest'
+      responses:
+        '200':
+          description: Результат поиска заказов
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrdersSearchResponse'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /internal/v1/worker/orders/{orderId}/actions/{action}:
+    post:
+      tags: [worker-orders]
+      operationId: workerOrderAction
+      parameters:
+        - $ref: '#/components/parameters/OrderId'
+        - $ref: '#/components/parameters/Action'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrderActionRequest'
+      responses:
+        '200':
+          description: Действие над заказом выполнено
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderActionResponse'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /internal/v1/worker/actions/{action}:
+    post:
+      tags: [worker-extensions]
+      operationId: workerExtensionAction
+      description: >-
+        Extension endpoint для платформенно-специфичных операций, которые не покрыты
+        типовыми ресурсными endpoint-ами.
+      parameters:
+        - $ref: '#/components/parameters/Action'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExtensionActionRequest'
+      responses:
+        '200':
+          description: Extension действие выполнено
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExtensionActionResponse'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        default:
+          $ref: '#/components/responses/Error'
+
+components:
+  parameters:
+    Action:
+      $ref: './openapi-common.yaml#/components/parameters/Action'
+    ListingId:
+      $ref: './openapi-common.yaml#/components/parameters/ListingId'
+    OrderId:
+      $ref: './openapi-common.yaml#/components/parameters/OrderId'
+    IdempotencyKey:
+      $ref: './openapi-common.yaml#/components/parameters/IdempotencyKey'
+
+  responses:
+    Error:
+      $ref: './openapi-common.yaml#/components/responses/WorkerError'
+    Conflict:
+      $ref: './openapi-common.yaml#/components/responses/WorkerConflict'
+
+  schemas:
+    RequestMeta:
+      $ref: './openapi-common.yaml#/components/schemas/RequestMeta'
+
+    ErrorResponse:
+      $ref: './openapi-common.yaml#/components/schemas/WorkerErrorResponse'
+
+    PlatformRef:
+      type: object
+      required: [accountId, platform]
+      properties:
+        accountId:
+          type: string
+          format: uuid
+        projectId:
+          type: string
+          format: uuid
+        platform:
+          type: string
+
+    HealthResponse:
+      allOf:
+        - $ref: '#/components/schemas/RequestMeta'
+        - type: object
+          required: [status]
+          properties:
+            status:
+              type: string
+              enum: [ok]
+            uptimeSeconds:
+              type: integer
+              minimum: 0
+
+    CapabilityItem:
+      type: object
+      required: [key, enabled]
+      properties:
+        key:
+          type: string
+        enabled:
+          type: boolean
+
+    CapabilitiesResponse:
+      allOf:
+        - $ref: '#/components/schemas/RequestMeta'
+        - type: object
+          required: [capabilities]
+          properties:
+            capabilities:
+              type: array
+              items:
+                $ref: '#/components/schemas/CapabilityItem'
+
+    AccountInfo:
+      allOf:
+        - $ref: '#/components/schemas/PlatformRef'
+        - type: object
+          properties:
+            displayName:
+              type: string
+            status:
+              type: string
+            balance:
+              type: number
+
+    AccountInfoResponse:
+      allOf:
+        - $ref: '#/components/schemas/RequestMeta'
+        - type: object
+          required: [account]
+          properties:
+            account:
+              $ref: '#/components/schemas/AccountInfo'
+
+    PagingRequest:
+      type: object
+      properties:
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 200
+        cursor:
+          type: string
+
+    PagingMeta:
+      type: object
+      properties:
+        nextCursor:
+          type: string
+
+    ListingsSearchRequest:
+      allOf:
+        - $ref: '#/components/schemas/PagingRequest'
+        - type: object
+          properties:
+            query:
+              type: string
+            statuses:
+              type: array
+              items:
+                type: string
+
+    Listing:
+      type: object
+      required: [id, title, status]
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        status:
+          type: string
+        price:
+          type: number
+
+    ListingsSearchResponse:
+      allOf:
+        - $ref: '#/components/schemas/RequestMeta'
+        - type: object
+          required: [items]
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/Listing'
+            paging:
+              $ref: '#/components/schemas/PagingMeta'
+
+    ListingUpdateRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        title:
+          type: string
+        price:
+          type: number
+        status:
+          type: string
+
+    ListingResponse:
+      allOf:
+        - $ref: '#/components/schemas/RequestMeta'
+        - type: object
+          required: [listing]
+          properties:
+            listing:
+              $ref: '#/components/schemas/Listing'
+
+    MessageSendRequest:
+      type: object
+      required: [threadId, text]
+      properties:
+        threadId:
+          type: string
+        text:
+          type: string
+        attachments:
+          type: array
+          items:
+            type: string
+
+    MessageSendResponse:
+      allOf:
+        - $ref: '#/components/schemas/RequestMeta'
+        - type: object
+          required: [messageId]
+          properties:
+            messageId:
+              type: string
+
+    OrdersSearchRequest:
+      allOf:
+        - $ref: '#/components/schemas/PagingRequest'
+        - type: object
+          properties:
+            statuses:
+              type: array
+              items:
+                type: string
+            fromDate:
+              type: string
+              format: date-time
+            toDate:
+              type: string
+              format: date-time
+
+    Order:
+      type: object
+      required: [id, status]
+      properties:
+        id:
+          type: string
+        status:
+          type: string
+        total:
+          type: number
+        currency:
+          type: string
+
+    OrdersSearchResponse:
+      allOf:
+        - $ref: '#/components/schemas/RequestMeta'
+        - type: object
+          required: [items]
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/Order'
+            paging:
+              $ref: '#/components/schemas/PagingMeta'
+
+    OrderActionRequest:
+      type: object
+      additionalProperties: true
+      properties:
+        payload:
+          type: object
+          additionalProperties: true
+
+    OrderActionResponse:
+      allOf:
+        - $ref: '#/components/schemas/RequestMeta'
+        - type: object
+          properties:
+            result:
+              type: object
+              additionalProperties: true
+
+    ExtensionActionRequest:
+      type: object
+      additionalProperties: true
+      properties:
+        payload:
+          type: object
+          additionalProperties: true
+
+    ExtensionActionResponse:
+      allOf:
+        - $ref: '#/components/schemas/RequestMeta'
+        - type: object
+          required: [result]
+          properties:
+            result:
+              type: object
+              additionalProperties: true
+            warnings:
+              type: array
+              items:
+                type: string
