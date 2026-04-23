@@ -17,6 +17,7 @@
 - проверены CORS preflight и allowlist origins для external API
 - проверено, что internal API отклоняет запросы без валидного `X-Service-Token`
 - проверено, что worker API отклоняет запросы без валидного `X-Service-Token`
+- подтверждена изоляция service-auth токенов между internal и worker контурами
 - есть нагрузочный прогон staging с проверкой `QG-SLO-LAT-GW-CHECK-P95`, `QG-SLO-LAT-CORE-P95`, `QG-SLO-WEBHOOK-P95`, `QG-SLO-ENT-RECALC-P95`
 
 ## 3. Rollout steps

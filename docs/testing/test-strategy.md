@@ -46,6 +46,7 @@
 - extension endpoint worker-а принимает только `ext.*` action-key
 - internal API недоступен без валидного `X-Service-Token`
 - worker API недоступен без валидного `X-Service-Token`
+- service-auth токены internal и worker контуров не переиспользуются между собой
 - action-key в Gateway валидируется по `docs/standards/worker-action-conventions.md`
 - external API корректно обрабатывает CORS preflight и применяет allowlist origins
 - CORS runtime-настройки external API читаются по `docs/standards/runtime-configuration.md`

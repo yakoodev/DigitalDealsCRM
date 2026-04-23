@@ -19,6 +19,11 @@
 - булевы значения задаются как `true/false` (lowercase);
 - списки значений задаются comma-separated строкой без пробелов.
 
+## 2.1 Изоляция service-auth токенов
+- токены `internal` и `worker` контуров должны быть раздельными;
+- пересечение значений между `INTERNAL_API_SERVICE_AUTH_ACCEPTED_TOKENS` и `WORKER_API_SERVICE_AUTH_ACCEPTED_TOKENS` запрещено;
+- клиентские токены `INTERNAL_API_SERVICE_AUTH_CLIENT_TOKEN` и `WORKER_API_SERVICE_AUTH_CLIENT_TOKEN` не должны совпадать.
+
 ## 3. Политика секретов
 - значения токенов и секретов в production не хранятся в git;
 - `.env.*.example` содержат только шаблонные значения;

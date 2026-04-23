@@ -18,6 +18,7 @@
 - worker API требует `X-Service-Token` для всех endpoint-ов;
 - запросы без токена и с невалидным токеном отклоняются;
 - runtime-настройки service-auth заданы по `docs/standards/runtime-configuration.md`.
+- worker service-auth токены не пересекаются с internal service-auth токенами.
 
 ## 3. Capability и extension проверки
 - `/internal/v1/worker/capabilities` публикует актуальный capability-набор;

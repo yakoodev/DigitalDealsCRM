@@ -17,6 +17,7 @@
 - internal API требует `X-Service-Token` для всех endpoint-ов;
 - запросы без токена и с невалидным токеном отклоняются;
 - runtime-настройки service-auth заданы по `docs/standards/runtime-configuration.md`.
+- internal service-auth токены не пересекаются с worker service-auth токенами.
 
 ## 3. Интеграционные проверки
 - route/lifecycle endpoint-ы согласованы с актуальной логикой Accounts Manager;

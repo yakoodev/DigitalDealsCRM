@@ -24,6 +24,7 @@
   - платформенно-специфичные операции выполняются через `actions/{action}`;
   - все endpoint-ы worker API требуют `service-auth` через `X-Service-Token`;
   - обязательна публикация `capabilities` для проверки поддерживаемых операций.
+- service-auth токены internal и worker контуров должны быть изолированы (без переиспользования значений).
 - каноника action-key вынесена в `docs/standards/worker-action-conventions.md`.
 
 ### 3.1 Runtime env-конфигурация

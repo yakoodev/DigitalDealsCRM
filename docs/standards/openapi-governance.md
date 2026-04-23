@@ -58,6 +58,7 @@
 - `OAG-TEST-CAPABILITY-ACTION`: extension action и capability-набор согласованы;
 - `OAG-TEST-INTERNAL-SERVICE-AUTH`: internal API недоступен без валидного `X-Service-Token`;
 - `OAG-TEST-WORKER-SERVICE-AUTH`: worker API недоступен без валидного `X-Service-Token`;
+- `OAG-TEST-SERVICE-AUTH-TOKEN-ISOLATION`: internal и worker service-auth токены изолированы по `docs/standards/runtime-configuration.md`;
 - `OAG-TEST-CORS-EXTERNAL`: CORS/preflight проверки для `external` API зелёные.
 
 ## 7. Процесс изменения контракта

@@ -111,6 +111,7 @@
 - CORS для browser-доступа к external API определяется канонически в `docs/standards/openapi-governance.md`, runtime-значения задаются по `docs/standards/runtime-configuration.md`
 - service-auth internal API через `X-Service-Token` обязателен, runtime-значения задаются по `docs/standards/runtime-configuration.md`
 - service-auth worker API через `X-Service-Token` обязателен, runtime-значения задаются по `docs/standards/runtime-configuration.md`
+- service-auth токены internal и worker контуров изолированы и не переиспользуются
 
 ## 9. Критерии готовности документации к старту разработки (уровень C)
 - архитектура синхронизирована без противоречий
