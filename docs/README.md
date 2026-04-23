@@ -53,3 +53,4 @@
 - [worker-contract-checklist.md](./testing/worker-contract-checklist.md)
 - [runbook.md](./operations/runbook.md)
 - [rollout-rollback-plan.md](./operations/rollout-rollback-plan.md)
+- [service-auth-rotation-playbook.md](./operations/service-auth-rotation-playbook.md)

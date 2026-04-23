@@ -101,7 +101,7 @@
 - проверить согласованность клиентских service-auth токенов и списков разрешённых токенов по `docs/standards/runtime-configuration.md`
 - проверить, что токены internal и worker контуров не переиспользуются и не пересекаются
 - проверить, что заголовок `X-Service-Token` передается при вызовах internal и worker API
-- при необходимости выполнить controlled token-rotation с overlap-периодом
+- при необходимости выполнить controlled token-rotation по `docs/operations/service-auth-rotation-playbook.md`
 
 ### Критерий восстановления
 - internal API принимает запросы с валидным `X-Service-Token`

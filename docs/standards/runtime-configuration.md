@@ -39,6 +39,7 @@
 - `docs/standards/documentation-governance.md`
 - `docs/operations/rollout-rollback-plan.md`
 - `docs/operations/runbook.md`
+- `docs/operations/service-auth-rotation-playbook.md`
 - `.env.external-api.example`
 - `.env.internal-api.example`
 - `.env.worker-api.example`
