@@ -71,6 +71,7 @@
 ## 8. Связанные документы
 - `docs/api-contracts/api-contracts.md`
 - `docs/testing/test-strategy.md`
+- `docs/testing/internal-contract-checklist.md`
 - `docs/testing/worker-contract-checklist.md`
 - `docs/spec/technical-specification.md`
 - `docs/standards/documentation-governance.md`

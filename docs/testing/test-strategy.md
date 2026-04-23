@@ -59,6 +59,7 @@
 - contract-tests строятся от `docs/api-contracts/openapi-external.yaml`, `docs/api-contracts/openapi-internal.yaml`, `docs/api-contracts/openapi-worker.yaml`
 - contract quality gates выполняются по ID из `docs/standards/openapi-governance.md` (`OAG-*`)
 - RBAC-тесты строятся от `docs/standards/access-control-matrix.md`
+- детальный набор internal contract-checks поддерживается в `docs/testing/internal-contract-checklist.md`
 - для worker API обязательны: schema validation запросов/ответов и backward compatibility проверки
 - детальный набор worker contract-checks поддерживается в `docs/testing/worker-contract-checklist.md`
 - performance/regression тесты обязаны проверять SLO-пороги по ID из `docs/standards/quality-gates.md`

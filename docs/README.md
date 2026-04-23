@@ -49,6 +49,7 @@
 - [erd.md](./data-model/erd.md)
 - [subscription-state-machine.md](./state-machines/subscription-state-machine.md)
 - [test-strategy.md](./testing/test-strategy.md)
+- [internal-contract-checklist.md](./testing/internal-contract-checklist.md)
 - [worker-contract-checklist.md](./testing/worker-contract-checklist.md)
 - [runbook.md](./operations/runbook.md)
 - [rollout-rollback-plan.md](./operations/rollout-rollback-plan.md)
