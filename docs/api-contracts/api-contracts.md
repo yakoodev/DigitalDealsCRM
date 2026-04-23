@@ -17,7 +17,7 @@
 
 ## 3. Scope текущих спецификаций
 - `openapi-common.yaml` содержит общие компоненты (`security`, `parameters`, `requestId/error/ack/generic schemas`).
-- `openapi-external.yaml` покрывает публичный Core API и публичный Gateway proxy endpoint; каноническая CORS-конфигурация зафиксирована в корневом `x-cors`.
+- `openapi-external.yaml` покрывает публичный Core API и публичный Gateway proxy endpoint; в `x-cors` хранится ссылка на env-источник CORS.
 - `openapi-internal.yaml` покрывает service-to-service endpoint-ы (`/internal/...`).
 - `openapi-worker.yaml` фиксирует единый контракт, который обязаны поддерживать все worker-ы:
   - типовые доменные операции (`account/listings/messages/orders`) задаются ресурсными endpoint-ами;
@@ -25,6 +25,12 @@
   - все endpoint-ы worker API требуют `service-auth` через `X-Service-Token`;
   - обязательна публикация `capabilities` для проверки поддерживаемых операций.
 - каноника action-key вынесена в `docs/standards/worker-action-conventions.md`.
+
+### 3.1 Runtime env-конфигурация
+- канонические env-шаблоны:
+  - `.env.external-api.example` (CORS для external API)
+  - `.env.worker-api.example` (service-auth для worker API)
+- environment-специфичные значения не хардкодятся в OpenAPI-спеках.
 
 ## 4. Базовые правила контракта
 - детальные обязательные правила OpenAPI-контрактов и quality gates определяются в `docs/standards/openapi-governance.md`;
@@ -50,3 +56,5 @@
 - `docs/testing/test-strategy.md`
 - `docs/standards/openapi-governance.md`
 - `docs/state-machines/subscription-state-machine.md`
+- `.env.external-api.example`
+- `.env.worker-api.example`

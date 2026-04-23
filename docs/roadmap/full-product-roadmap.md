@@ -18,6 +18,7 @@ Roadmap разделён на фазы с gate-критериями.
 - все документы из `docs/README.md` существуют и синхронизированы
 - OpenAPI-контракты валидны и используются как источник для контрактных тестов
 - правила OpenAPI-совместимости и contract quality gates зафиксированы в `docs/standards/openapi-governance.md`
+- env-шаблоны `.env.external-api.example` и `.env.worker-api.example` зафиксированы как runtime-источники CORS/service-auth
 - `docs/standards/quality-gates.md` принят как единый источник числовых порогов
 - ТЗ, runbook, rollout/rollback и test strategy ссылаются на ID quality gates без дублирования чисел
 

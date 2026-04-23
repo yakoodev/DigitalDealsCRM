@@ -15,6 +15,9 @@ components:
       type: apiKey
       in: header
       name: X-Service-Token
+      description: >-
+        Service-to-service токен.
+        Runtime-значения задаются через env-конфигурацию (см. .env.worker-api.example).
 
   parameters:
     ProjectId:

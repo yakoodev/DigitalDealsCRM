@@ -31,6 +31,10 @@
 - [openapi-internal.yaml](./api-contracts/openapi-internal.yaml) — внутренний service-to-service API
 - [openapi-worker.yaml](./api-contracts/openapi-worker.yaml) — контракт воркеров
 
+## Runtime Env Templates
+- [../.env.external-api.example](../.env.external-api.example) — CORS-конфигурация external API
+- [../.env.worker-api.example](../.env.worker-api.example) — service-auth конфигурация worker API
+
 ## Стандарты
 - [quality-gates.md](./standards/quality-gates.md) — канонический каталог NFR/SLO/порогов инцидентов
 - [worker-action-conventions.md](./standards/worker-action-conventions.md) — каноника action-key для Gateway/worker

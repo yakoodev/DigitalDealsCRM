@@ -47,6 +47,8 @@
 - worker API недоступен без валидного `X-Service-Token`
 - action-key в Gateway валидируется по `docs/standards/worker-action-conventions.md`
 - external API корректно обрабатывает CORS preflight и применяет allowlist origins
+- CORS runtime-настройки external API читаются из `.env.external-api.example`
+- service-auth runtime-настройки worker API читаются из `.env.worker-api.example`
 
 ## 4. Технические требования к тестам
 - все mutating API покрываются тестами идемпотентности

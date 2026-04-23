@@ -12,6 +12,10 @@ servers:
     description: Worker runtime API
 security:
   - internalToken: []
+x-service-auth:
+  mode: env
+  envFile: .env.worker-api.example
+  envPrefix: WORKER_API_SERVICE_AUTH_
 tags:
   - name: worker-health
   - name: worker-meta

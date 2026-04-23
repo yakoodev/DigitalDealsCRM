@@ -108,7 +108,8 @@
 - cache должен инвалидироваться при изменении ролей
 - ограничения UI и API по ролям определяются в `docs/standards/access-control-matrix.md`
 - доступ к proxy credentials регулируется `project.accounts.proxyCredentials.reveal` и `project.accounts.proxyCredentials.update`
-- CORS для browser-доступа к external API определяется канонически в `docs/standards/openapi-governance.md` и `docs/api-contracts/openapi-external.yaml` (`x-cors`)
+- CORS для browser-доступа к external API определяется канонически в `docs/standards/openapi-governance.md`, runtime-значения задаются в `.env.external-api.example`
+- service-auth worker API через `X-Service-Token` обязателен, runtime-значения задаются в `.env.worker-api.example`
 
 ## 9. Критерии готовности документации к старту разработки (уровень C)
 - архитектура синхронизирована без противоречий

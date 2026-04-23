@@ -22,6 +22,7 @@
 - правила `action` меняются только в `worker-action-conventions.md`;
 - матрица RBAC меняется только в `access-control-matrix.md`;
 - правила OpenAPI-совместимости и contract quality gates меняются только в `openapi-governance.md`;
+- runtime env-настройки OpenAPI-контуров меняются только в `.env.external-api.example` и `.env.worker-api.example`;
 - изменения в канонике должны сопровождаться ссылочными обновлениями зависимых документов.
 
 ## 4. Идентификаторы стандартов

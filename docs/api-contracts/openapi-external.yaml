@@ -8,19 +8,12 @@ servers:
   - url: https://api.ddcrm.local
     description: External API
 x-cors:
-  enabled: true
-  allowCredentials: true
-  allowOrigins:
-    - https://app.ddcrm.local
-  allowMethods: [GET, POST, PATCH, DELETE, OPTIONS]
-  allowHeaders:
-    - Authorization
-    - Content-Type
-    - Idempotency-Key
-    - X-Request-Id
-  exposeHeaders:
-    - X-Request-Id
-  maxAgeSeconds: 600
+  mode: env
+  envFile: .env.external-api.example
+  envPrefix: EXTERNAL_API_CORS_
+  policy:
+    origins: allowlist-only
+    wildcardInProduction: forbidden
 tags:
   - name: projects
   - name: members

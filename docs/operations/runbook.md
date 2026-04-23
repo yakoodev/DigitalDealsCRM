@@ -75,7 +75,37 @@
 - `QG-REC-FALSE-BLOCKED-RATE`
 - нет роста `ENTITLEMENT_BLOCKED` для разрешённых action
 
-## 6. Эскалация
+## 6. Инцидент: CORS/preflight ошибки external API
+### Симптомы
+- браузерные клиенты получают CORS-ошибки до бизнес-логики API
+- рост неуспешных `OPTIONS` запросов
+
+### Действия
+- сверить runtime-конфиг среды с `.env.external-api.example`
+- проверить allowlist origins и отсутствие wildcard в production
+- проверить заголовки preflight-ответа (`Access-Control-Allow-*`)
+- при необходимости вернуть последнюю валидную CORS-конфигурацию
+
+### Критерий восстановления
+- preflight-запросы завершаются успешно для разрешённых origins
+- браузерные запросы к external API проходят без CORS-блокировки
+
+## 7. Инцидент: отказ service-auth worker API
+### Симптомы
+- Gateway получает `401/403` от worker API на валидных маршрутах
+- резкий рост ошибок `WORKER_AUTH_FAILED`
+
+### Действия
+- сверить runtime-конфиг среды с `.env.worker-api.example`
+- проверить согласованность клиентского service-auth токена и списка разрешённых токенов из `.env.worker-api.example`
+- проверить, что заголовок `X-Service-Token` передается Gateway при вызове worker API
+- при необходимости выполнить controlled token-rotation с overlap-периодом
+
+### Критерий восстановления
+- worker API принимает запросы с валидным `X-Service-Token`
+- нет повторного роста `WORKER_AUTH_FAILED`
+
+## 8. Эскалация
 - L1: on-call инженер
 - L2: владелец сервиса (Billing/Entitlement/Gateway)
 - L3: продукт + техлид при коммерческом риске
