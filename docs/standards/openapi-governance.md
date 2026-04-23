@@ -69,6 +69,7 @@
 ## 8. Связанные документы
 - `docs/api-contracts/api-contracts.md`
 - `docs/testing/test-strategy.md`
+- `docs/testing/worker-contract-checklist.md`
 - `docs/spec/technical-specification.md`
 - `docs/standards/documentation-governance.md`
 - `docs/standards/runtime-configuration.md`
