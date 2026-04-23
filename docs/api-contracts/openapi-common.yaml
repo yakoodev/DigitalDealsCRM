@@ -11,12 +11,19 @@ components:
       type: http
       scheme: bearer
       bearerFormat: JWT
-    internalToken:
+    internalServiceToken:
       type: apiKey
       in: header
       name: X-Service-Token
       description: >-
-        Service-to-service токен.
+        Service-to-service токен для internal API.
+        Runtime-значения задаются через env-конфигурацию (см. docs/standards/runtime-configuration.md).
+    workerServiceToken:
+      type: apiKey
+      in: header
+      name: X-Service-Token
+      description: >-
+        Service-to-service токен для worker API.
         Runtime-значения задаются через env-конфигурацию (см. docs/standards/runtime-configuration.md).
 
   parameters:

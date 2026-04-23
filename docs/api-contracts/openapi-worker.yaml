@@ -11,7 +11,7 @@ servers:
   - url: http://worker.local
     description: Worker runtime API
 security:
-  - internalToken: []
+  - workerServiceToken: []
 x-service-auth:
   mode: env
   envFile: .env.worker-api.example
@@ -213,8 +213,8 @@ paths:
 
 components:
   securitySchemes:
-    internalToken:
-      $ref: './openapi-common.yaml#/components/securitySchemes/internalToken'
+    workerServiceToken:
+      $ref: './openapi-common.yaml#/components/securitySchemes/workerServiceToken'
 
   parameters:
     Action:

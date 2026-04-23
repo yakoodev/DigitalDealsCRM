@@ -8,7 +8,7 @@ servers:
   - url: https://internal.ddcrm.local
     description: Internal API
 security:
-  - internalToken: []
+  - internalServiceToken: []
 x-service-auth:
   mode: env
   envFile: .env.internal-api.example
@@ -437,8 +437,8 @@ paths:
 
 components:
   securitySchemes:
-    internalToken:
-      $ref: './openapi-common.yaml#/components/securitySchemes/internalToken'
+    internalServiceToken:
+      $ref: './openapi-common.yaml#/components/securitySchemes/internalServiceToken'
 
   parameters:
     ProjectId:
