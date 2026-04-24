@@ -214,6 +214,44 @@
 - `Changed files`: `DigitalDealsCRM.slnx`, `src/DDCRM.Gateway.Api/*`, `tests/DDCRM.Gateway.Api.Tests/*`, `eng/contracts.ps1`, `eng/contracts.sh`, `docs/implementation/patchnotes.md`
 - `Date`: `2026-04-24`
 
+### W2-T03
+- `Task ID`: `W2-T03`
+- `WP`: `WP-WORKER-CONTRACT`
+- `Status`: `started`
+- `Operations`: bootstrap Worker API/Persistence/Test projects + runtime implementation по `openapi-worker.yaml` (resource endpoints, idempotency-store, service-auth, scenario/capability policy)
+- `Gates`: `OAG-TEST-CONTRACT-WORKER`, `OAG-TEST-CAPABILITY-ACTION`, `OAG-TEST-WORKER-SERVICE-AUTH`, `OAG-TEST-SERVICE-AUTH-TOKEN-ISOLATION`
+- `Exception`: n/a
+- `Changed files`: `DigitalDealsCRM.slnx`, `src/DDCRM.Worker.Api/*`, `src/DDCRM.Worker.Persistence/*`, `tests/DDCRM.Worker.Api.Tests/*`, `src/DDCRM.Shared/Auth/*`, `eng/contracts.ps1`, `eng/contracts.sh`, `eng/README.md`
+- `Date`: `2026-04-24`
+
+- `Task ID`: `W2-T03`
+- `WP`: `WP-WORKER-CONTRACT`
+- `Status`: `completed`
+- `Operations`: реализованы `workerHealth`, `workerCapabilities`, `workerAccountInfo`, `workerListingsSearch`, `workerListingUpdate`, `workerMessageSend`, `workerOrdersSearch`, `workerOrderAction`, `workerExtensionAction`; добавлены `TW-SCN-*`/`TW-CAP-*` runtime-профили, политика `ext.test.*` для non-production, EF migration, integration/security tests, entrypoint `contracts:test:worker`
+- `Gates`: `OAG-TEST-CONTRACT-WORKER`, `OAG-TEST-CAPABILITY-ACTION`, `OAG-TEST-WORKER-SERVICE-AUTH`, `OAG-TEST-SERVICE-AUTH-TOKEN-ISOLATION` (зелёные локальные прогоны)
+- `Exception`: n/a
+- `Changed files`: `DigitalDealsCRM.slnx`, `src/DDCRM.Worker.Api/*`, `src/DDCRM.Worker.Persistence/*`, `tests/DDCRM.Worker.Api.Tests/*`, `src/DDCRM.Shared/Auth/*`, `eng/contracts.ps1`, `eng/contracts.sh`, `eng/README.md`, `docs/implementation/patchnotes.md`
+- `Date`: `2026-04-24`
+
+### W2-T04
+- `Task ID`: `W2-T04`
+- `WP`: `WP-WORKER-CONTRACT`
+- `Status`: `started`
+- `Operations`: закрыть временный worker-gates exception из `W1-T08` после реализации `WP-WORKER-CONTRACT`
+- `Gates`: `OAG-TEST-CONTRACT-WORKER`, `OAG-TEST-CAPABILITY-ACTION`, `OAG-TEST-WORKER-SERVICE-AUTH`
+- `Exception`: `W1-T08` pending resolution
+- `Changed files`: `docs/implementation/patchnotes.md`
+- `Date`: `2026-04-24`
+
+- `Task ID`: `W2-T04`
+- `WP`: `WP-WORKER-CONTRACT`
+- `Status`: `completed`
+- `Operations`: временный exception из `W1-T08` закрыт после успешной реализации worker runtime и прохождения worker/security/capability gate-проверок
+- `Gates`: `OAG-TEST-CONTRACT-WORKER`, `OAG-TEST-CAPABILITY-ACTION`, `OAG-TEST-WORKER-SERVICE-AUTH` (зелёные локальные прогоны)
+- `Exception`: `W1-T08 resolved`, `owner=platform-team`, `reason=worker runtime delivered in W2-T03`, `resolvedDate=2026-04-24`
+- `Changed files`: `docs/implementation/patchnotes.md`
+- `Date`: `2026-04-24`
+
 - `Task ID`: `W1-T09`
 - `WP`: `process`
 - `Status`: `completed`

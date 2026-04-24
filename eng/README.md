@@ -7,6 +7,7 @@
 - `./eng/contracts.ps1 contracts:diff:external`
 - `./eng/contracts.ps1 contracts:diff:worker`
 - `./eng/contracts.ps1 contracts:test:services`
+- `./eng/contracts.ps1 contracts:test:worker`
 - `./eng/contracts.ps1 contracts:test:security`
 - `./eng/contracts.ps1 contracts:test:cors`
 

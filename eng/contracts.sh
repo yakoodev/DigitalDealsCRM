@@ -35,6 +35,9 @@ case "${command}" in
     run "contracts:test:services (accounts-manager)" dotnet test tests/DDCRM.AccountsManager.Api.Tests/DDCRM.AccountsManager.Api.Tests.csproj --configuration Release
     run "contracts:test:services (gateway)" dotnet test tests/DDCRM.Gateway.Api.Tests/DDCRM.Gateway.Api.Tests.csproj --configuration Release
     ;;
+  contracts:test:worker)
+    run "contracts:test:worker" dotnet test tests/DDCRM.Worker.Api.Tests/DDCRM.Worker.Api.Tests.csproj --configuration Release
+    ;;
   contracts:test:security)
     run "contracts:test:security" dotnet test DigitalDealsCRM.slnx --configuration Release --filter "Category=Security"
     ;;

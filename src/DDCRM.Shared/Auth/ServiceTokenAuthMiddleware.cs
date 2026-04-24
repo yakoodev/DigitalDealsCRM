@@ -25,8 +25,8 @@ public sealed class ServiceTokenAuthMiddleware(
         {
             throw new ApiErrorException(
                 StatusCodes.Status401Unauthorized,
-                ApiErrorCodes.Unauthorized,
-                "Заголовок X-Service-Token обязателен.");
+                _options.MissingTokenErrorCode,
+                _options.MissingTokenErrorMessage);
         }
 
         var token = tokenValue.ToString();
@@ -35,16 +35,16 @@ public sealed class ServiceTokenAuthMiddleware(
         {
             throw new ApiErrorException(
                 StatusCodes.Status403Forbidden,
-                ApiErrorCodes.Forbidden,
-                "Токен не может использоваться в internal-контуре.");
+                _options.ForbiddenTokenErrorCode,
+                _options.ForbiddenTokenErrorMessage);
         }
 
         if (!_options.AcceptedTokens.Contains(token, StringComparer.Ordinal))
         {
             throw new ApiErrorException(
                 StatusCodes.Status401Unauthorized,
-                ApiErrorCodes.Unauthorized,
-                "Невалидный service-auth токен.");
+                _options.InvalidTokenErrorCode,
+                _options.InvalidTokenErrorMessage);
         }
 
         await next(context);
