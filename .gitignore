@@ -1,0 +1,31 @@
+# Build artifacts
+**/bin/
+**/obj/
+
+# User-specific files
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Logs
+*.log
+
+# Rider / VS Code
+.idea/
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test / coverage
+TestResults/
+coverage/
+
+# Local secrets and runtime overrides
+.env
+.env.*.local
+
+# Temporary folders
+tmp/

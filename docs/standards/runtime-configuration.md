@@ -15,6 +15,7 @@
 
 ## 2. Конвенции env-переменных
 - `EXTERNAL_API_CORS_*` — переменные CORS-контура external API;
+- `EXTERNAL_API_JWT_*` — переменные валидации bearer JWT для external API;
 - `INTERNAL_API_SERVICE_AUTH_*` — переменные service-auth контура internal API;
 - `WORKER_API_SERVICE_AUTH_*` — переменные service-auth контура worker API;
 - `TEST_WORKER_*` — переменные управления тестовым воркером по `docs/standards/test-worker-governance.md`;

@@ -1,0 +1,18 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/DDCRM.Core.Api/DDCRM.Core.Api.csproj" />
+    <Project Path="src/DDCRM.Core.Persistence/DDCRM.Core.Persistence.csproj" />
+    <Project Path="src/DDCRM.Iam.Api/DDCRM.Iam.Api.csproj" />
+    <Project Path="src/DDCRM.RouteRegistry.Api/DDCRM.RouteRegistry.Api.csproj" />
+    <Project Path="src/DDCRM.RouteRegistry.Persistence/DDCRM.RouteRegistry.Persistence.csproj" />
+    <Project Path="src/DDCRM.Shared/DDCRM.Shared.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/DDCRM.Core.Api.Tests/DDCRM.Core.Api.Tests.csproj" />
+    <Project Path="tests/DDCRM.Iam.Api.Tests/DDCRM.Iam.Api.Tests.csproj" />
+    <Project Path="tests/DDCRM.RouteRegistry.Api.Tests/DDCRM.RouteRegistry.Api.Tests.csproj" />
+  </Folder>
+  <Folder Name="/tools/">
+    <Project Path="tools/DDCRM.Contracts.Cli/DDCRM.Contracts.Cli.csproj" />
+  </Folder>
+</Solution>
