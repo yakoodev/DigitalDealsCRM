@@ -64,3 +64,10 @@
 - право полного просмотра определяется `project.accounts.proxyCredentials.reveal`;
 - право изменения определяется `project.accounts.proxyCredentials.update`;
 - для `moderator` reveal/update proxy credentials запрещены.
+
+## 7. RBAC для account-api action
+- для `account-api` action по умолчанию требуется `project.workers.operate`;
+- для `ext.account.lifecycle.*` требуется `project.accounts.lifecycle.manage`;
+- для `ext.account.proxy-credentials.reveal` требуется `project.accounts.proxyCredentials.reveal`;
+- для `ext.account.proxy-credentials.update` требуется `project.accounts.proxyCredentials.update`;
+- Gateway обязан применять это сопоставление до проксирования запроса в worker.

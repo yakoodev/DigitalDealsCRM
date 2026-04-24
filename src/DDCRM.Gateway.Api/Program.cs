@@ -180,10 +180,11 @@ gateway.MapPost("/account-api/{routeKey}/{action}", async (
         throw new ApiErrorException(StatusCodes.Status404NotFound, ApiErrorCodes.NotFound, "Route не найден.");
     }
 
+    var requiredPermission = ResolvePermissionForAction(action);
     var permissionAllowed = await iamClient.CheckPermissionAsync(
         resolvedRoute.ProjectId,
         userId,
-        ProjectPermissions.ProjectWorkersOperate,
+        requiredPermission,
         cancellationToken);
 
     if (!permissionAllowed)
@@ -262,6 +263,26 @@ static JsonElement NormalizeProxyResult(JsonElement rawPayload)
     {
         ["value"] = rawPayload.Clone(),
     });
+}
+
+static string ResolvePermissionForAction(string action)
+{
+    if (action.StartsWith("ext.account.lifecycle.", StringComparison.Ordinal))
+    {
+        return ProjectPermissions.ProjectAccountsLifecycleManage;
+    }
+
+    if (string.Equals(action, "ext.account.proxy-credentials.reveal", StringComparison.Ordinal))
+    {
+        return ProjectPermissions.ProjectAccountsProxyCredentialsReveal;
+    }
+
+    if (string.Equals(action, "ext.account.proxy-credentials.update", StringComparison.Ordinal))
+    {
+        return ProjectPermissions.ProjectAccountsProxyCredentialsUpdate;
+    }
+
+    return ProjectPermissions.ProjectWorkersOperate;
 }
 
 public sealed record ProxyResponse(string RequestId, JsonElement Result);

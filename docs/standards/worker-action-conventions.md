@@ -17,6 +17,8 @@
 - `messages.*` — операции над сообщениями
 - `orders.*` — операции над заказами
 - `ext.*` — платформенно-специфичные extension операции
+- `ext.account.lifecycle.*` — extension-операции lifecycle аккаунта (чувствительные)
+- `ext.account.proxy-credentials.*` — extension-операции управления proxy credentials (чувствительные)
 - `ext.test.*` — симуляторные extension-операции только для non-production контуров
 
 ## 3. Политика использования
@@ -24,6 +26,7 @@
 - `actions/{action}` используется только для extension операций, не покрытых типовыми endpoint-ами;
 - extension ключи обязаны иметь префикс `ext.`.
 - `ext.test.*` разрешён только для тестового воркера по `docs/standards/test-worker-governance.md`.
+- чувствительные `ext.account.*` action-key должны проверяться через RBAC-сопоставление из `docs/standards/access-control-matrix.md` до проксирования.
 
 ## 4. Capability-согласование
 - любой `ext.*` action должен иметь соответствующий capability-флаг в `/internal/v1/worker/capabilities`;

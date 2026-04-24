@@ -368,6 +368,25 @@
 - `Changed files`: `src/DDCRM.Core.Api/*`, `tests/DDCRM.Core.Api.Tests/*`, `docs/implementation/patchnotes.md`
 - `Date`: `2026-04-24`
 
+### W3-T07
+- `Task ID`: `W3-T07`
+- `WP`: `WP-GATEWAY`
+- `Status`: `started`
+- `Operations`: security-hardening `account-api` proxy: ввести action-based RBAC mapping (`ext.account.lifecycle.*`, `ext.account.proxy-credentials.reveal/update`) вместо единого `project.workers.operate`
+- `Gates`: `OAG-TEST-CONTRACT-SERVICES`, `OAG-TEST-INTERNAL-SERVICE-AUTH`
+- `Exception`: n/a
+- `Changed files`: `docs/standards/access-control-matrix.md`, `docs/standards/worker-action-conventions.md`, `src/DDCRM.Gateway.Api/*`, `tests/DDCRM.Gateway.Api.Tests/*`, `docs/implementation/patchnotes.md`
+- `Date`: `2026-04-24`
+
+- `Task ID`: `W3-T07`
+- `WP`: `WP-GATEWAY`
+- `Status`: `completed`
+- `Operations`: Gateway применяет `ResolvePermissionForAction` перед `iamCheckPermission`; чувствительные `ext.account.*` action-key требуют отдельные permission keys из access matrix; добавлены integration/security тесты на permission mapping и запрет вызова worker при denied-доступе
+- `Gates`: `OAG-TEST-CONTRACT-SERVICES`, `OAG-TEST-INTERNAL-SERVICE-AUTH` (зелёные локальные прогоны)
+- `Exception`: n/a
+- `Changed files`: `docs/standards/access-control-matrix.md`, `docs/standards/worker-action-conventions.md`, `src/DDCRM.Gateway.Api/*`, `tests/DDCRM.Gateway.Api.Tests/*`, `docs/implementation/patchnotes.md`
+- `Date`: `2026-04-24`
+
 - `Task ID`: `W1-T09`
 - `WP`: `process`
 - `Status`: `completed`

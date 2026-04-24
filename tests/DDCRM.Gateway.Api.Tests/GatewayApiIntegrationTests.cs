@@ -66,6 +66,51 @@ public sealed class GatewayApiIntegrationTests
 
     [Fact]
     [Trait("Category", "Integration")]
+    public async Task ProxyAccountApiAction_RevealAction_UsesProxyRevealPermission()
+    {
+        using var factory = new GatewayApiFactory();
+        using var client = factory.CreateClient();
+
+        var userId = Guid.NewGuid();
+        factory.RouteRegistryClient.NextRoute = new RouteResolution(
+            "rk.alpha",
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            1,
+            new WorkerBinding("srv-1", "worker-1", "pod-1"));
+
+        factory.WorkerProxyClient.NextPayload = JsonSerializer.SerializeToElement(new
+        {
+            result = new
+            {
+                proxyConfig = new
+                {
+                    host = "proxy.secure.internal",
+                    port = 8081,
+                },
+            },
+        });
+
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", factory.CreateToken(userId));
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/v1/account-api/rk.alpha/ext.account.proxy-credentials.reveal")
+        {
+            Content = JsonContent.Create(new
+            {
+                reason = "support audit",
+            }),
+        };
+        request.Headers.Add("Idempotency-Key", Guid.NewGuid().ToString("N"));
+
+        var response = await client.SendAsync(request);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        Assert.NotNull(factory.IamClient.LastCall);
+        Assert.Equal(ProjectPermissions.ProjectAccountsProxyCredentialsReveal, factory.IamClient.LastCall!.Permission);
+    }
+
+    [Fact]
+    [Trait("Category", "Integration")]
     public async Task ProxyAccountApiAction_RouteNotFound_ReturnsNotFound()
     {
         using var factory = new GatewayApiFactory();
@@ -169,6 +214,40 @@ public sealed class GatewayApiIntegrationTests
 
         var response = await client.SendAsync(request);
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    [Trait("Category", "Security")]
+    public async Task ProxyAccountApiAction_RevealPermissionDenied_ReturnsForbiddenBeforeWorkerCall()
+    {
+        using var factory = new GatewayApiFactory();
+        using var client = factory.CreateClient();
+
+        factory.RouteRegistryClient.NextRoute = new RouteResolution(
+            "rk.alpha",
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            2,
+            new WorkerBinding("srv-1", "worker-1", "pod-1"));
+        factory.IamClient.NextAllowed = false;
+
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", factory.CreateToken(Guid.NewGuid()));
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/v1/account-api/rk.alpha/ext.account.proxy-credentials.reveal")
+        {
+            Content = JsonContent.Create(new
+            {
+                reason = "need reveal",
+            }),
+        };
+        request.Headers.Add("Idempotency-Key", Guid.NewGuid().ToString("N"));
+
+        var response = await client.SendAsync(request);
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+
+        Assert.NotNull(factory.IamClient.LastCall);
+        Assert.Equal(ProjectPermissions.ProjectAccountsProxyCredentialsReveal, factory.IamClient.LastCall!.Permission);
+        Assert.Null(factory.WorkerProxyClient.LastInvocation);
     }
 
     [Fact]
