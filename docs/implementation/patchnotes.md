@@ -494,3 +494,24 @@
 - `Exception`: n/a
 - `Changed files`: `eng/ops-ready.ps1`, `eng/ops-ready.sh`, `eng/README.md`, `docs/operations/runbook.md`, `docs/operations/rollout-rollback-plan.md`, `docs/operations/service-auth-rotation-playbook.md`, `docs/implementation/patchnotes.md`
 - `Date`: `2026-04-24`
+
+## Wave 6 (Фаза 3, WP-RBAC-UI hardening)
+
+### W6-T01
+- `Task ID`: `W6-T01`
+- `WP`: `WP-RBAC-UI`
+- `Status`: `started`
+- `Operations`: добавить автоматизированные регрессионные тесты матрицы ролей/прав (owner/admin/moderator) в UI и встроить запуск в npm-scripts
+- `Gates`: `frontend:test`, `frontend:lint`, `frontend:build`
+- `Exception`: n/a
+- `Changed files`: `src/ddcrm-rbac-ui/package.json`, `src/ddcrm-rbac-ui/package-lock.json`, `src/ddcrm-rbac-ui/src/lib/rbac.test.ts`
+- `Date`: `2026-04-24`
+
+- `Task ID`: `W6-T01`
+- `WP`: `WP-RBAC-UI`
+- `Status`: `completed`
+- `Operations`: подключён `vitest`; добавлены тесты `rbac.test.ts` на полный набор permission-check для owner/admin и ограниченный набор для moderator; добавлены npm entrypoint-команды `test`/`test:run`
+- `Gates`: `npm run test:run`, `npm run lint`, `npm run build` (зелёные локальные прогоны)
+- `Exception`: n/a
+- `Changed files`: `src/ddcrm-rbac-ui/package.json`, `src/ddcrm-rbac-ui/package-lock.json`, `src/ddcrm-rbac-ui/src/lib/rbac.test.ts`, `docs/implementation/patchnotes.md`
+- `Date`: `2026-04-24`
