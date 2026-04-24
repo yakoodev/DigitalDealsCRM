@@ -252,6 +252,27 @@
 - `Changed files`: `docs/implementation/patchnotes.md`
 - `Date`: `2026-04-24`
 
+## Wave 3 (Фаза 2, Billing baseline)
+
+### W3-T01
+- `Task ID`: `W3-T01`
+- `WP`: `WP-BILLING`
+- `Status`: `started`
+- `Operations`: bootstrap Billing API/Persistence/Test projects + internal billing operations implementation (`payments create/webhook/refund`, `subscriptions manual-activate/reconcile`), webhook dedup, idempotency
+- `Gates`: `OAG-TEST-CONTRACT-SERVICES`, `OAG-TEST-INTERNAL-SERVICE-AUTH`, `OAG-TEST-SERVICE-AUTH-TOKEN-ISOLATION`
+- `Exception`: n/a
+- `Changed files`: `DigitalDealsCRM.slnx`, `src/DDCRM.Billing.Api/*`, `src/DDCRM.Billing.Persistence/*`, `tests/DDCRM.Billing.Api.Tests/*`, `eng/contracts.ps1`, `eng/contracts.sh`
+- `Date`: `2026-04-24`
+
+- `Task ID`: `W3-T01`
+- `WP`: `WP-BILLING`
+- `Status`: `completed`
+- `Operations`: реализованы `internalPaymentsCreate`, `internalPaymentsWebhook`, `internalPaymentsRefund`, `internalSubscriptionsManualActivate`, `internalSubscriptionsReconcile`; добавлены persistence-модели billing + EF migration; webhook dedup и idempotency mutating-операций; integration/security tests; billing добавлен в `contracts:test:services`
+- `Gates`: `OAG-TEST-CONTRACT-SERVICES`, `OAG-TEST-INTERNAL-SERVICE-AUTH`, `OAG-TEST-SERVICE-AUTH-TOKEN-ISOLATION` (зелёные локальные прогоны)
+- `Exception`: n/a
+- `Changed files`: `DigitalDealsCRM.slnx`, `src/DDCRM.Billing.Api/*`, `src/DDCRM.Billing.Persistence/*`, `tests/DDCRM.Billing.Api.Tests/*`, `eng/contracts.ps1`, `eng/contracts.sh`, `docs/implementation/patchnotes.md`
+- `Date`: `2026-04-24`
+
 - `Task ID`: `W1-T09`
 - `WP`: `process`
 - `Status`: `completed`
