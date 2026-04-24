@@ -11,6 +11,8 @@ public sealed class WorkerDbContext(DbContextOptions<WorkerDbContext> options)
 
     public DbSet<WorkerOrderEntity> Orders => Set<WorkerOrderEntity>();
 
+    public DbSet<WorkerProxyCredentialsEntity> ProxyCredentials => Set<WorkerProxyCredentialsEntity>();
+
     public DbSet<IdempotencyRecord> IdempotencyRecords => Set<IdempotencyRecord>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -34,6 +36,17 @@ public sealed class WorkerDbContext(DbContextOptions<WorkerDbContext> options)
             entity.Property(x => x.Status).HasMaxLength(80).IsRequired();
             entity.Property(x => x.Total).HasColumnType("numeric(18,2)");
             entity.Property(x => x.Currency).HasMaxLength(8).IsRequired();
+            entity.Property(x => x.UpdatedAtUtc).HasDefaultValueSql("NOW()");
+        });
+
+        modelBuilder.Entity<WorkerProxyCredentialsEntity>(entity =>
+        {
+            entity.ToTable("worker_proxy_credentials");
+            entity.HasKey(x => x.AccountId);
+            entity.Property(x => x.Host).HasMaxLength(255).IsRequired();
+            entity.Property(x => x.Port).IsRequired();
+            entity.Property(x => x.Login).HasMaxLength(255).IsRequired();
+            entity.Property(x => x.Password).HasMaxLength(512).IsRequired();
             entity.Property(x => x.UpdatedAtUtc).HasDefaultValueSql("NOW()");
         });
 

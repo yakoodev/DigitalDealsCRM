@@ -1,4 +1,5 @@
 using DDCRM.AccountsManager.Api.RouteRegistry;
+using DDCRM.AccountsManager.Api.Worker;
 using DDCRM.AccountsManager.Persistence;
 using DDCRM.AccountsManager.Persistence.Entities;
 using DDCRM.Shared.Auth;
@@ -42,6 +43,13 @@ builder.Services.Configure<RouteRegistryClientOptions>(options =>
     options.BaseUrl = builder.Configuration["ROUTE_REGISTRY_CLIENT_BASE_URL"];
     options.ServiceToken = builder.Configuration["INTERNAL_API_SERVICE_AUTH_CLIENT_TOKEN"];
 });
+builder.Services.Configure<WorkerControlClientOptions>(options =>
+{
+    options.Enabled = builder.Configuration.GetValue("WORKER_CONTROL_CLIENT_ENABLED", true);
+    options.BaseUrlTemplate = builder.Configuration["WORKER_CONTROL_CLIENT_BASE_URL_TEMPLATE"] ?? options.BaseUrlTemplate;
+    options.PathPrefix = builder.Configuration["WORKER_CONTROL_CLIENT_PATH_PREFIX"] ?? options.PathPrefix;
+    options.ServiceToken = builder.Configuration["WORKER_API_SERVICE_AUTH_CLIENT_TOKEN"];
+});
 
 builder.Services.AddHttpClient<IRouteRegistryClient, RouteRegistryHttpClient>((serviceProvider, client) =>
 {
@@ -51,6 +59,7 @@ builder.Services.AddHttpClient<IRouteRegistryClient, RouteRegistryHttpClient>((s
         client.BaseAddress = new Uri(options.BaseUrl);
     }
 });
+builder.Services.AddHttpClient<IWorkerControlClient, WorkerControlHttpClient>();
 
 var app = builder.Build();
 
@@ -77,6 +86,7 @@ lifecycle.MapPost("/create", async (
     LifecycleCreateRequest request,
     AccountsManagerDbContext dbContext,
     IRouteRegistryClient routeRegistryClient,
+    IWorkerControlClient workerControlClient,
     IdempotencyExecutor idempotency,
     CancellationToken cancellationToken) =>
 {
@@ -108,14 +118,22 @@ lifecycle.MapPost("/create", async (
             var serverId = "srv-default";
             var podId = $"pod-{request.AccountId:N}";
             var routeVersion = 1;
+            var workerBinding = new WorkerBindingDto(serverId, workerId, podId);
 
             await routeRegistryClient.UpsertAsync(
                 request.AccountId,
                 new RouteUpsertRequestDto(
                     request.ProjectId,
                     BuildRouteKey(request.AccountId),
-                    new WorkerBindingDto(serverId, workerId, podId),
+                    workerBinding,
                     routeVersion),
+                idempotencyKey,
+                ct);
+
+            await workerControlClient.ApplyProxyCredentialsAsync(
+                workerBinding,
+                request.AccountId,
+                request.ProxyConfig,
                 idempotencyKey,
                 ct);
 
@@ -146,6 +164,7 @@ lifecycle.MapPost("/update", async (
     HttpContext httpContext,
     LifecycleUpdateRequest request,
     AccountsManagerDbContext dbContext,
+    IWorkerControlClient workerControlClient,
     IdempotencyExecutor idempotency,
     CancellationToken cancellationToken) =>
 {
@@ -167,6 +186,13 @@ lifecycle.MapPost("/update", async (
             {
                 throw new ApiErrorException(StatusCodes.Status404NotFound, ApiErrorCodes.NotFound, "Worker placement не найден.");
             }
+
+            await workerControlClient.ApplyProxyCredentialsAsync(
+                new WorkerBindingDto(existing.ServerId, existing.WorkerId, existing.PodId),
+                request.AccountId,
+                request.ProxyConfig!,
+                idempotencyKey,
+                ct);
 
             existing.ProxyConfigured = true;
             existing.UpdatedAtUtc = DateTimeOffset.UtcNow;

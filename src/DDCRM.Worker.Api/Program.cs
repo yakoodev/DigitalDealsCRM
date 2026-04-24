@@ -430,11 +430,88 @@ worker.MapPost("/actions/{action}", async (
         throw CreateRuntimeConflict("Action не объявлен capability-набором worker-а.");
     }
 
-    var idempotencyKey = httpContext.RequireIdempotencyKey();
+    if (string.Equals(action, WorkerExtensionActionKeys.ProxyCredentialsApply, StringComparison.Ordinal))
+    {
+        var (accountId, proxyConfig) = ReadProxyCredentialsApplyPayload(request);
+        var requestId = httpContext.GetOrCreateRequestId();
+        var idempotencyKey = httpContext.RequireIdempotencyKey();
+
+        return await idempotency.ExecuteAsync(
+            dbContext,
+            $"worker:proxy-credentials:apply:{accountId}",
+            idempotencyKey,
+            async ct =>
+            {
+                var existing = await dbContext.ProxyCredentials.SingleOrDefaultAsync(x => x.AccountId == accountId, ct);
+                if (existing is null)
+                {
+                    dbContext.ProxyCredentials.Add(new WorkerProxyCredentialsEntity
+                    {
+                        AccountId = accountId,
+                        Host = proxyConfig.Host,
+                        Port = proxyConfig.Port,
+                        Login = proxyConfig.Login,
+                        Password = proxyConfig.Password,
+                        UpdatedAtUtc = DateTimeOffset.UtcNow,
+                    });
+                }
+                else
+                {
+                    existing.Host = proxyConfig.Host;
+                    existing.Port = proxyConfig.Port;
+                    existing.Login = proxyConfig.Login;
+                    existing.Password = proxyConfig.Password;
+                    existing.UpdatedAtUtc = DateTimeOffset.UtcNow;
+                }
+
+                return new IdempotentExecutionResult(
+                    StatusCodes.Status200OK,
+                    new ExtensionActionResponse(
+                        requestId,
+                        new Dictionary<string, object?>
+                        {
+                            ["status"] = "applied",
+                            ["accountId"] = accountId,
+                        },
+                        []));
+            },
+            cancellationToken);
+    }
+
+    if (string.Equals(action, WorkerExtensionActionKeys.ProxyCredentialsReveal, StringComparison.Ordinal))
+    {
+        var accountId = ReadProxyCredentialsRevealAccountId(request);
+        _ = httpContext.RequireIdempotencyKey();
+
+        var credentials = await dbContext.ProxyCredentials
+            .AsNoTracking()
+            .SingleOrDefaultAsync(x => x.AccountId == accountId, cancellationToken);
+
+        if (credentials is null)
+        {
+            throw CreateRuntimeConflict("Proxy credentials не найдены в worker state storage.");
+        }
+
+        return Results.Ok(new ExtensionActionResponse(
+            httpContext.GetOrCreateRequestId(),
+            new Dictionary<string, object?>
+            {
+                ["proxyConfig"] = new Dictionary<string, object?>
+                {
+                    ["host"] = credentials.Host,
+                    ["port"] = credentials.Port,
+                    ["login"] = credentials.Login,
+                    ["password"] = credentials.Password,
+                },
+            },
+            []));
+    }
+
+    var defaultIdempotencyKey = httpContext.RequireIdempotencyKey();
     return await idempotency.ExecuteAsync(
         dbContext,
         $"worker:extension:{action}",
-        idempotencyKey,
+        defaultIdempotencyKey,
         _ =>
         {
             var result = new Dictionary<string, object?>
@@ -594,6 +671,95 @@ static void ValidateAction(string action)
     }
 }
 
+static (Guid AccountId, ProxyConfigValue ProxyConfig) ReadProxyCredentialsApplyPayload(ExtensionActionRequest? request)
+{
+    if (request?.Payload is null)
+    {
+        throw CreatePlatformError(StatusCodes.Status400BadRequest, "Для apply требуется payload.");
+    }
+
+    var accountId = ReadRequiredGuid(request.Payload, "accountId");
+
+    if (!request.Payload.TryGetValue("proxyConfig", out var proxyConfigElement) || proxyConfigElement.ValueKind != JsonValueKind.Object)
+    {
+        throw CreatePlatformError(StatusCodes.Status400BadRequest, "Для apply требуется payload.proxyConfig.");
+    }
+
+    var proxyConfigPayload = proxyConfigElement.EnumerateObject()
+        .ToDictionary(x => x.Name, x => x.Value.Clone(), StringComparer.Ordinal);
+
+    var host = ReadRequiredString(proxyConfigPayload, "host");
+    var login = ReadRequiredString(proxyConfigPayload, "login");
+    var password = ReadRequiredString(proxyConfigPayload, "password");
+    var port = ReadRequiredPort(proxyConfigPayload, "port");
+
+    return (accountId, new ProxyConfigValue(host, port, login, password));
+}
+
+static Guid ReadProxyCredentialsRevealAccountId(ExtensionActionRequest? request)
+{
+    if (request?.Payload is null)
+    {
+        throw CreatePlatformError(StatusCodes.Status400BadRequest, "Для reveal требуется payload.");
+    }
+
+    return ReadRequiredGuid(request.Payload, "accountId");
+}
+
+static Guid ReadRequiredGuid(IDictionary<string, JsonElement> payload, string key)
+{
+    if (!payload.TryGetValue(key, out var value))
+    {
+        throw CreatePlatformError(StatusCodes.Status400BadRequest, $"Поле {key} обязательно.");
+    }
+
+    var guidValue = value.ValueKind switch
+    {
+        JsonValueKind.String => value.GetString(),
+        JsonValueKind.Null => null,
+        _ => value.GetRawText(),
+    };
+
+    if (!Guid.TryParse(guidValue, out var parsed))
+    {
+        throw CreatePlatformError(StatusCodes.Status400BadRequest, $"Поле {key} должно быть GUID.");
+    }
+
+    return parsed;
+}
+
+static string ReadRequiredString(IDictionary<string, JsonElement> payload, string key)
+{
+    if (!payload.TryGetValue(key, out var value) || value.ValueKind != JsonValueKind.String || string.IsNullOrWhiteSpace(value.GetString()))
+    {
+        throw CreatePlatformError(StatusCodes.Status400BadRequest, $"Поле {key} обязательно и должно быть непустой строкой.");
+    }
+
+    return value.GetString()!.Trim();
+}
+
+static int ReadRequiredPort(IDictionary<string, JsonElement> payload, string key)
+{
+    if (!payload.TryGetValue(key, out var value))
+    {
+        throw CreatePlatformError(StatusCodes.Status400BadRequest, $"Поле {key} обязательно.");
+    }
+
+    var port = value.ValueKind switch
+    {
+        JsonValueKind.Number when value.TryGetInt32(out var intPort) => intPort,
+        JsonValueKind.String when int.TryParse(value.GetString(), out var stringPort) => stringPort,
+        _ => throw CreatePlatformError(StatusCodes.Status400BadRequest, $"Поле {key} должно быть числом."),
+    };
+
+    if (port is < 1 or > 65535)
+    {
+        throw CreatePlatformError(StatusCodes.Status400BadRequest, $"Поле {key} должно быть в диапазоне 1..65535.");
+    }
+
+    return port;
+}
+
 static ApiErrorException CreateInvalidActionError(string message)
 {
     return new ApiErrorException(StatusCodes.Status400BadRequest, WorkerErrorCodes.InvalidAction, message);
@@ -709,5 +875,13 @@ public sealed record ExtensionActionResponse(
     string RequestId,
     Dictionary<string, object?> Result,
     IReadOnlyCollection<string>? Warnings);
+
+internal static class WorkerExtensionActionKeys
+{
+    public const string ProxyCredentialsApply = "ext.account.proxy-credentials.apply";
+    public const string ProxyCredentialsReveal = "ext.account.proxy-credentials.reveal";
+}
+
+internal sealed record ProxyConfigValue(string Host, int Port, string Login, string Password);
 
 public partial class Program;

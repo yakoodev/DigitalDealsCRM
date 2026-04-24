@@ -254,6 +254,60 @@ public sealed class CoreApiIntegrationTests(CoreApiFactory factory) : IClassFixt
     }
 
     [Fact]
+    [Trait("Category", "Integration")]
+    public async Task RevealProxyCredentials_ReturnsProxyConfig_AndAuditsIdempotently()
+    {
+        factory.GatewayProxyClient.Reset();
+
+        using var client = CreateAuthorizedClient(Guid.NewGuid());
+        var projectId = await CreateProjectAsync(client, "Accounts-Reveal-A");
+        var accountId = await CreateAccountAsync(client, projectId, "Store Reveal A");
+        var idempotencyKey = Guid.NewGuid().ToString("N");
+
+        var first = await SendJsonAsync(
+            client,
+            HttpMethod.Post,
+            $"/v1/projects/{projectId}/accounts/{accountId}/proxy-credentials/reveal",
+            idempotencyKey,
+            new
+            {
+                reason = "support audit",
+            });
+
+        var second = await SendJsonAsync(
+            client,
+            HttpMethod.Post,
+            $"/v1/projects/{projectId}/accounts/{accountId}/proxy-credentials/reveal",
+            idempotencyKey,
+            new
+            {
+                reason = "support audit",
+            });
+
+        Assert.Equal(HttpStatusCode.OK, first.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, second.StatusCode);
+        Assert.Equal(2, factory.GatewayProxyClient.Calls.Count);
+        Assert.All(factory.GatewayProxyClient.Calls, call =>
+        {
+            Assert.Equal("ext.account.proxy-credentials.reveal", call.Action);
+            Assert.Equal(idempotencyKey, call.IdempotencyKey);
+        });
+
+        using var firstJson = JsonDocument.Parse(await first.Content.ReadAsStringAsync());
+        using var secondJson = JsonDocument.Parse(await second.Content.ReadAsStringAsync());
+
+        var firstProxyConfig = firstJson.RootElement.GetProperty("proxyConfig");
+        var secondProxyConfig = secondJson.RootElement.GetProperty("proxyConfig");
+
+        Assert.Equal("proxy.reveal.internal", firstProxyConfig.GetProperty("host").GetString());
+        Assert.Equal(8443, firstProxyConfig.GetProperty("port").GetInt32());
+        Assert.Equal("reveal-login", firstProxyConfig.GetProperty("login").GetString());
+        Assert.StartsWith("secret-", firstProxyConfig.GetProperty("password").GetString()!, StringComparison.Ordinal);
+        Assert.Equal(firstProxyConfig.GetRawText(), secondProxyConfig.GetRawText());
+        Assert.Equal(1, factory.CountProxyCredentialsAudits(projectId, accountId));
+    }
+
+    [Fact]
     [Trait("Category", "Security")]
     public async Task UpdateProxyCredentials_ModeratorRole_IsForbidden()
     {
@@ -294,6 +348,43 @@ public sealed class CoreApiIntegrationTests(CoreApiFactory factory) : IClassFixt
 
         Assert.Equal(HttpStatusCode.Forbidden, updateResponse.StatusCode);
         Assert.Empty(factory.AccountsManagerClient.UpdateCalls);
+    }
+
+    [Fact]
+    [Trait("Category", "Security")]
+    public async Task RevealProxyCredentials_ModeratorRole_IsForbidden()
+    {
+        factory.GatewayProxyClient.Reset();
+
+        var ownerId = Guid.NewGuid();
+        var moderatorId = Guid.NewGuid();
+
+        using var ownerClient = CreateAuthorizedClient(ownerId);
+        var projectId = await CreateProjectAsync(ownerClient, "Accounts-Reveal-B");
+        var accountId = await CreateAccountAsync(ownerClient, projectId, "Store Reveal B");
+
+        var addMemberResponse = await SendJsonAsync(
+            ownerClient,
+            HttpMethod.Post,
+            $"/v1/projects/{projectId}/members",
+            Guid.NewGuid().ToString("N"),
+            new { userId = moderatorId, role = "moderator" });
+        Assert.Equal(HttpStatusCode.OK, addMemberResponse.StatusCode);
+
+        using var moderatorClient = CreateAuthorizedClient(moderatorId);
+        var revealResponse = await SendJsonAsync(
+            moderatorClient,
+            HttpMethod.Post,
+            $"/v1/projects/{projectId}/accounts/{accountId}/proxy-credentials/reveal",
+            Guid.NewGuid().ToString("N"),
+            new
+            {
+                reason = "need reveal",
+            });
+
+        Assert.Equal(HttpStatusCode.Forbidden, revealResponse.StatusCode);
+        Assert.Empty(factory.GatewayProxyClient.Calls);
+        Assert.Equal(0, factory.CountProxyCredentialsAudits(projectId, accountId));
     }
 
     [Fact]
@@ -351,6 +442,29 @@ public sealed class CoreApiIntegrationTests(CoreApiFactory factory) : IClassFixt
         Assert.Equal(payload.retries, firstEcho.GetProperty("retries").GetInt32());
 
         Assert.Equal(firstResult.GetRawText(), secondResult.GetRawText());
+    }
+
+    [Fact]
+    [Trait("Category", "Security")]
+    public async Task ProxyAccountApiAction_SensitiveExtAccountAction_IsRejected()
+    {
+        factory.GatewayProxyClient.Reset();
+
+        using var client = CreateAuthorizedClient(Guid.NewGuid());
+
+        var response = await SendJsonAsync(
+            client,
+            HttpMethod.Post,
+            "/v1/account-api/rk.alpha/ext.account.proxy-credentials.reveal",
+            Guid.NewGuid().ToString("N"),
+            new
+            {
+                accountId = Guid.NewGuid(),
+                reason = "audit request",
+            });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Empty(factory.GatewayProxyClient.Calls);
     }
 
     [Fact]

@@ -9,16 +9,22 @@ public static class WorkerSimulationCatalog
             "ext.market.sync",
             "ext.market.promote",
             "ext.market.audit",
+            "ext.account.proxy-credentials.apply",
+            "ext.account.proxy-credentials.reveal",
         ],
         [WorkerCapabilityProfiles.FailuresV1] =
         [
             "ext.market.sync",
             "ext.worker.retry",
             "ext.worker.diagnostics",
+            "ext.account.proxy-credentials.apply",
+            "ext.account.proxy-credentials.reveal",
         ],
         [WorkerCapabilityProfiles.ContractV1] =
         [
             "ext.market.sync",
+            "ext.account.proxy-credentials.apply",
+            "ext.account.proxy-credentials.reveal",
             "ext.test.capability-mismatch",
             "ext.test.idempotency-replay",
             "ext.test.timeout",

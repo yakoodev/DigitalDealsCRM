@@ -775,7 +775,89 @@ external.MapPatch("/projects/{projectId:guid}/accounts/{accountId:guid}/proxy-cr
         },
         cancellationToken);
 });
-external.MapPost("/projects/{projectId:guid}/accounts/{accountId:guid}/proxy-credentials/reveal", (HttpContext context) => ThrowFeatureNotReadyWithIdempotency(context, "revealAccountProxyCredentials"));
+external.MapPost("/projects/{projectId:guid}/accounts/{accountId:guid}/proxy-credentials/reveal", async (
+    HttpContext httpContext,
+    Guid projectId,
+    Guid accountId,
+    Dictionary<string, JsonElement> request,
+    CoreDbContext dbContext,
+    IGatewayProxyClient gatewayProxyClient,
+    IdempotencyExecutor idempotency,
+    CancellationToken cancellationToken) =>
+{
+    var actorId = GetCurrentUserId(httpContext);
+    var idempotencyKey = httpContext.RequireIdempotencyKey();
+
+    await EnsurePermissionAsync(dbContext, projectId, actorId, ProjectPermissions.ProjectAccountsProxyCredentialsReveal, cancellationToken);
+
+    var reason = ReadString(request, "reason");
+    if (reason.Length < 3)
+    {
+        throw new ApiErrorException(
+            StatusCodes.Status400BadRequest,
+            ApiErrorCodes.ValidationError,
+            "Поле reason должно быть длиной не менее 3 символов.");
+    }
+
+    var accountExists = await dbContext.Accounts.AnyAsync(
+        x => x.ProjectId == projectId && x.Id == accountId,
+        cancellationToken);
+
+    if (!accountExists)
+    {
+        throw new ApiErrorException(StatusCodes.Status404NotFound, ApiErrorCodes.NotFound, "Аккаунт не найден.");
+    }
+
+    var authorizationHeader = httpContext.Request.Headers.Authorization.ToString();
+    if (string.IsNullOrWhiteSpace(authorizationHeader))
+    {
+        throw new ApiErrorException(StatusCodes.Status401Unauthorized, ApiErrorCodes.Unauthorized, "Отсутствует заголовок Authorization.");
+    }
+
+    var revealPayload = new Dictionary<string, JsonElement>(StringComparer.Ordinal)
+    {
+        ["accountId"] = JsonSerializer.SerializeToElement(accountId),
+        ["reason"] = JsonSerializer.SerializeToElement(reason),
+    };
+
+    var revealResult = await gatewayProxyClient.InvokeAccountApiActionAsync(
+        BuildRouteKey(accountId),
+        "ext.account.proxy-credentials.reveal",
+        revealPayload,
+        authorizationHeader,
+        idempotencyKey,
+        cancellationToken);
+
+    var proxyConfig = ReadProxyConfigFromRevealResult(revealResult);
+
+    _ = await idempotency.ExecuteAsync(
+        dbContext,
+        $"core:revealProxyCredentials:{projectId}:{accountId}",
+        idempotencyKey,
+        _ =>
+        {
+            dbContext.ProxyCredentialsAudits.Add(new ProxyCredentialsAuditEntity
+            {
+                Id = Guid.NewGuid(),
+                ProjectId = projectId,
+                AccountId = accountId,
+                ActorUserId = actorId,
+                Operation = "reveal",
+                Reason = reason,
+                RequestId = httpContext.GetOrCreateRequestId(),
+                CreatedAtUtc = DateTimeOffset.UtcNow,
+            });
+
+            return Task.FromResult(new IdempotentExecutionResult(
+                StatusCodes.Status200OK,
+                new AckResponse(httpContext.GetOrCreateRequestId(), "completed")));
+        },
+        cancellationToken);
+
+    return Results.Ok(new ProxyCredentialsRevealResponse(
+        httpContext.GetOrCreateRequestId(),
+        new ProxyConfigDto(proxyConfig.Host, proxyConfig.Port, proxyConfig.Login, proxyConfig.Password)));
+});
 external.MapPost("/projects/{projectId:guid}/billing/payments", async (
     HttpContext httpContext,
     Guid projectId,
@@ -885,6 +967,15 @@ external.MapPost("/account-api/{routeKey}/{action}", async (
             StatusCodes.Status400BadRequest,
             ApiErrorCodes.ValidationError,
             "routeKey и action обязательны.");
+    }
+
+    if (action.StartsWith("ext.account.proxy-credentials.", StringComparison.Ordinal)
+        || action.StartsWith("ext.account.lifecycle.", StringComparison.Ordinal))
+    {
+        throw new ApiErrorException(
+            StatusCodes.Status400BadRequest,
+            ApiErrorCodes.ValidationError,
+            "Для ext.account.* используйте профильные account endpoint-ы Core API.");
     }
 
     var authorizationHeader = httpContext.Request.Headers.Authorization.ToString();
@@ -1066,6 +1157,26 @@ static Dictionary<string, object?> ToProxyConfigDictionary(ProxyConfigPayload pr
     };
 }
 
+static string BuildRouteKey(Guid accountId) => $"rk.{accountId:N}";
+
+static ProxyConfigPayload ReadProxyConfigFromRevealResult(JsonElement revealResult)
+{
+    if (!revealResult.TryGetProperty("proxyConfig", out var proxyConfigElement))
+    {
+        throw new ApiErrorException(
+            StatusCodes.Status502BadGateway,
+            ApiErrorCodes.InternalError,
+            "Gateway вернул reveal-ответ без proxyConfig.");
+    }
+
+    var payload = new Dictionary<string, JsonElement>(StringComparer.Ordinal)
+    {
+        ["proxyConfig"] = proxyConfigElement.Clone(),
+    };
+
+    return ReadProxyConfig(payload, "proxyConfig", required: true)!;
+}
+
 static string MaskSensitive(string value)
 {
     if (value.Length <= 2)
@@ -1116,25 +1227,6 @@ static Dictionary<string, JsonElement> MergePayload(
     return merged;
 }
 
-static IResult ThrowFeatureNotReady(HttpContext httpContext, string operation)
-{
-    throw new ApiErrorException(
-        StatusCodes.Status501NotImplemented,
-        ApiErrorCodes.FeatureNotReady,
-        $"Операция {operation} будет реализована в следующих work-packages.",
-        new Dictionary<string, object?>
-        {
-            ["operation"] = operation,
-            ["roadmapPhase"] = "phase-1-wave-1",
-        });
-}
-
-static IResult ThrowFeatureNotReadyWithIdempotency(HttpContext httpContext, string operation)
-{
-    _ = httpContext.RequireIdempotencyKey();
-    return ThrowFeatureNotReady(httpContext, operation);
-}
-
 public sealed record AckResponse(string RequestId, string Status);
 
 public sealed record ProjectCreateRequest(string Name);
@@ -1164,6 +1256,10 @@ public sealed record AccountResponse(string RequestId, AccountDto Account);
 public sealed record ProxyCredentialsMaskedDto(bool Configured, string? HostMasked, string? LoginMasked);
 
 public sealed record ProxyCredentialsMaskedResponse(string RequestId, ProxyCredentialsMaskedDto ProxyCredentials);
+
+public sealed record ProxyConfigDto(string Host, int Port, string Login, string Password);
+
+public sealed record ProxyCredentialsRevealResponse(string RequestId, ProxyConfigDto ProxyConfig);
 
 public sealed record ProxyResponse(string RequestId, JsonElement Result);
 

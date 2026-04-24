@@ -272,14 +272,11 @@ static string ResolvePermissionForAction(string action)
         return ProjectPermissions.ProjectAccountsLifecycleManage;
     }
 
-    if (string.Equals(action, "ext.account.proxy-credentials.reveal", StringComparison.Ordinal))
+    if (action.StartsWith("ext.account.proxy-credentials.", StringComparison.Ordinal))
     {
-        return ProjectPermissions.ProjectAccountsProxyCredentialsReveal;
-    }
-
-    if (string.Equals(action, "ext.account.proxy-credentials.update", StringComparison.Ordinal))
-    {
-        return ProjectPermissions.ProjectAccountsProxyCredentialsUpdate;
+        return string.Equals(action, "ext.account.proxy-credentials.reveal", StringComparison.Ordinal)
+            ? ProjectPermissions.ProjectAccountsProxyCredentialsReveal
+            : ProjectPermissions.ProjectAccountsProxyCredentialsUpdate;
     }
 
     return ProjectPermissions.ProjectWorkersOperate;

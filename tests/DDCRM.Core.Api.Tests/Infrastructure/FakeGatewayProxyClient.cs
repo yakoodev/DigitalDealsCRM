@@ -5,6 +5,8 @@ namespace DDCRM.Core.Api.Tests.Infrastructure;
 
 public sealed class FakeGatewayProxyClient : IGatewayProxyClient
 {
+    private const string ProxyCredentialsRevealAction = "ext.account.proxy-credentials.reveal";
+
     public List<GatewayProxyCall> Calls { get; } = [];
 
     public Task<JsonElement> InvokeAccountApiActionAsync(
@@ -20,6 +22,28 @@ public sealed class FakeGatewayProxyClient : IGatewayProxyClient
             : payload.ToDictionary(x => x.Key, x => ConvertElement(x.Value), StringComparer.Ordinal);
 
         Calls.Add(new GatewayProxyCall(routeKey, action, authorizationHeader, idempotencyKey, payloadData));
+
+        if (string.Equals(action, ProxyCredentialsRevealAction, StringComparison.Ordinal))
+        {
+            var suffix = payloadData.TryGetValue("accountId", out var accountIdValue)
+                ? accountIdValue?.ToString() ?? "unknown"
+                : "unknown";
+
+            var secretSuffix = suffix.Length >= 6 ? suffix[..6] : suffix;
+
+            var revealResult = new Dictionary<string, object?>
+            {
+                ["proxyConfig"] = new Dictionary<string, object?>
+                {
+                    ["host"] = "proxy.reveal.internal",
+                    ["port"] = 8443,
+                    ["login"] = "reveal-login",
+                    ["password"] = $"secret-{secretSuffix}",
+                },
+            };
+
+            return Task.FromResult(JsonSerializer.SerializeToElement(revealResult));
+        }
 
         var result = new Dictionary<string, object?>
         {

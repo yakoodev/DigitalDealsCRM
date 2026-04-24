@@ -20,6 +20,7 @@
 - `ext.account.lifecycle.*` — extension-операции lifecycle аккаунта (чувствительные)
 - `ext.account.proxy-credentials.*` — extension-операции управления proxy credentials (чувствительные)
 - `ext.test.*` — симуляторные extension-операции только для non-production контуров
+- `ext.account.proxy-credentials.apply` — технический action синхронизации credentials в worker state storage (service-to-service)
 
 ## 3. Политика использования
 - типовые операции должны реализовываться ресурсными endpoint-ами worker API;

@@ -181,6 +181,92 @@ public sealed class WorkerApiIntegrationTests
 
     [Fact]
     [Trait("Category", "Integration")]
+    public async Task WorkerProxyCredentialsApplyAndReveal_ReturnsStoredCredentials()
+    {
+        using var factory = new WorkerApiFactory();
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add("X-Service-Token", "worker-token-a");
+
+        var accountId = Guid.NewGuid();
+        var applyIdempotencyKey = Guid.NewGuid().ToString("N");
+
+        using var applyFirst = CreateMutatingRequest(
+            HttpMethod.Post,
+            "/internal/v1/worker/actions/ext.account.proxy-credentials.apply",
+            applyIdempotencyKey,
+            new
+            {
+                payload = new
+                {
+                    accountId,
+                    proxyConfig = new
+                    {
+                        host = "proxy.worker.internal",
+                        port = 8181,
+                        login = "worker-login",
+                        password = "worker-secret",
+                    },
+                },
+            });
+
+        using var applySecond = CreateMutatingRequest(
+            HttpMethod.Post,
+            "/internal/v1/worker/actions/ext.account.proxy-credentials.apply",
+            applyIdempotencyKey,
+            new
+            {
+                payload = new
+                {
+                    accountId,
+                    proxyConfig = new
+                    {
+                        host = "proxy.worker.internal",
+                        port = 8181,
+                        login = "worker-login",
+                        password = "worker-secret",
+                    },
+                },
+            });
+
+        var applyFirstResponse = await client.SendAsync(applyFirst);
+        var applySecondResponse = await client.SendAsync(applySecond);
+
+        Assert.Equal(HttpStatusCode.OK, applyFirstResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, applySecondResponse.StatusCode);
+
+        var stored = factory.FindProxyCredentials(accountId);
+        Assert.NotNull(stored);
+        Assert.Equal("proxy.worker.internal", stored!.Host);
+        Assert.Equal(8181, stored.Port);
+        Assert.Equal("worker-login", stored.Login);
+        Assert.Equal("worker-secret", stored.Password);
+
+        using var revealRequest = CreateMutatingRequest(
+            HttpMethod.Post,
+            "/internal/v1/worker/actions/ext.account.proxy-credentials.reveal",
+            Guid.NewGuid().ToString("N"),
+            new
+            {
+                payload = new
+                {
+                    accountId,
+                    reason = "audit support",
+                },
+            });
+
+        var revealResponse = await client.SendAsync(revealRequest);
+        Assert.Equal(HttpStatusCode.OK, revealResponse.StatusCode);
+
+        using var revealJson = JsonDocument.Parse(await revealResponse.Content.ReadAsStringAsync());
+        var proxyConfig = revealJson.RootElement.GetProperty("result").GetProperty("proxyConfig");
+        Assert.Equal("proxy.worker.internal", proxyConfig.GetProperty("host").GetString());
+        Assert.Equal(8181, proxyConfig.GetProperty("port").GetInt32());
+        Assert.Equal("worker-login", proxyConfig.GetProperty("login").GetString());
+        Assert.Equal("worker-secret", proxyConfig.GetProperty("password").GetString());
+    }
+
+    [Fact]
+    [Trait("Category", "Integration")]
     public async Task WorkerScenario_AuthFail_ReturnsWorkerAuthFailed()
     {
         using var factory = new WorkerApiFactory(new Dictionary<string, string?>

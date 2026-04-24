@@ -55,4 +55,11 @@ public sealed class WorkerApiFactory : WebApplicationFactory<Program>
         var dbContext = scope.ServiceProvider.GetRequiredService<WorkerDbContext>();
         return dbContext.Listings.AsNoTracking().SingleOrDefault(x => x.Id == listingId);
     }
+
+    public WorkerProxyCredentialsEntity? FindProxyCredentials(Guid accountId)
+    {
+        using var scope = Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<WorkerDbContext>();
+        return dbContext.ProxyCredentials.AsNoTracking().SingleOrDefault(x => x.AccountId == accountId);
+    }
 }

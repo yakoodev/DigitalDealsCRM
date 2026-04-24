@@ -42,6 +42,8 @@ public sealed class AccountsManagerApiIntegrationTests
         Assert.Equal(1, afterCreate.RouteVersion);
         Assert.True(afterCreate.ProxyConfigured);
         Assert.Single(factory.RouteRegistryClient.Upserts);
+        Assert.Single(factory.WorkerControlClient.ApplyCalls);
+        Assert.Equal(accountId, factory.WorkerControlClient.ApplyCalls[0].AccountId);
 
         using var updateRequest = CreateMutatingRequest(
             "/internal/v1/lifecycle/update",
@@ -58,6 +60,8 @@ public sealed class AccountsManagerApiIntegrationTests
 
         var updateResponse = await client.SendAsync(updateRequest);
         Assert.Equal(HttpStatusCode.Accepted, updateResponse.StatusCode);
+        Assert.Equal(2, factory.WorkerControlClient.ApplyCalls.Count);
+        Assert.Equal(accountId, factory.WorkerControlClient.ApplyCalls[1].AccountId);
 
         using var migrateRequest = CreateMutatingRequest(
             "/internal/v1/lifecycle/migrate",
@@ -142,6 +146,7 @@ public sealed class AccountsManagerApiIntegrationTests
         Assert.Equal(HttpStatusCode.Accepted, firstResponse.StatusCode);
         Assert.Equal(HttpStatusCode.Accepted, secondResponse.StatusCode);
         Assert.Single(factory.RouteRegistryClient.Upserts);
+        Assert.Single(factory.WorkerControlClient.ApplyCalls);
         Assert.Equal(1, factory.CountLifecycleAudits(accountId));
 
         using var firstJson = JsonDocument.Parse(await firstResponse.Content.ReadAsStringAsync());
@@ -189,6 +194,7 @@ public sealed class AccountsManagerApiIntegrationTests
 
         var updateResponse = await client.SendAsync(updateRequest);
         Assert.Equal(HttpStatusCode.BadRequest, updateResponse.StatusCode);
+        Assert.Single(factory.WorkerControlClient.ApplyCalls);
 
         using var payload = JsonDocument.Parse(await updateResponse.Content.ReadAsStringAsync());
         Assert.Equal("VALIDATION_ERROR", payload.RootElement.GetProperty("errorCode").GetString());
@@ -247,6 +253,40 @@ public sealed class AccountsManagerApiIntegrationTests
         Assert.Equal(HttpStatusCode.BadGateway, response.StatusCode);
         Assert.Null(factory.FindPlacement(accountId));
         Assert.Equal(0, factory.CountLifecycleAudits(accountId));
+        Assert.Empty(factory.WorkerControlClient.ApplyCalls);
+    }
+
+    [Fact]
+    [Trait("Category", "Integration")]
+    public async Task LifecycleCreate_WhenWorkerControlFails_DoesNotPersistPlacement()
+    {
+        using var factory = new AccountsManagerApiFactory();
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add("X-Service-Token", "internal-token-a");
+
+        factory.WorkerControlClient.FailNextApplyRequest();
+
+        var accountId = Guid.NewGuid();
+        using var request = CreateMutatingRequest(
+            "/internal/v1/lifecycle/create",
+            Guid.NewGuid().ToString("N"),
+            new
+            {
+                accountId,
+                projectId = Guid.NewGuid(),
+                platform = "yandex-market",
+                proxyConfig = new
+                {
+                    host = "127.0.0.1",
+                    port = 38080,
+                },
+            });
+
+        var response = await client.SendAsync(request);
+        Assert.Equal(HttpStatusCode.BadGateway, response.StatusCode);
+        Assert.Null(factory.FindPlacement(accountId));
+        Assert.Equal(0, factory.CountLifecycleAudits(accountId));
+        Assert.Single(factory.RouteRegistryClient.Upserts);
     }
 
     [Fact]

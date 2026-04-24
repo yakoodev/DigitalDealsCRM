@@ -111,6 +111,48 @@ public sealed class GatewayApiIntegrationTests
 
     [Fact]
     [Trait("Category", "Integration")]
+    public async Task ProxyAccountApiAction_ProxyApplyAction_UsesProxyUpdatePermission()
+    {
+        using var factory = new GatewayApiFactory();
+        using var client = factory.CreateClient();
+
+        factory.RouteRegistryClient.NextRoute = new RouteResolution(
+            "rk.alpha",
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            1,
+            new WorkerBinding("srv-1", "worker-1", "pod-1"));
+
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", factory.CreateToken(Guid.NewGuid()));
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/v1/account-api/rk.alpha/ext.account.proxy-credentials.apply")
+        {
+            Content = JsonContent.Create(new
+            {
+                payload = new
+                {
+                    accountId = Guid.NewGuid(),
+                    proxyConfig = new
+                    {
+                        host = "proxy.internal",
+                        port = 8081,
+                        login = "proxy-user",
+                        password = "proxy-pass",
+                    },
+                },
+            }),
+        };
+        request.Headers.Add("Idempotency-Key", Guid.NewGuid().ToString("N"));
+
+        var response = await client.SendAsync(request);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        Assert.NotNull(factory.IamClient.LastCall);
+        Assert.Equal(ProjectPermissions.ProjectAccountsProxyCredentialsUpdate, factory.IamClient.LastCall!.Permission);
+    }
+
+    [Fact]
+    [Trait("Category", "Integration")]
     public async Task ProxyAccountApiAction_RouteNotFound_ReturnsNotFound()
     {
         using var factory = new GatewayApiFactory();

@@ -1,4 +1,5 @@
 using DDCRM.AccountsManager.Api.RouteRegistry;
+using DDCRM.AccountsManager.Api.Worker;
 using DDCRM.AccountsManager.Persistence;
 using DDCRM.AccountsManager.Persistence.Entities;
 using Microsoft.AspNetCore.Hosting;
@@ -13,6 +14,7 @@ namespace DDCRM.AccountsManager.Api.Tests.Infrastructure;
 public sealed class AccountsManagerApiFactory : WebApplicationFactory<Program>
 {
     public RecordingRouteRegistryClient RouteRegistryClient { get; } = new();
+    public RecordingWorkerControlClient WorkerControlClient { get; } = new();
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
@@ -26,6 +28,7 @@ public sealed class AccountsManagerApiFactory : WebApplicationFactory<Program>
                 ["TEST_USE_INMEMORY_DB"] = "true",
                 ["TEST_INMEMORY_DB_NAME"] = $"accounts-manager-tests-{Guid.NewGuid():N}",
                 ["ROUTE_REGISTRY_CLIENT_ENABLED"] = "false",
+                ["WORKER_CONTROL_CLIENT_ENABLED"] = "false",
             });
         });
 
@@ -33,9 +36,14 @@ public sealed class AccountsManagerApiFactory : WebApplicationFactory<Program>
         {
             services.RemoveAll<IRouteRegistryClient>();
             services.RemoveAll<RecordingRouteRegistryClient>();
+            services.RemoveAll<IWorkerControlClient>();
+            services.RemoveAll<RecordingWorkerControlClient>();
 
             services.AddSingleton(RouteRegistryClient);
             services.AddSingleton<IRouteRegistryClient>(serviceProvider => serviceProvider.GetRequiredService<RecordingRouteRegistryClient>());
+
+            services.AddSingleton(WorkerControlClient);
+            services.AddSingleton<IWorkerControlClient>(serviceProvider => serviceProvider.GetRequiredService<RecordingWorkerControlClient>());
         });
     }
 
