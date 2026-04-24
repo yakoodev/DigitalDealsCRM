@@ -414,3 +414,43 @@
 - `Exception`: n/a
 - `Changed files`: `docs/implementation/patchnotes.md`
 - `Date`: `2026-04-24`
+
+## Wave 4 (Фаза 3, Docker Runtime + RBAC UI baseline)
+
+### W4-T01
+- `Task ID`: `W4-T01`
+- `WP`: `cross-cutting`, `WP-OPS-READY`
+- `Status`: `started`
+- `Operations`: docker runtime baseline для всех API сервисов + PostgreSQL + UI контейнер, единый `docker-compose.yml`, инициализация отдельных БД
+- `Gates`: n/a
+- `Exception`: n/a
+- `Changed files`: `docker-compose.yml`, `docker/*`, `.dockerignore`
+- `Date`: `2026-04-24`
+
+- `Task ID`: `W4-T01`
+- `WP`: `cross-cutting`, `WP-OPS-READY`
+- `Status`: `completed`
+- `Operations`: добавлены `docker/api.Dockerfile`, `docker/ui.Dockerfile`, compose-оркестрация сервисов (`core/iam/route/accounts-manager/gateway/billing/entitlement/worker/ui`) и postgres init script с отдельными БД; добавлен runtime README
+- `Gates`: `docker compose config`, `docker compose build core-api ui` (локальные зелёные прогоны)
+- `Exception`: n/a
+- `Changed files`: `docker-compose.yml`, `docker/api.Dockerfile`, `docker/ui.Dockerfile`, `docker/postgres/init/01-create-ddcrm-databases.sql`, `docker/README.md`, `.dockerignore`, `docs/implementation/patchnotes.md`
+- `Date`: `2026-04-24`
+
+### W4-T02
+- `Task ID`: `W4-T02`
+- `WP`: `WP-RBAC-UI`
+- `Status`: `started`
+- `Operations`: bootstrap базового UI на `Next.js App Router + TypeScript + TanStack Query + Orval`; реализовать role-aware guards для проектов/аккаунтов/proxy credentials/billing/gateway action
+- `Gates`: `frontend:lint`, `frontend:build`
+- `Exception`: n/a
+- `Changed files`: `src/ddcrm-rbac-ui/*`
+- `Date`: `2026-04-24`
+
+- `Task ID`: `W4-T02`
+- `WP`: `WP-RBAC-UI`
+- `Status`: `completed`
+- `Operations`: создан frontend-проект `src/ddcrm-rbac-ui`; Orval-генерация клиента из `openapi-external.yaml`; TanStack Query data-layer; UI-секции проектов/аккаунтов/proxy credentials/billing/gateway action; role-aware guard по `access-control-matrix` (скрытие финансовых и чувствительных операций для moderator)
+- `Gates`: `npm run generate:api`, `npm run lint`, `npm run build` (локальные зелёные прогоны)
+- `Exception`: n/a
+- `Changed files`: `src/ddcrm-rbac-ui/*`, `docs/implementation/patchnotes.md`
+- `Date`: `2026-04-24`
