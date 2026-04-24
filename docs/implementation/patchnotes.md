@@ -292,6 +292,25 @@
 - `Changed files`: `src/DDCRM.Core.Api/Program.cs`, `src/DDCRM.Core.Api/Billing/*`, `tests/DDCRM.Core.Api.Tests/*`, `docs/implementation/patchnotes.md`
 - `Date`: `2026-04-24`
 
+### W3-T03
+- `Task ID`: `W3-T03`
+- `WP`: `WP-ENTITLEMENT`
+- `Status`: `started`
+- `Operations`: bootstrap Entitlement API/Persistence/Test projects + internal entitlement operations implementation (`check`, `recalculate`, `override`, `get`), persisted idempotency, service-auth/token-isolation
+- `Gates`: `OAG-TEST-CONTRACT-SERVICES`, `OAG-TEST-INTERNAL-SERVICE-AUTH`, `OAG-TEST-SERVICE-AUTH-TOKEN-ISOLATION`
+- `Exception`: n/a
+- `Changed files`: `DigitalDealsCRM.slnx`, `src/DDCRM.Entitlement.Api/*`, `src/DDCRM.Entitlement.Persistence/*`, `tests/DDCRM.Entitlement.Api.Tests/*`, `eng/contracts.ps1`, `eng/contracts.sh`, `docs/implementation/patchnotes.md`
+- `Date`: `2026-04-24`
+
+- `Task ID`: `W3-T03`
+- `WP`: `WP-ENTITLEMENT`
+- `Status`: `completed`
+- `Operations`: реализованы `entitlementCheck`, `entitlementRecalculate`, `entitlementOverride`, `entitlementGet`; добавлены entitlement persistence-модели + EF migration; idempotency для mutating операций; integration/security tests; entitlement добавлен в `contracts:test:services`
+- `Gates`: `OAG-TEST-CONTRACT-SERVICES`, `OAG-TEST-INTERNAL-SERVICE-AUTH`, `OAG-TEST-SERVICE-AUTH-TOKEN-ISOLATION` (зелёные локальные прогоны)
+- `Exception`: n/a
+- `Changed files`: `DigitalDealsCRM.slnx`, `src/DDCRM.Entitlement.Api/*`, `src/DDCRM.Entitlement.Persistence/*`, `tests/DDCRM.Entitlement.Api.Tests/*`, `eng/contracts.ps1`, `eng/contracts.sh`, `docs/implementation/patchnotes.md`
+- `Date`: `2026-04-24`
+
 - `Task ID`: `W1-T09`
 - `WP`: `process`
 - `Status`: `completed`

@@ -39,6 +39,7 @@ switch ($Command) {
         Invoke-Step -Title 'contracts:test:services (route)' -Action { dotnet test tests/DDCRM.RouteRegistry.Api.Tests/DDCRM.RouteRegistry.Api.Tests.csproj --configuration Release }
         Invoke-Step -Title 'contracts:test:services (accounts-manager)' -Action { dotnet test tests/DDCRM.AccountsManager.Api.Tests/DDCRM.AccountsManager.Api.Tests.csproj --configuration Release }
         Invoke-Step -Title 'contracts:test:services (billing)' -Action { dotnet test tests/DDCRM.Billing.Api.Tests/DDCRM.Billing.Api.Tests.csproj --configuration Release }
+        Invoke-Step -Title 'contracts:test:services (entitlement)' -Action { dotnet test tests/DDCRM.Entitlement.Api.Tests/DDCRM.Entitlement.Api.Tests.csproj --configuration Release }
         Invoke-Step -Title 'contracts:test:services (gateway)' -Action { dotnet test tests/DDCRM.Gateway.Api.Tests/DDCRM.Gateway.Api.Tests.csproj --configuration Release }
     }
     'contracts:test:worker' {

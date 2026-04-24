@@ -34,6 +34,7 @@ case "${command}" in
     run "contracts:test:services (route)" dotnet test tests/DDCRM.RouteRegistry.Api.Tests/DDCRM.RouteRegistry.Api.Tests.csproj --configuration Release
     run "contracts:test:services (accounts-manager)" dotnet test tests/DDCRM.AccountsManager.Api.Tests/DDCRM.AccountsManager.Api.Tests.csproj --configuration Release
     run "contracts:test:services (billing)" dotnet test tests/DDCRM.Billing.Api.Tests/DDCRM.Billing.Api.Tests.csproj --configuration Release
+    run "contracts:test:services (entitlement)" dotnet test tests/DDCRM.Entitlement.Api.Tests/DDCRM.Entitlement.Api.Tests.csproj --configuration Release
     run "contracts:test:services (gateway)" dotnet test tests/DDCRM.Gateway.Api.Tests/DDCRM.Gateway.Api.Tests.csproj --configuration Release
     ;;
   contracts:test:worker)
