@@ -24,6 +24,7 @@
 | Тема | Канонический документ |
 |---|---|
 | Общая тест-стратегия | `docs/testing/test-strategy.md` |
+| Профиль запуска контрактных gate в CI | `docs/testing/contract-gates-execution.md` |
 | Детальные проверки internal API контракта | `docs/testing/internal-contract-checklist.md` |
 | Детальные проверки worker API контракта | `docs/testing/worker-contract-checklist.md` |
 

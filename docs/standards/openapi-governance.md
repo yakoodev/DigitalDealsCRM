@@ -61,6 +61,9 @@
 - `OAG-TEST-SERVICE-AUTH-TOKEN-ISOLATION`: internal и worker service-auth токены изолированы по `docs/standards/runtime-configuration.md`;
 - `OAG-TEST-CORS-EXTERNAL`: CORS/preflight проверки для `external` API зелёные.
 
+Профиль запуска и обязательность gate по этапам CI определяются в:
+- `docs/testing/contract-gates-execution.md`
+
 ## 7. Процесс изменения контракта
 - обновить соответствующую OpenAPI-спеку;
 - при изменении runtime-настроек обновить соответствующий env-шаблон;
@@ -72,6 +75,7 @@
 ## 8. Связанные документы
 - `docs/api-contracts/api-contracts.md`
 - `docs/testing/test-strategy.md`
+- `docs/testing/contract-gates-execution.md`
 - `docs/testing/internal-contract-checklist.md`
 - `docs/testing/worker-contract-checklist.md`
 - `docs/spec/technical-specification.md`

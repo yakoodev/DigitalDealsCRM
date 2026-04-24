@@ -4,7 +4,7 @@
 - `docs/standards/quality-gates.md`
 
 ## 0. Целевые SLO и пороги инцидентов
-- инцидентные пороги: `QG-INC-SEV1-5XX-RATE`, `QG-INC-SEV1-ROUTE-NOT-FOUND-RATE`, `QG-INC-SEV1-WEBHOOK-OLDEST-AGE`, `QG-INC-SEV2-GW-CHECK-P95`, `QG-INC-SEV2-IAM-CACHE-P99`
+- инцидентные пороги: `QG-INC-SEV1-5XX-RATE`, `QG-INC-SEV1-ROUTE-NOT-FOUND-RATE`, `QG-INC-SEV1-WEBHOOK-OLDEST-AGE`, `QG-INC-SEV2-GW-CHECK-P95`, `QG-INC-SEV2-IAM-CACHE-P99`, `QG-INC-SEV2-CORS-PREFLIGHT-FAIL-RATE`, `QG-INC-SEV2-INTERNAL-AUTH-FAIL-RATE`, `QG-INC-SEV2-WORKER-AUTH-FAIL-RATE`
 - операционные SLA реакции: `QG-OPS-MTTA-SEV1`, `QG-OPS-MITIGATION-START-SEV1`
 
 ## 1. Инцидент: недоступен Gateway
@@ -87,6 +87,7 @@
 - при необходимости вернуть последнюю валидную CORS-конфигурацию
 
 ### Критерий восстановления
+- `QG-REC-CORS-PREFLIGHT-FAIL-RATE`
 - preflight-запросы завершаются успешно для разрешённых origins
 - браузерные запросы к external API проходят без CORS-блокировки
 
@@ -104,6 +105,8 @@
 - при необходимости выполнить controlled token-rotation по `docs/operations/service-auth-rotation-playbook.md`
 
 ### Критерий восстановления
+- `QG-REC-INTERNAL-AUTH-FAIL-RATE`
+- `QG-REC-WORKER-AUTH-FAIL-RATE`
 - internal API принимает запросы с валидным `X-Service-Token`
 - worker API принимает запросы с валидным `X-Service-Token`
 - нет повторного роста `WORKER_AUTH_FAILED`

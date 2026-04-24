@@ -59,6 +59,7 @@
 - contract-tests между Core/Gateway/AM/Billing/Entitlement
 - contract-tests строятся от `docs/api-contracts/openapi-external.yaml`, `docs/api-contracts/openapi-internal.yaml`, `docs/api-contracts/openapi-worker.yaml`
 - contract quality gates выполняются по ID из `docs/standards/openapi-governance.md` (`OAG-*`)
+- порядок запуска contract quality gates в CI определяется в `docs/testing/contract-gates-execution.md`
 - RBAC-тесты строятся от `docs/standards/access-control-matrix.md`
 - детальный набор internal contract-checks поддерживается в `docs/testing/internal-contract-checklist.md`
 - для worker API обязательны: schema validation запросов/ответов и backward compatibility проверки

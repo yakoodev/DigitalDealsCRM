@@ -53,6 +53,7 @@
 ## 6. Связанные документы
 - `docs/spec/technical-specification.md`
 - `docs/testing/test-strategy.md`
+- `docs/testing/contract-gates-execution.md`
 - `docs/testing/internal-contract-checklist.md`
 - `docs/testing/worker-contract-checklist.md`
 - `docs/standards/openapi-governance.md`

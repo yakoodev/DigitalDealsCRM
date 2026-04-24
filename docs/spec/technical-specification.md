@@ -143,4 +143,5 @@
 - ERD: `docs/data-model/erd.md`
 - state machine: `docs/state-machines/subscription-state-machine.md`
 - тесты: `docs/testing/test-strategy.md`
+- запуск contract quality gates: `docs/testing/contract-gates-execution.md`
 - эксплуатация: `docs/operations/*`

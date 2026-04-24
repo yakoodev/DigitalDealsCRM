@@ -33,6 +33,9 @@
 - потеря консистентности подписки/entitlement
 - `QG-INC-SEV1-ROUTE-NOT-FOUND-RATE`
 - `QG-INC-SEV2-GW-CHECK-P95`
+- `QG-INC-SEV2-CORS-PREFLIGHT-FAIL-RATE`
+- `QG-INC-SEV2-INTERNAL-AUTH-FAIL-RATE`
+- `QG-INC-SEV2-WORKER-AUTH-FAIL-RATE`
 - `QG-INC-SEV1-WEBHOOK-OLDEST-AGE`
 - нарушение `QG-SLO-ENT-RECALC-P99`
 - нарушение финансовых ограничений ролей
@@ -44,6 +47,7 @@
 - запустить reconciliation платежей и entitlement
 - подтвердить восстановление ключевых пользовательских сценариев
 - подтвердить recovery-критерии `QG-REC-GW-5XX-RATE`, `QG-REC-ROUTE-NOT-FOUND-RATE`, `QG-REC-WEBHOOK-P95`, `QG-REC-ENT-RECALC-P95`
+- подтвердить recovery-критерии `QG-REC-CORS-PREFLIGHT-FAIL-RATE`, `QG-REC-INTERNAL-AUTH-FAIL-RATE`, `QG-REC-WORKER-AUTH-FAIL-RATE`
 
 ## 6. Post-rollback
 - зафиксировать incident report

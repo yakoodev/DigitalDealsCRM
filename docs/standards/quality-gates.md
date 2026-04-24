@@ -58,6 +58,9 @@
 | `QG-INC-SEV1-WEBHOOK-OLDEST-AGE` | Sev-1 | возраст старейшего webhook `> 300s` |
 | `QG-INC-SEV2-GW-CHECK-P95` | Sev-2 | Gateway check p95 `> 250ms` за `10m` |
 | `QG-INC-SEV2-IAM-CACHE-P99` | Sev-2 | IAM cache invalidation p99 `> 30s` за `10m` |
+| `QG-INC-SEV2-CORS-PREFLIGHT-FAIL-RATE` | Sev-2 | CORS preflight fail rate `> 2%` за `10m` |
+| `QG-INC-SEV2-INTERNAL-AUTH-FAIL-RATE` | Sev-2 | internal API `401/403 > 1%` за `10m` |
+| `QG-INC-SEV2-WORKER-AUTH-FAIL-RATE` | Sev-2 | worker API `401/403 > 1%` за `10m` |
 
 ## 7. Критерии восстановления после инцидента/rollback
 | ID | Критерий |
@@ -70,6 +73,9 @@
 | `QG-REC-WEBHOOK-OLDEST-AGE` | возраст старейшего webhook `<= 60s` |
 | `QG-REC-ENT-RECALC-P95` | entitlement recalculation p95 `<= 30s` |
 | `QG-REC-FALSE-BLOCKED-RATE` | ошибочно заблокированные разрешённые операции `< 0.1%` за `30m` |
+| `QG-REC-CORS-PREFLIGHT-FAIL-RATE` | CORS preflight fail rate `< 0.2%` за `15m` |
+| `QG-REC-INTERNAL-AUTH-FAIL-RATE` | internal API `401/403 < 0.2%` за `15m` |
+| `QG-REC-WORKER-AUTH-FAIL-RATE` | worker API `401/403 < 0.2%` за `15m` |
 
 ## 8. Операционные SLA реакции
 | ID | Цель |
