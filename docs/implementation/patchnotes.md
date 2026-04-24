@@ -330,6 +330,25 @@
 - `Changed files`: `src/DDCRM.Billing.Api/*`, `tests/DDCRM.Billing.Api.Tests/*`, `docs/implementation/patchnotes.md`
 - `Date`: `2026-04-24`
 
+### W3-T05
+- `Task ID`: `W3-T05`
+- `WP`: `WP-PLATFORM-CORE`, `WP-ACCOUNTS-MANAGER`
+- `Status`: `started`
+- `Operations`: реализовать external account lifecycle в Core API (`createAccount`, `updateAccount`, `deleteAccount`, `getAccountProxyCredentialsMasked`, `updateAccountProxyCredentials`) через internal Accounts Manager client, idempotency, RBAC и аудит update proxy credentials
+- `Gates`: `OAG-TEST-CONTRACT-SERVICES`, `OAG-TEST-INTERNAL-SERVICE-AUTH`, `OAG-TEST-SERVICE-AUTH-TOKEN-ISOLATION`
+- `Exception`: n/a
+- `Changed files`: `src/DDCRM.Core.Api/*`, `src/DDCRM.Core.Persistence/*`, `tests/DDCRM.Core.Api.Tests/*`, `docs/implementation/patchnotes.md`
+- `Date`: `2026-04-24`
+
+- `Task ID`: `W3-T05`
+- `WP`: `WP-PLATFORM-CORE`, `WP-ACCOUNTS-MANAGER`
+- `Status`: `completed`
+- `Operations`: добавлен `AccountsManagerHttpClient` в Core API; реализованы external handlers `createAccount/updateAccount/deleteAccount/getAccountProxyCredentialsMasked/updateAccountProxyCredentials`; добавлен persisted аудит `proxy_credentials_audits`; расширены integration/security тесты Core на account lifecycle и proxy credentials update
+- `Gates`: `OAG-TEST-CONTRACT-SERVICES`, `OAG-TEST-INTERNAL-SERVICE-AUTH`, `OAG-TEST-SERVICE-AUTH-TOKEN-ISOLATION` (зелёные локальные прогоны)
+- `Exception`: n/a
+- `Changed files`: `src/DDCRM.Core.Api/*`, `src/DDCRM.Core.Persistence/*`, `tests/DDCRM.Core.Api.Tests/*`, `docs/implementation/patchnotes.md`
+- `Date`: `2026-04-24`
+
 - `Task ID`: `W1-T09`
 - `WP`: `process`
 - `Status`: `completed`

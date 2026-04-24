@@ -1,13 +1,16 @@
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
+using DDCRM.Core.Api.AccountsManager;
 using DDCRM.Core.Api.Billing;
+using DDCRM.Core.Persistence;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.IdentityModel.Tokens;
+using Microsoft.EntityFrameworkCore;
 
 namespace DDCRM.Core.Api.Tests.Infrastructure;
 
@@ -18,6 +21,7 @@ public sealed class CoreApiFactory : WebApplicationFactory<Program>
     private const string SigningKey = "ddcrm-tests-signing-key-which-is-long-enough-123";
 
     public FakeBillingClient BillingClient { get; } = new();
+    public FakeAccountsManagerClient AccountsManagerClient { get; } = new();
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
@@ -44,9 +48,14 @@ public sealed class CoreApiFactory : WebApplicationFactory<Program>
         {
             services.RemoveAll<IBillingClient>();
             services.RemoveAll<FakeBillingClient>();
+            services.RemoveAll<IAccountsManagerClient>();
+            services.RemoveAll<FakeAccountsManagerClient>();
 
             services.AddSingleton(BillingClient);
             services.AddSingleton<IBillingClient>(serviceProvider => serviceProvider.GetRequiredService<FakeBillingClient>());
+
+            services.AddSingleton(AccountsManagerClient);
+            services.AddSingleton<IAccountsManagerClient>(serviceProvider => serviceProvider.GetRequiredService<FakeAccountsManagerClient>());
         });
     }
 
@@ -70,5 +79,12 @@ public sealed class CoreApiFactory : WebApplicationFactory<Program>
             signingCredentials: credentials);
 
         return new JwtSecurityTokenHandler().WriteToken(token);
+    }
+
+    public int CountProxyCredentialsAudits(Guid projectId, Guid accountId)
+    {
+        using var scope = Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<CoreDbContext>();
+        return dbContext.ProxyCredentialsAudits.AsNoTracking().Count(x => x.ProjectId == projectId && x.AccountId == accountId);
     }
 }

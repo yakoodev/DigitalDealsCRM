@@ -15,6 +15,8 @@ public sealed class CoreDbContext(DbContextOptions<CoreDbContext> options)
 
     public DbSet<MembershipCacheInvalidationAuditEntity> MembershipCacheInvalidationAudits => Set<MembershipCacheInvalidationAuditEntity>();
 
+    public DbSet<ProxyCredentialsAuditEntity> ProxyCredentialsAudits => Set<ProxyCredentialsAuditEntity>();
+
     public DbSet<IdempotencyRecord> IdempotencyRecords => Set<IdempotencyRecord>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -60,6 +62,17 @@ public sealed class CoreDbContext(DbContextOptions<CoreDbContext> options)
             entity.Property(x => x.Reason).HasMaxLength(500).IsRequired();
             entity.Property(x => x.CreatedAtUtc).HasDefaultValueSql("NOW()");
             entity.HasIndex(x => x.CreatedAtUtc);
+        });
+
+        modelBuilder.Entity<ProxyCredentialsAuditEntity>(entity =>
+        {
+            entity.ToTable("proxy_credentials_audits");
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Operation).HasMaxLength(32).IsRequired();
+            entity.Property(x => x.Reason).HasMaxLength(500).IsRequired();
+            entity.Property(x => x.RequestId).HasMaxLength(128).IsRequired();
+            entity.Property(x => x.CreatedAtUtc).HasDefaultValueSql("NOW()");
+            entity.HasIndex(x => new { x.ProjectId, x.AccountId, x.CreatedAtUtc });
         });
 
         modelBuilder.ConfigureIdempotencyRecord();

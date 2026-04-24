@@ -88,6 +88,216 @@ public sealed class CoreApiIntegrationTests(CoreApiFactory factory) : IClassFixt
 
     [Fact]
     [Trait("Category", "Integration")]
+    public async Task CreateAccount_WithSameIdempotencyKey_IsIdempotent()
+    {
+        factory.AccountsManagerClient.Reset();
+
+        using var client = CreateAuthorizedClient(Guid.NewGuid());
+        var projectId = await CreateProjectAsync(client, "Accounts-A");
+        var idempotencyKey = Guid.NewGuid().ToString("N");
+
+        var payload = new
+        {
+            platform = "ozon",
+            displayName = "Store A",
+            proxyConfig = new
+            {
+                host = "proxy-a.internal",
+                port = 8080,
+                login = "seller-a",
+                password = "secret-a",
+            },
+        };
+
+        var first = await SendJsonAsync(client, HttpMethod.Post, $"/v1/projects/{projectId}/accounts", idempotencyKey, payload);
+        var second = await SendJsonAsync(client, HttpMethod.Post, $"/v1/projects/{projectId}/accounts", idempotencyKey, payload);
+
+        Assert.Equal(HttpStatusCode.Created, first.StatusCode);
+        Assert.Equal(HttpStatusCode.Created, second.StatusCode);
+        Assert.Single(factory.AccountsManagerClient.CreateCalls);
+
+        using var firstJson = JsonDocument.Parse(await first.Content.ReadAsStringAsync());
+        using var secondJson = JsonDocument.Parse(await second.Content.ReadAsStringAsync());
+
+        var firstAccount = firstJson.RootElement.GetProperty("account");
+        var secondAccount = secondJson.RootElement.GetProperty("account");
+
+        Assert.Equal(firstAccount.GetProperty("id").GetGuid(), secondAccount.GetProperty("id").GetGuid());
+        Assert.Equal("ozon", firstAccount.GetProperty("platform").GetString());
+        Assert.Equal("Store A", firstAccount.GetProperty("displayName").GetString());
+        Assert.True(firstAccount.GetProperty("proxyConfigured").GetBoolean());
+    }
+
+    [Fact]
+    [Trait("Category", "Integration")]
+    public async Task UpdateAndDeleteAccount_WorksWithIdempotency()
+    {
+        factory.AccountsManagerClient.Reset();
+
+        using var client = CreateAuthorizedClient(Guid.NewGuid());
+        var projectId = await CreateProjectAsync(client, "Accounts-B");
+        var accountId = await CreateAccountAsync(client, projectId, "Store B");
+
+        var updateResponse = await SendJsonAsync(
+            client,
+            HttpMethod.Patch,
+            $"/v1/projects/{projectId}/accounts/{accountId}",
+            Guid.NewGuid().ToString("N"),
+            new
+            {
+                displayName = "Store B2",
+                businessStatus = "paused",
+            });
+
+        Assert.Equal(HttpStatusCode.OK, updateResponse.StatusCode);
+        Assert.Empty(factory.AccountsManagerClient.UpdateCalls);
+
+        using var updateJson = JsonDocument.Parse(await updateResponse.Content.ReadAsStringAsync());
+        var account = updateJson.RootElement.GetProperty("account");
+        Assert.Equal("Store B2", account.GetProperty("displayName").GetString());
+        Assert.Equal("paused", account.GetProperty("businessStatus").GetString());
+
+        var deleteIdempotencyKey = Guid.NewGuid().ToString("N");
+        var firstDelete = await SendJsonAsync(
+            client,
+            HttpMethod.Delete,
+            $"/v1/projects/{projectId}/accounts/{accountId}",
+            deleteIdempotencyKey,
+            payload: null);
+
+        var secondDelete = await SendJsonAsync(
+            client,
+            HttpMethod.Delete,
+            $"/v1/projects/{projectId}/accounts/{accountId}",
+            deleteIdempotencyKey,
+            payload: null);
+
+        Assert.Equal(HttpStatusCode.OK, firstDelete.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, secondDelete.StatusCode);
+        Assert.Single(factory.AccountsManagerClient.DeleteCalls);
+
+        var listResponse = await client.GetAsync($"/v1/projects/{projectId}/accounts");
+        Assert.Equal(HttpStatusCode.OK, listResponse.StatusCode);
+
+        using var listJson = JsonDocument.Parse(await listResponse.Content.ReadAsStringAsync());
+        Assert.Empty(listJson.RootElement.GetProperty("items").EnumerateArray());
+    }
+
+    [Fact]
+    [Trait("Category", "Integration")]
+    public async Task ProxyCredentialsMaskedAndUpdate_Workflow()
+    {
+        factory.AccountsManagerClient.Reset();
+
+        using var client = CreateAuthorizedClient(Guid.NewGuid());
+        var projectId = await CreateProjectAsync(client, "Accounts-C");
+        var accountId = await CreateAccountAsync(client, projectId, "Store C");
+
+        var maskedResponse = await client.GetAsync($"/v1/projects/{projectId}/accounts/{accountId}/proxy-credentials");
+        Assert.Equal(HttpStatusCode.OK, maskedResponse.StatusCode);
+
+        using var maskedJson = JsonDocument.Parse(await maskedResponse.Content.ReadAsStringAsync());
+        var masked = maskedJson.RootElement.GetProperty("proxyCredentials");
+        Assert.True(masked.GetProperty("configured").GetBoolean());
+        Assert.Contains("***", masked.GetProperty("hostMasked").GetString());
+        Assert.Contains("***", masked.GetProperty("loginMasked").GetString());
+
+        var updateIdempotencyKey = Guid.NewGuid().ToString("N");
+        var firstUpdate = await SendJsonAsync(
+            client,
+            HttpMethod.Patch,
+            $"/v1/projects/{projectId}/accounts/{accountId}/proxy-credentials",
+            updateIdempotencyKey,
+            new
+            {
+                reason = "rotating proxy",
+                proxyConfig = new
+                {
+                    host = "proxy-new.internal",
+                    port = 8181,
+                    login = "seller-c-next",
+                    password = "secret-next",
+                },
+            });
+
+        var secondUpdate = await SendJsonAsync(
+            client,
+            HttpMethod.Patch,
+            $"/v1/projects/{projectId}/accounts/{accountId}/proxy-credentials",
+            updateIdempotencyKey,
+            new
+            {
+                reason = "rotating proxy",
+                proxyConfig = new
+                {
+                    host = "proxy-new.internal",
+                    port = 8181,
+                    login = "seller-c-next",
+                    password = "secret-next",
+                },
+            });
+
+        Assert.Equal(HttpStatusCode.OK, firstUpdate.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, secondUpdate.StatusCode);
+        Assert.Single(factory.AccountsManagerClient.UpdateCalls);
+        Assert.Equal(accountId, factory.AccountsManagerClient.UpdateCalls[0].AccountId);
+        Assert.Equal(8181, Convert.ToInt32(factory.AccountsManagerClient.UpdateCalls[0].ProxyConfig["port"]));
+        Assert.Equal(1, factory.CountProxyCredentialsAudits(projectId, accountId));
+
+        var updatedMaskedResponse = await client.GetAsync($"/v1/projects/{projectId}/accounts/{accountId}/proxy-credentials");
+        Assert.Equal(HttpStatusCode.OK, updatedMaskedResponse.StatusCode);
+
+        using var updatedMaskedJson = JsonDocument.Parse(await updatedMaskedResponse.Content.ReadAsStringAsync());
+        var updatedMasked = updatedMaskedJson.RootElement.GetProperty("proxyCredentials");
+        Assert.Contains("***", updatedMasked.GetProperty("hostMasked").GetString());
+        Assert.Contains("***", updatedMasked.GetProperty("loginMasked").GetString());
+    }
+
+    [Fact]
+    [Trait("Category", "Security")]
+    public async Task UpdateProxyCredentials_ModeratorRole_IsForbidden()
+    {
+        factory.AccountsManagerClient.Reset();
+
+        var ownerId = Guid.NewGuid();
+        var moderatorId = Guid.NewGuid();
+
+        using var ownerClient = CreateAuthorizedClient(ownerId);
+        var projectId = await CreateProjectAsync(ownerClient, "Accounts-D");
+        var accountId = await CreateAccountAsync(ownerClient, projectId, "Store D");
+
+        var addMemberResponse = await SendJsonAsync(
+            ownerClient,
+            HttpMethod.Post,
+            $"/v1/projects/{projectId}/members",
+            Guid.NewGuid().ToString("N"),
+            new { userId = moderatorId, role = "moderator" });
+        Assert.Equal(HttpStatusCode.OK, addMemberResponse.StatusCode);
+
+        using var moderatorClient = CreateAuthorizedClient(moderatorId);
+        var updateResponse = await SendJsonAsync(
+            moderatorClient,
+            HttpMethod.Patch,
+            $"/v1/projects/{projectId}/accounts/{accountId}/proxy-credentials",
+            Guid.NewGuid().ToString("N"),
+            new
+            {
+                reason = "try update",
+                proxyConfig = new
+                {
+                    host = "blocked.internal",
+                    port = 8081,
+                    login = "blocked",
+                    password = "blocked",
+                },
+            });
+
+        Assert.Equal(HttpStatusCode.Forbidden, updateResponse.StatusCode);
+        Assert.Empty(factory.AccountsManagerClient.UpdateCalls);
+    }
+
+    [Fact]
+    [Trait("Category", "Integration")]
     public async Task BillingPayments_ReturnsDataAndIsIdempotent()
     {
         factory.BillingClient.Reset();
@@ -236,6 +446,31 @@ public sealed class CoreApiIntegrationTests(CoreApiFactory factory) : IClassFixt
 
         using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         return json.RootElement.GetProperty("project").GetProperty("id").GetGuid();
+    }
+
+    private static async Task<Guid> CreateAccountAsync(HttpClient client, Guid projectId, string displayName)
+    {
+        var response = await SendJsonAsync(
+            client,
+            HttpMethod.Post,
+            $"/v1/projects/{projectId}/accounts",
+            Guid.NewGuid().ToString("N"),
+            new
+            {
+                platform = "ozon",
+                displayName,
+                proxyConfig = new
+                {
+                    host = "proxy.initial.internal",
+                    port = 8001,
+                    login = "seller-initial",
+                    password = "secret-initial",
+                },
+            });
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        return json.RootElement.GetProperty("account").GetProperty("id").GetGuid();
     }
 
     private static async Task<HttpResponseMessage> SendJsonAsync(

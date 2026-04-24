@@ -1,7 +1,9 @@
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using DDCRM.Core.Api.AccountsManager;
 using DDCRM.Core.Api.Billing;
 using DDCRM.Core.Persistence;
 using DDCRM.Core.Persistence.Entities;
@@ -44,6 +46,18 @@ builder.Services.PostConfigure<BillingClientOptions>(options =>
 builder.Services.AddHttpClient<IBillingClient, BillingHttpClient>((serviceProvider, client) =>
 {
     var options = serviceProvider.GetRequiredService<IOptions<BillingClientOptions>>().Value;
+    client.BaseAddress = new Uri(options.BaseUrl);
+});
+
+builder.Services.Configure<AccountsManagerClientOptions>(builder.Configuration.GetSection(AccountsManagerClientOptions.SectionName));
+builder.Services.PostConfigure<AccountsManagerClientOptions>(options =>
+{
+    options.ServiceToken ??= builder.Configuration["INTERNAL_API_SERVICE_AUTH_CLIENT_TOKEN"];
+});
+
+builder.Services.AddHttpClient<IAccountsManagerClient, AccountsManagerHttpClient>((serviceProvider, client) =>
+{
+    var options = serviceProvider.GetRequiredService<IOptions<AccountsManagerClientOptions>>().Value;
     client.BaseAddress = new Uri(options.BaseUrl);
 });
 
@@ -486,11 +500,273 @@ external.MapGet("/projects/{projectId:guid}/accounts", async (
     return Results.Ok(new AccountListResponse(httpContext.GetOrCreateRequestId(), items));
 });
 
-external.MapPost("/projects/{projectId:guid}/accounts", (HttpContext context) => ThrowFeatureNotReadyWithIdempotency(context, "createAccount"));
-external.MapPatch("/projects/{projectId:guid}/accounts/{accountId:guid}", (HttpContext context) => ThrowFeatureNotReadyWithIdempotency(context, "updateAccount"));
-external.MapDelete("/projects/{projectId:guid}/accounts/{accountId:guid}", (HttpContext context) => ThrowFeatureNotReadyWithIdempotency(context, "deleteAccount"));
-external.MapGet("/projects/{projectId:guid}/accounts/{accountId:guid}/proxy-credentials", (HttpContext context) => ThrowFeatureNotReady(context, "getAccountProxyCredentialsMasked"));
-external.MapPatch("/projects/{projectId:guid}/accounts/{accountId:guid}/proxy-credentials", (HttpContext context) => ThrowFeatureNotReadyWithIdempotency(context, "updateAccountProxyCredentials"));
+external.MapPost("/projects/{projectId:guid}/accounts", async (
+    HttpContext httpContext,
+    Guid projectId,
+    Dictionary<string, JsonElement> request,
+    CoreDbContext dbContext,
+    IAccountsManagerClient accountsManagerClient,
+    IdempotencyExecutor idempotency,
+    CancellationToken cancellationToken) =>
+{
+    var actorId = GetCurrentUserId(httpContext);
+    var idempotencyKey = httpContext.RequireIdempotencyKey();
+
+    await EnsurePermissionAsync(dbContext, projectId, actorId, ProjectPermissions.ProjectAccountsLifecycleManage, cancellationToken);
+
+    var platform = ReadString(request, "platform");
+    var displayName = ReadString(request, "displayName");
+    var proxyConfig = ReadProxyConfig(request, "proxyConfig", required: true)!;
+    var accountId = CreateDeterministicGuid($"core:createAccount:{projectId}:{idempotencyKey}");
+
+    return await idempotency.ExecuteAsync(
+        dbContext,
+        $"core:createAccount:{projectId}",
+        idempotencyKey,
+        async ct =>
+        {
+            var existing = await dbContext.Accounts.SingleOrDefaultAsync(
+                x => x.ProjectId == projectId && x.Id == accountId,
+                ct);
+
+            if (existing is null)
+            {
+                await accountsManagerClient.CreateLifecycleAsync(
+                    projectId,
+                    accountId,
+                    platform,
+                    ToProxyConfigDictionary(proxyConfig),
+                    idempotencyKey,
+                    ct);
+
+                existing = new AccountEntity
+                {
+                    Id = accountId,
+                    ProjectId = projectId,
+                    Platform = platform,
+                    DisplayName = displayName,
+                    BusinessStatus = "active",
+                    ProxyConfigured = true,
+                    ProxyHostMasked = MaskSensitive(proxyConfig.Host),
+                    ProxyLoginMasked = MaskSensitive(proxyConfig.Login),
+                    CreatedAtUtc = DateTimeOffset.UtcNow,
+                };
+
+                dbContext.Accounts.Add(existing);
+                await dbContext.SaveChangesAsync(ct);
+            }
+
+            return new IdempotentExecutionResult(
+                StatusCodes.Status201Created,
+                new AccountResponse(httpContext.GetOrCreateRequestId(), ToAccountDto(existing)));
+        },
+        cancellationToken);
+});
+
+external.MapPatch("/projects/{projectId:guid}/accounts/{accountId:guid}", async (
+    HttpContext httpContext,
+    Guid projectId,
+    Guid accountId,
+    Dictionary<string, JsonElement> request,
+    CoreDbContext dbContext,
+    IdempotencyExecutor idempotency,
+    CancellationToken cancellationToken) =>
+{
+    var actorId = GetCurrentUserId(httpContext);
+    var idempotencyKey = httpContext.RequireIdempotencyKey();
+
+    await EnsurePermissionAsync(dbContext, projectId, actorId, ProjectPermissions.ProjectAccountsLifecycleManage, cancellationToken);
+
+    if (request.ContainsKey("proxyConfig"))
+    {
+        throw new ApiErrorException(
+            StatusCodes.Status400BadRequest,
+            ApiErrorCodes.ValidationError,
+            "Для изменения proxy credentials используйте updateAccountProxyCredentials.");
+    }
+
+    var displayName = TryReadString(request, "displayName");
+    var businessStatus = TryReadString(request, "businessStatus");
+
+    if (displayName is null && businessStatus is null)
+    {
+        throw new ApiErrorException(
+            StatusCodes.Status400BadRequest,
+            ApiErrorCodes.ValidationError,
+            "Требуется хотя бы одно поле для обновления: displayName или businessStatus.");
+    }
+
+    return await idempotency.ExecuteAsync(
+        dbContext,
+        $"core:updateAccount:{projectId}:{accountId}",
+        idempotencyKey,
+        async ct =>
+        {
+            var account = await dbContext.Accounts.SingleOrDefaultAsync(
+                x => x.ProjectId == projectId && x.Id == accountId,
+                ct);
+
+            if (account is null)
+            {
+                throw new ApiErrorException(StatusCodes.Status404NotFound, ApiErrorCodes.NotFound, "Аккаунт не найден.");
+            }
+
+            if (displayName is not null)
+            {
+                account.DisplayName = displayName;
+            }
+
+            if (businessStatus is not null)
+            {
+                account.BusinessStatus = businessStatus;
+            }
+
+            await dbContext.SaveChangesAsync(ct);
+
+            return new IdempotentExecutionResult(
+                StatusCodes.Status200OK,
+                new AccountResponse(httpContext.GetOrCreateRequestId(), ToAccountDto(account)));
+        },
+        cancellationToken);
+});
+
+external.MapDelete("/projects/{projectId:guid}/accounts/{accountId:guid}", async (
+    HttpContext httpContext,
+    Guid projectId,
+    Guid accountId,
+    CoreDbContext dbContext,
+    IAccountsManagerClient accountsManagerClient,
+    IdempotencyExecutor idempotency,
+    CancellationToken cancellationToken) =>
+{
+    var actorId = GetCurrentUserId(httpContext);
+    var idempotencyKey = httpContext.RequireIdempotencyKey();
+
+    await EnsurePermissionAsync(dbContext, projectId, actorId, ProjectPermissions.ProjectAccountsLifecycleManage, cancellationToken);
+
+    return await idempotency.ExecuteAsync(
+        dbContext,
+        $"core:deleteAccount:{projectId}:{accountId}",
+        idempotencyKey,
+        async ct =>
+        {
+            await accountsManagerClient.DeleteLifecycleAsync(accountId, idempotencyKey, ct);
+
+            var account = await dbContext.Accounts.SingleOrDefaultAsync(
+                x => x.ProjectId == projectId && x.Id == accountId,
+                ct);
+
+            if (account is not null)
+            {
+                dbContext.Accounts.Remove(account);
+                await dbContext.SaveChangesAsync(ct);
+            }
+
+            return new IdempotentExecutionResult(
+                StatusCodes.Status200OK,
+                new AckResponse(httpContext.GetOrCreateRequestId(), "completed"));
+        },
+        cancellationToken);
+});
+
+external.MapGet("/projects/{projectId:guid}/accounts/{accountId:guid}/proxy-credentials", async (
+    HttpContext httpContext,
+    Guid projectId,
+    Guid accountId,
+    CoreDbContext dbContext,
+    CancellationToken cancellationToken) =>
+{
+    var actorId = GetCurrentUserId(httpContext);
+    await EnsurePermissionAsync(dbContext, projectId, actorId, ProjectPermissions.ProjectAccountsView, cancellationToken);
+
+    var account = await dbContext.Accounts.SingleOrDefaultAsync(
+        x => x.ProjectId == projectId && x.Id == accountId,
+        cancellationToken);
+
+    if (account is null)
+    {
+        throw new ApiErrorException(StatusCodes.Status404NotFound, ApiErrorCodes.NotFound, "Аккаунт не найден.");
+    }
+
+    return Results.Ok(new ProxyCredentialsMaskedResponse(
+        httpContext.GetOrCreateRequestId(),
+        new ProxyCredentialsMaskedDto(
+            account.ProxyConfigured,
+            account.ProxyHostMasked,
+            account.ProxyLoginMasked)));
+});
+
+external.MapPatch("/projects/{projectId:guid}/accounts/{accountId:guid}/proxy-credentials", async (
+    HttpContext httpContext,
+    Guid projectId,
+    Guid accountId,
+    Dictionary<string, JsonElement> request,
+    CoreDbContext dbContext,
+    IAccountsManagerClient accountsManagerClient,
+    IdempotencyExecutor idempotency,
+    CancellationToken cancellationToken) =>
+{
+    var actorId = GetCurrentUserId(httpContext);
+    var idempotencyKey = httpContext.RequireIdempotencyKey();
+
+    await EnsurePermissionAsync(dbContext, projectId, actorId, ProjectPermissions.ProjectAccountsProxyCredentialsUpdate, cancellationToken);
+
+    var reason = ReadString(request, "reason");
+    if (reason.Length < 3)
+    {
+        throw new ApiErrorException(
+            StatusCodes.Status400BadRequest,
+            ApiErrorCodes.ValidationError,
+            "Поле reason должно быть длиной не менее 3 символов.");
+    }
+
+    var proxyConfig = ReadProxyConfig(request, "proxyConfig", required: true)!;
+
+    return await idempotency.ExecuteAsync(
+        dbContext,
+        $"core:updateProxyCredentials:{projectId}:{accountId}",
+        idempotencyKey,
+        async ct =>
+        {
+            var account = await dbContext.Accounts.SingleOrDefaultAsync(
+                x => x.ProjectId == projectId && x.Id == accountId,
+                ct);
+
+            if (account is null)
+            {
+                throw new ApiErrorException(StatusCodes.Status404NotFound, ApiErrorCodes.NotFound, "Аккаунт не найден.");
+            }
+
+            await accountsManagerClient.UpdateLifecycleAsync(
+                accountId,
+                ToProxyConfigDictionary(proxyConfig),
+                idempotencyKey,
+                ct);
+
+            account.ProxyConfigured = true;
+            account.ProxyHostMasked = MaskSensitive(proxyConfig.Host);
+            account.ProxyLoginMasked = MaskSensitive(proxyConfig.Login);
+
+            dbContext.ProxyCredentialsAudits.Add(new ProxyCredentialsAuditEntity
+            {
+                Id = Guid.NewGuid(),
+                ProjectId = projectId,
+                AccountId = accountId,
+                ActorUserId = actorId,
+                Operation = "update",
+                Reason = reason,
+                RequestId = httpContext.GetOrCreateRequestId(),
+                CreatedAtUtc = DateTimeOffset.UtcNow,
+            });
+
+            await dbContext.SaveChangesAsync(ct);
+
+            return new IdempotentExecutionResult(
+                StatusCodes.Status200OK,
+                new AckResponse(httpContext.GetOrCreateRequestId(), "completed"));
+        },
+        cancellationToken);
+});
 external.MapPost("/projects/{projectId:guid}/accounts/{accountId:guid}/proxy-credentials/reveal", (HttpContext context) => ThrowFeatureNotReadyWithIdempotency(context, "revealAccountProxyCredentials"));
 external.MapPost("/projects/{projectId:guid}/billing/payments", async (
     HttpContext httpContext,
@@ -657,6 +933,119 @@ static string ReadString(Dictionary<string, JsonElement> payload, string key)
     return value.GetString()!.Trim();
 }
 
+static string? TryReadString(Dictionary<string, JsonElement> payload, string key)
+{
+    if (!payload.TryGetValue(key, out var value))
+    {
+        return null;
+    }
+
+    if (value.ValueKind != JsonValueKind.String || string.IsNullOrWhiteSpace(value.GetString()))
+    {
+        throw new ApiErrorException(
+            StatusCodes.Status400BadRequest,
+            ApiErrorCodes.ValidationError,
+            $"Поле {key} должно быть непустой строкой.");
+    }
+
+    return value.GetString()!.Trim();
+}
+
+static ProxyConfigPayload? ReadProxyConfig(Dictionary<string, JsonElement> payload, string key, bool required)
+{
+    if (!payload.TryGetValue(key, out var value))
+    {
+        if (!required)
+        {
+            return null;
+        }
+
+        throw new ApiErrorException(StatusCodes.Status400BadRequest, ApiErrorCodes.ValidationError, $"Поле {key} обязательно.");
+    }
+
+    if (value.ValueKind != JsonValueKind.Object)
+    {
+        throw new ApiErrorException(StatusCodes.Status400BadRequest, ApiErrorCodes.ValidationError, $"Поле {key} должно быть объектом.");
+    }
+
+    var objectValue = value.EnumerateObject()
+        .ToDictionary(x => x.Name, x => x.Value.Clone(), StringComparer.Ordinal);
+
+    var host = ReadString(objectValue, "host");
+    var login = ReadString(objectValue, "login");
+    var password = ReadString(objectValue, "password");
+
+    if (!objectValue.TryGetValue("port", out var portValue))
+    {
+        throw new ApiErrorException(StatusCodes.Status400BadRequest, ApiErrorCodes.ValidationError, "Поле proxyConfig.port обязательно.");
+    }
+
+    var port = portValue.ValueKind switch
+    {
+        JsonValueKind.Number when portValue.TryGetInt32(out var intPort) => intPort,
+        JsonValueKind.String when int.TryParse(portValue.GetString(), out var stringPort) => stringPort,
+        _ => throw new ApiErrorException(
+            StatusCodes.Status400BadRequest,
+            ApiErrorCodes.ValidationError,
+            "Поле proxyConfig.port должно быть числом."),
+    };
+
+    if (port is < 1 or > 65535)
+    {
+        throw new ApiErrorException(
+            StatusCodes.Status400BadRequest,
+            ApiErrorCodes.ValidationError,
+            "Поле proxyConfig.port должно быть в диапазоне 1..65535.");
+    }
+
+    return new ProxyConfigPayload(host, port, login, password);
+}
+
+static Dictionary<string, object?> ToProxyConfigDictionary(ProxyConfigPayload proxyConfig)
+{
+    return new Dictionary<string, object?>
+    {
+        ["host"] = proxyConfig.Host,
+        ["port"] = proxyConfig.Port,
+        ["login"] = proxyConfig.Login,
+        ["password"] = proxyConfig.Password,
+    };
+}
+
+static string MaskSensitive(string value)
+{
+    if (value.Length <= 2)
+    {
+        return "***";
+    }
+
+    if (value.Length <= 6)
+    {
+        return $"{value[0]}***";
+    }
+
+    return $"{value[..2]}***{value[^2..]}";
+}
+
+static AccountDto ToAccountDto(AccountEntity account)
+{
+    return new AccountDto(
+        account.Id,
+        account.ProjectId,
+        account.Platform,
+        account.DisplayName,
+        account.BusinessStatus,
+        account.ProxyConfigured,
+        account.ProxyHostMasked,
+        account.ProxyLoginMasked);
+}
+
+static Guid CreateDeterministicGuid(string input)
+{
+    var hash = MD5.HashData(Encoding.UTF8.GetBytes(input));
+    return new Guid(hash);
+}
+
 static Dictionary<string, JsonElement> MergePayload(
     IDictionary<string, JsonElement>? payload,
     IDictionary<string, object?> additions)
@@ -716,6 +1105,14 @@ public sealed record AccountDto(
 
 public sealed record AccountListResponse(string RequestId, IReadOnlyCollection<AccountDto> Items);
 
+public sealed record AccountResponse(string RequestId, AccountDto Account);
+
+public sealed record ProxyCredentialsMaskedDto(bool Configured, string? HostMasked, string? LoginMasked);
+
+public sealed record ProxyCredentialsMaskedResponse(string RequestId, ProxyCredentialsMaskedDto ProxyCredentials);
+
 public sealed record GenericObjectResponse(string RequestId, IDictionary<string, object?> Data);
+
+internal sealed record ProxyConfigPayload(string Host, int Port, string Login, string Password);
 
 public partial class Program;

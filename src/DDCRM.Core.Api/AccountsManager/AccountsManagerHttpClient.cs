@@ -1,0 +1,154 @@
+using System.Net;
+using System.Net.Http.Json;
+using DDCRM.Shared.Constants;
+using DDCRM.Shared.Errors;
+using Microsoft.Extensions.Options;
+
+namespace DDCRM.Core.Api.AccountsManager;
+
+public sealed class AccountsManagerHttpClient(
+    HttpClient httpClient,
+    IOptions<AccountsManagerClientOptions> options)
+    : IAccountsManagerClient
+{
+    private readonly AccountsManagerClientOptions _options = options.Value;
+
+    public async Task CreateLifecycleAsync(
+        Guid projectId,
+        Guid accountId,
+        string platform,
+        IDictionary<string, object?> proxyConfig,
+        string idempotencyKey,
+        CancellationToken cancellationToken)
+    {
+        EnsureEnabled();
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/internal/v1/lifecycle/create")
+        {
+            Content = JsonContent.Create(new
+            {
+                accountId,
+                projectId,
+                platform,
+                proxyConfig,
+            }),
+        };
+
+        ApplyHeaders(request, idempotencyKey);
+        await EnsureSuccessAsync(request, "create", cancellationToken);
+    }
+
+    public async Task UpdateLifecycleAsync(
+        Guid accountId,
+        IDictionary<string, object?> proxyConfig,
+        string idempotencyKey,
+        CancellationToken cancellationToken)
+    {
+        EnsureEnabled();
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/internal/v1/lifecycle/update")
+        {
+            Content = JsonContent.Create(new
+            {
+                accountId,
+                proxyConfig,
+            }),
+        };
+
+        ApplyHeaders(request, idempotencyKey);
+        await EnsureSuccessAsync(request, "update", cancellationToken);
+    }
+
+    public async Task DeleteLifecycleAsync(
+        Guid accountId,
+        string idempotencyKey,
+        CancellationToken cancellationToken)
+    {
+        EnsureEnabled();
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/internal/v1/lifecycle/delete")
+        {
+            Content = JsonContent.Create(new
+            {
+                accountId,
+            }),
+        };
+
+        ApplyHeaders(request, idempotencyKey);
+        await EnsureSuccessAsync(request, "delete", cancellationToken);
+    }
+
+    private async Task EnsureSuccessAsync(HttpRequestMessage request, string operation, CancellationToken cancellationToken)
+    {
+        var response = await httpClient.SendAsync(request, cancellationToken);
+        if (response.IsSuccessStatusCode)
+        {
+            return;
+        }
+
+        var body = await response.Content.ReadAsStringAsync(cancellationToken);
+        throw CreateUpstreamError(response.StatusCode, body, operation);
+    }
+
+    private void EnsureEnabled()
+    {
+        if (_options.Enabled)
+        {
+            return;
+        }
+
+        throw new ApiErrorException(
+            StatusCodes.Status503ServiceUnavailable,
+            ApiErrorCodes.InternalError,
+            "Accounts Manager client отключен в текущем runtime-профиле.");
+    }
+
+    private void ApplyHeaders(HttpRequestMessage request, string idempotencyKey)
+    {
+        if (!string.IsNullOrWhiteSpace(_options.ServiceToken))
+        {
+            request.Headers.TryAddWithoutValidation(HeaderNames.ServiceToken, _options.ServiceToken);
+        }
+
+        request.Headers.TryAddWithoutValidation(HeaderNames.IdempotencyKey, idempotencyKey);
+    }
+
+    private static ApiErrorException CreateUpstreamError(HttpStatusCode upstreamCode, string body, string operation)
+    {
+        return (int)upstreamCode switch
+        {
+            StatusCodes.Status400BadRequest => new ApiErrorException(
+                StatusCodes.Status400BadRequest,
+                ApiErrorCodes.ValidationError,
+                $"Accounts Manager lifecycle {operation} вернул ошибку валидации.",
+                CreateDetails(upstreamCode, body)),
+
+            StatusCodes.Status404NotFound => new ApiErrorException(
+                StatusCodes.Status404NotFound,
+                ApiErrorCodes.NotFound,
+                $"Accounts Manager lifecycle {operation} не нашёл сущность.",
+                CreateDetails(upstreamCode, body)),
+
+            StatusCodes.Status409Conflict => new ApiErrorException(
+                StatusCodes.Status409Conflict,
+                ApiErrorCodes.Conflict,
+                $"Accounts Manager lifecycle {operation} вернул конфликт.",
+                CreateDetails(upstreamCode, body)),
+
+            _ => new ApiErrorException(
+                StatusCodes.Status502BadGateway,
+                ApiErrorCodes.InternalError,
+                $"Accounts Manager lifecycle {operation} завершился ошибкой.",
+                CreateDetails(upstreamCode, body)),
+        };
+    }
+
+    private static Dictionary<string, object?> CreateDetails(HttpStatusCode statusCode, string body)
+    {
+        return new Dictionary<string, object?>
+        {
+            ["upstreamStatusCode"] = (int)statusCode,
+            ["upstreamBody"] = body,
+        };
+    }
+}
