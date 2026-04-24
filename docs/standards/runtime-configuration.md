@@ -18,6 +18,7 @@
 - `EXTERNAL_API_JWT_*` — переменные валидации bearer JWT для external API;
 - `INTERNAL_API_SERVICE_AUTH_*` — переменные service-auth контура internal API;
 - `WORKER_API_SERVICE_AUTH_*` — переменные service-auth контура worker API;
+- `WORKER_PROXY_CREDENTIALS_ENCRYPTION_KEY` — ключ шифрования proxy credentials в worker state storage;
 - `WORKER_CONTROL_CLIENT_*` — переменные internal worker-control client-а (service-to-service вызовы internal -> worker);
 - `TEST_WORKER_*` — переменные управления тестовым воркером по `docs/standards/test-worker-governance.md`;
 - булевы значения задаются как `true/false` (lowercase);

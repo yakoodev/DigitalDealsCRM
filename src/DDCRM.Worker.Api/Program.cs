@@ -1,4 +1,6 @@
 using System.Text.Json;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.RegularExpressions;
 using DDCRM.Worker.Api;
 using DDCRM.Shared.Auth;
@@ -58,6 +60,8 @@ builder.Services.Configure<TestWorkerOptions>(options =>
 });
 
 builder.Services.AddSingleton<TransientFailureState>();
+var proxyCredentialsEncryptionKey = ResolveProxyCredentialsEncryptionKey(
+    builder.Configuration["WORKER_PROXY_CREDENTIALS_ENCRYPTION_KEY"]);
 
 var app = builder.Build();
 var runtimeSettings = ResolveRuntimeSettings(
@@ -451,7 +455,7 @@ worker.MapPost("/actions/{action}", async (
                         Host = proxyConfig.Host,
                         Port = proxyConfig.Port,
                         Login = proxyConfig.Login,
-                        Password = proxyConfig.Password,
+                        Password = EncryptProxySecret(proxyConfig.Password, proxyCredentialsEncryptionKey),
                         UpdatedAtUtc = DateTimeOffset.UtcNow,
                     });
                 }
@@ -460,7 +464,7 @@ worker.MapPost("/actions/{action}", async (
                     existing.Host = proxyConfig.Host;
                     existing.Port = proxyConfig.Port;
                     existing.Login = proxyConfig.Login;
-                    existing.Password = proxyConfig.Password;
+                    existing.Password = EncryptProxySecret(proxyConfig.Password, proxyCredentialsEncryptionKey);
                     existing.UpdatedAtUtc = DateTimeOffset.UtcNow;
                 }
 
@@ -501,7 +505,7 @@ worker.MapPost("/actions/{action}", async (
                     ["host"] = credentials.Host,
                     ["port"] = credentials.Port,
                     ["login"] = credentials.Login,
-                    ["password"] = credentials.Password,
+                    ["password"] = DecryptProxySecret(credentials.Password, proxyCredentialsEncryptionKey),
                 },
             },
             []));
@@ -773,6 +777,69 @@ static ApiErrorException CreateRuntimeConflict(string message)
 static ApiErrorException CreatePlatformError(int statusCode, string message)
 {
     return new ApiErrorException(statusCode, WorkerErrorCodes.PlatformError, message);
+}
+
+static byte[] ResolveProxyCredentialsEncryptionKey(string? rawKey)
+{
+    var source = string.IsNullOrWhiteSpace(rawKey)
+        ? "ddcrm-local-worker-proxy-credentials-key"
+        : rawKey.Trim();
+
+    return SHA256.HashData(Encoding.UTF8.GetBytes(source));
+}
+
+static string EncryptProxySecret(string plaintext, byte[] key)
+{
+    var nonce = RandomNumberGenerator.GetBytes(12);
+    var plainBytes = Encoding.UTF8.GetBytes(plaintext);
+    var cipherBytes = new byte[plainBytes.Length];
+    var tag = new byte[16];
+
+    using var aes = new AesGcm(key, tag.Length);
+    aes.Encrypt(nonce, plainBytes, cipherBytes, tag);
+
+    var output = new byte[nonce.Length + tag.Length + cipherBytes.Length];
+    Buffer.BlockCopy(nonce, 0, output, 0, nonce.Length);
+    Buffer.BlockCopy(tag, 0, output, nonce.Length, tag.Length);
+    Buffer.BlockCopy(cipherBytes, 0, output, nonce.Length + tag.Length, cipherBytes.Length);
+
+    return Convert.ToBase64String(output);
+}
+
+static string DecryptProxySecret(string encodedCiphertext, byte[] key)
+{
+    try
+    {
+        var input = Convert.FromBase64String(encodedCiphertext);
+        if (input.Length < 29)
+        {
+            throw new ApiErrorException(
+                StatusCodes.Status500InternalServerError,
+                WorkerErrorCodes.PlatformError,
+                "Повреждённое proxy credential значение в worker storage.");
+        }
+
+        var nonce = input.AsSpan(0, 12).ToArray();
+        var tag = input.AsSpan(12, 16).ToArray();
+        var cipher = input.AsSpan(28).ToArray();
+        var plain = new byte[cipher.Length];
+
+        using var aes = new AesGcm(key, tag.Length);
+        aes.Decrypt(nonce, cipher, tag, plain);
+
+        return Encoding.UTF8.GetString(plain);
+    }
+    catch (ApiErrorException)
+    {
+        throw;
+    }
+    catch (Exception)
+    {
+        throw new ApiErrorException(
+            StatusCodes.Status500InternalServerError,
+            WorkerErrorCodes.PlatformError,
+            "Не удалось расшифровать proxy credentials из worker storage.");
+    }
 }
 
 static int NormalizeLimit(int? limit)

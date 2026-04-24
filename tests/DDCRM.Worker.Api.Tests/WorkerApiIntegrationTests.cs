@@ -239,7 +239,7 @@ public sealed class WorkerApiIntegrationTests
         Assert.Equal("proxy.worker.internal", stored!.Host);
         Assert.Equal(8181, stored.Port);
         Assert.Equal("worker-login", stored.Login);
-        Assert.Equal("worker-secret", stored.Password);
+        Assert.NotEqual("worker-secret", stored.Password);
 
         using var revealRequest = CreateMutatingRequest(
             HttpMethod.Post,
