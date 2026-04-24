@@ -195,6 +195,25 @@
 - `Changed files`: `DigitalDealsCRM.slnx`, `src/DDCRM.AccountsManager.Api/*`, `src/DDCRM.AccountsManager.Persistence/*`, `tests/DDCRM.AccountsManager.Api.Tests/*`, `eng/contracts.ps1`, `eng/contracts.sh`, `docs/implementation/patchnotes.md`
 - `Date`: `2026-04-24`
 
+### W2-T02
+- `Task ID`: `W2-T02`
+- `WP`: `WP-GATEWAY`
+- `Status`: `started`
+- `Operations`: bootstrap Gateway API/Test projects + proxy endpoint implementation (`resolve route`, `jwt auth`, `iam permission`, `entitlement gate`, `worker proxy`)
+- `Gates`: `OAG-TEST-CONTRACT-SERVICES`, `OAG-TEST-CORS-EXTERNAL`
+- `Exception`: n/a
+- `Changed files`: `DigitalDealsCRM.slnx`, `src/DDCRM.Gateway.Api/*`, `tests/DDCRM.Gateway.Api.Tests/*`, `eng/contracts.ps1`, `eng/contracts.sh`
+- `Date`: `2026-04-24`
+
+- `Task ID`: `W2-T02`
+- `WP`: `WP-GATEWAY`
+- `Status`: `completed`
+- `Operations`: `proxyAccountApiAction` runtime + action validation + capability-check for `ext.*` + CORS/JWT + integration/security/cors tests + CI entrypoint wiring
+- `Gates`: `OAG-TEST-CONTRACT-SERVICES`, `OAG-TEST-CORS-EXTERNAL` (подготовка)
+- `Exception`: n/a
+- `Changed files`: `DigitalDealsCRM.slnx`, `src/DDCRM.Gateway.Api/*`, `tests/DDCRM.Gateway.Api.Tests/*`, `eng/contracts.ps1`, `eng/contracts.sh`, `docs/implementation/patchnotes.md`
+- `Date`: `2026-04-24`
+
 - `Task ID`: `W1-T09`
 - `WP`: `process`
 - `Status`: `completed`

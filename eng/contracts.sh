@@ -33,12 +33,14 @@ case "${command}" in
     run "contracts:test:services (iam)" dotnet test tests/DDCRM.Iam.Api.Tests/DDCRM.Iam.Api.Tests.csproj --configuration Release
     run "contracts:test:services (route)" dotnet test tests/DDCRM.RouteRegistry.Api.Tests/DDCRM.RouteRegistry.Api.Tests.csproj --configuration Release
     run "contracts:test:services (accounts-manager)" dotnet test tests/DDCRM.AccountsManager.Api.Tests/DDCRM.AccountsManager.Api.Tests.csproj --configuration Release
+    run "contracts:test:services (gateway)" dotnet test tests/DDCRM.Gateway.Api.Tests/DDCRM.Gateway.Api.Tests.csproj --configuration Release
     ;;
   contracts:test:security)
     run "contracts:test:security" dotnet test DigitalDealsCRM.slnx --configuration Release --filter "Category=Security"
     ;;
   contracts:test:cors)
-    run "contracts:test:cors" dotnet test tests/DDCRM.Core.Api.Tests/DDCRM.Core.Api.Tests.csproj --configuration Release --filter "Category=Cors"
+    run "contracts:test:cors (core)" dotnet test tests/DDCRM.Core.Api.Tests/DDCRM.Core.Api.Tests.csproj --configuration Release --filter "Category=Cors"
+    run "contracts:test:cors (gateway)" dotnet test tests/DDCRM.Gateway.Api.Tests/DDCRM.Gateway.Api.Tests.csproj --configuration Release --filter "Category=Cors"
     ;;
   *)
     echo "Unknown entrypoint: ${command}" >&2
