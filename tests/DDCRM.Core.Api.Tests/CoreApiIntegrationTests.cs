@@ -298,6 +298,63 @@ public sealed class CoreApiIntegrationTests(CoreApiFactory factory) : IClassFixt
 
     [Fact]
     [Trait("Category", "Integration")]
+    public async Task ProxyAccountApiAction_ReturnsResultAndIsIdempotent()
+    {
+        factory.GatewayProxyClient.Reset();
+
+        using var client = CreateAuthorizedClient(Guid.NewGuid());
+        var idempotencyKey = Guid.NewGuid().ToString("N");
+        var payload = new
+        {
+            accountId = Guid.NewGuid(),
+            operation = "sync",
+            retries = 2,
+        };
+
+        var first = await SendJsonAsync(
+            client,
+            HttpMethod.Post,
+            "/v1/account-api/rk.alpha/messages.send",
+            idempotencyKey,
+            payload);
+
+        var second = await SendJsonAsync(
+            client,
+            HttpMethod.Post,
+            "/v1/account-api/rk.alpha/messages.send",
+            idempotencyKey,
+            payload);
+
+        Assert.Equal(HttpStatusCode.OK, first.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, second.StatusCode);
+        Assert.Single(factory.GatewayProxyClient.Calls);
+
+        var call = factory.GatewayProxyClient.Calls[0];
+        Assert.Equal("rk.alpha", call.RouteKey);
+        Assert.Equal("messages.send", call.Action);
+        Assert.Equal(idempotencyKey, call.IdempotencyKey);
+        Assert.StartsWith("Bearer ", call.AuthorizationHeader, StringComparison.Ordinal);
+
+        using var firstJson = JsonDocument.Parse(await first.Content.ReadAsStringAsync());
+        using var secondJson = JsonDocument.Parse(await second.Content.ReadAsStringAsync());
+
+        var firstResult = firstJson.RootElement.GetProperty("result");
+        var secondResult = secondJson.RootElement.GetProperty("result");
+
+        Assert.Equal("rk.alpha", firstResult.GetProperty("routeKey").GetString());
+        Assert.Equal("messages.send", firstResult.GetProperty("action").GetString());
+        Assert.Equal(idempotencyKey, firstResult.GetProperty("idempotencyKey").GetString());
+
+        var firstEcho = firstResult.GetProperty("echo");
+        Assert.Equal(payload.accountId.ToString(), firstEcho.GetProperty("accountId").GetString());
+        Assert.Equal(payload.operation, firstEcho.GetProperty("operation").GetString());
+        Assert.Equal(payload.retries, firstEcho.GetProperty("retries").GetInt32());
+
+        Assert.Equal(firstResult.GetRawText(), secondResult.GetRawText());
+    }
+
+    [Fact]
+    [Trait("Category", "Integration")]
     public async Task BillingPayments_ReturnsDataAndIsIdempotent()
     {
         factory.BillingClient.Reset();

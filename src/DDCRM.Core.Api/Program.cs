@@ -5,6 +5,7 @@ using System.Text;
 using System.Text.Json;
 using DDCRM.Core.Api.AccountsManager;
 using DDCRM.Core.Api.Billing;
+using DDCRM.Core.Api.GatewayProxy;
 using DDCRM.Core.Persistence;
 using DDCRM.Core.Persistence.Entities;
 using DDCRM.Shared.Authorization;
@@ -58,6 +59,13 @@ builder.Services.PostConfigure<AccountsManagerClientOptions>(options =>
 builder.Services.AddHttpClient<IAccountsManagerClient, AccountsManagerHttpClient>((serviceProvider, client) =>
 {
     var options = serviceProvider.GetRequiredService<IOptions<AccountsManagerClientOptions>>().Value;
+    client.BaseAddress = new Uri(options.BaseUrl);
+});
+
+builder.Services.Configure<GatewayProxyClientOptions>(builder.Configuration.GetSection(GatewayProxyClientOptions.SectionName));
+builder.Services.AddHttpClient<IGatewayProxyClient, GatewayProxyHttpClient>((serviceProvider, client) =>
+{
+    var options = serviceProvider.GetRequiredService<IOptions<GatewayProxyClientOptions>>().Value;
     client.BaseAddress = new Uri(options.BaseUrl);
 });
 
@@ -858,7 +866,53 @@ external.MapPost("/projects/{projectId:guid}/billing/subscription/change-plan", 
         },
         cancellationToken);
 });
-external.MapPost("/account-api/{routeKey}/{action}", (HttpContext context) => ThrowFeatureNotReadyWithIdempotency(context, "proxyAccountApiAction"));
+external.MapPost("/account-api/{routeKey}/{action}", async (
+    HttpContext httpContext,
+    string routeKey,
+    string action,
+    Dictionary<string, JsonElement>? request,
+    CoreDbContext dbContext,
+    IGatewayProxyClient gatewayProxyClient,
+    IdempotencyExecutor idempotency,
+    CancellationToken cancellationToken) =>
+{
+    var actorId = GetCurrentUserId(httpContext);
+    var idempotencyKey = httpContext.RequireIdempotencyKey();
+
+    if (string.IsNullOrWhiteSpace(routeKey) || string.IsNullOrWhiteSpace(action))
+    {
+        throw new ApiErrorException(
+            StatusCodes.Status400BadRequest,
+            ApiErrorCodes.ValidationError,
+            "routeKey и action обязательны.");
+    }
+
+    var authorizationHeader = httpContext.Request.Headers.Authorization.ToString();
+    if (string.IsNullOrWhiteSpace(authorizationHeader))
+    {
+        throw new ApiErrorException(StatusCodes.Status401Unauthorized, ApiErrorCodes.Unauthorized, "Отсутствует заголовок Authorization.");
+    }
+
+    return await idempotency.ExecuteAsync(
+        dbContext,
+        $"core:proxyAccountApiAction:{actorId}:{routeKey}:{action}",
+        idempotencyKey,
+        async ct =>
+        {
+            var result = await gatewayProxyClient.InvokeAccountApiActionAsync(
+                routeKey,
+                action,
+                request,
+                authorizationHeader,
+                idempotencyKey,
+                ct);
+
+            return new IdempotentExecutionResult(
+                StatusCodes.Status200OK,
+                new ProxyResponse(httpContext.GetOrCreateRequestId(), result));
+        },
+        cancellationToken);
+});
 
 app.Run();
 
@@ -1110,6 +1164,8 @@ public sealed record AccountResponse(string RequestId, AccountDto Account);
 public sealed record ProxyCredentialsMaskedDto(bool Configured, string? HostMasked, string? LoginMasked);
 
 public sealed record ProxyCredentialsMaskedResponse(string RequestId, ProxyCredentialsMaskedDto ProxyCredentials);
+
+public sealed record ProxyResponse(string RequestId, JsonElement Result);
 
 public sealed record GenericObjectResponse(string RequestId, IDictionary<string, object?> Data);
 

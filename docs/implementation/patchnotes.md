@@ -349,6 +349,25 @@
 - `Changed files`: `src/DDCRM.Core.Api/*`, `src/DDCRM.Core.Persistence/*`, `tests/DDCRM.Core.Api.Tests/*`, `docs/implementation/patchnotes.md`
 - `Date`: `2026-04-24`
 
+### W3-T06
+- `Task ID`: `W3-T06`
+- `WP`: `WP-PLATFORM-CORE`, `WP-GATEWAY`
+- `Status`: `started`
+- `Operations`: реализовать external `proxyAccountApiAction` в Core API через Gateway client (`IGatewayProxyClient`) с persisted idempotency и проксированием bearer authorization
+- `Gates`: `OAG-TEST-CONTRACT-SERVICES`
+- `Exception`: n/a
+- `Changed files`: `src/DDCRM.Core.Api/*`, `tests/DDCRM.Core.Api.Tests/*`, `docs/implementation/patchnotes.md`
+- `Date`: `2026-04-24`
+
+- `Task ID`: `W3-T06`
+- `WP`: `WP-PLATFORM-CORE`, `WP-GATEWAY`
+- `Status`: `completed`
+- `Operations`: добавлен `GatewayProxyHttpClient` и endpoint-handler `POST /v1/account-api/{routeKey}/{action}` в Core API; включены idempotency-ключи для mutating прокси-вызовов; добавлены integration-тесты на success/idempotency/payload-forwarding
+- `Gates`: `OAG-TEST-CONTRACT-SERVICES` (зелёные локальные прогоны)
+- `Exception`: n/a
+- `Changed files`: `src/DDCRM.Core.Api/*`, `tests/DDCRM.Core.Api.Tests/*`, `docs/implementation/patchnotes.md`
+- `Date`: `2026-04-24`
+
 - `Task ID`: `W1-T09`
 - `WP`: `process`
 - `Status`: `completed`

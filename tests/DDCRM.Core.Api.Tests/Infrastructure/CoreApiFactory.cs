@@ -3,6 +3,7 @@ using System.Security.Claims;
 using System.Text;
 using DDCRM.Core.Api.AccountsManager;
 using DDCRM.Core.Api.Billing;
+using DDCRM.Core.Api.GatewayProxy;
 using DDCRM.Core.Persistence;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -22,6 +23,7 @@ public sealed class CoreApiFactory : WebApplicationFactory<Program>
 
     public FakeBillingClient BillingClient { get; } = new();
     public FakeAccountsManagerClient AccountsManagerClient { get; } = new();
+    public FakeGatewayProxyClient GatewayProxyClient { get; } = new();
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
@@ -50,12 +52,17 @@ public sealed class CoreApiFactory : WebApplicationFactory<Program>
             services.RemoveAll<FakeBillingClient>();
             services.RemoveAll<IAccountsManagerClient>();
             services.RemoveAll<FakeAccountsManagerClient>();
+            services.RemoveAll<IGatewayProxyClient>();
+            services.RemoveAll<FakeGatewayProxyClient>();
 
             services.AddSingleton(BillingClient);
             services.AddSingleton<IBillingClient>(serviceProvider => serviceProvider.GetRequiredService<FakeBillingClient>());
 
             services.AddSingleton(AccountsManagerClient);
             services.AddSingleton<IAccountsManagerClient>(serviceProvider => serviceProvider.GetRequiredService<FakeAccountsManagerClient>());
+
+            services.AddSingleton(GatewayProxyClient);
+            services.AddSingleton<IGatewayProxyClient>(serviceProvider => serviceProvider.GetRequiredService<FakeGatewayProxyClient>());
         });
     }
 
