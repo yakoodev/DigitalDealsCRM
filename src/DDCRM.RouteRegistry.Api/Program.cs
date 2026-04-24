@@ -52,6 +52,14 @@ using (var scope = app.Services.CreateScope())
 app.UseDdcrmCommonPipeline();
 app.UseServiceTokenAuth();
 
+app.MapGet("/health", (HttpContext httpContext) =>
+    Results.Ok(new GenericObjectResponse(
+        httpContext.GetOrCreateRequestId(),
+        new Dictionary<string, object?>
+        {
+            ["status"] = "ok",
+        })));
+
 var routes = app.MapGroup("/internal/v1/routes");
 
 routes.MapPut("/{accountId:guid}", async (

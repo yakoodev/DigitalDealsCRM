@@ -16,8 +16,22 @@ docker compose up -d --build
 
 - UI: `http://localhost:3000`
 - Core API: `http://localhost:5073`
+- Health Core API: `http://localhost:5073/health`
 - Gateway API: `http://localhost:5068`
+- Health Gateway API: `http://localhost:5068/health`
 - Worker API: `http://localhost:5072`
+- Health Worker API: `http://localhost:5072/health`
+
+Остальные API health:
+- IAM: `http://localhost:5120/health`
+- Route Registry: `http://localhost:5110/health`
+- Accounts Manager: `http://localhost:5137/health`
+- Billing: `http://localhost:5122/health`
+- Entitlement: `http://localhost:5221/health`
+
+Важно: internal/worker health endpoint-ы защищены service-auth.
+- Для `IAM/Route Registry/Accounts Manager/Billing/Entitlement` передавайте `X-Service-Token: internal-token-a`.
+- Для `Worker` передавайте `X-Service-Token: worker-token-a`.
 
 ## Остановка
 

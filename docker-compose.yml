@@ -29,6 +29,12 @@ x-dotnet-service: &dotnet-service
   depends_on:
     postgres:
       condition: service_healthy
+  healthcheck:
+    test: ["CMD-SHELL", "curl -fsS -H \"X-Service-Token: $$INTERNAL_API_SERVICE_AUTH_CLIENT_TOKEN\" http://localhost:8080/health > /dev/null || exit 1"]
+    interval: 15s
+    timeout: 5s
+    retries: 5
+    start_period: 30s
   networks:
     - ddcrm
 
@@ -188,6 +194,12 @@ services:
       TEST_WORKER_FIXTURE_REVISION: main
       TEST_WORKER_EXT_ACTIONS_ENABLED: "true"
       WORKER_PROXY_CREDENTIALS_ENCRYPTION_KEY: replace-with-long-random-worker-key
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS -H \"X-Service-Token: $$WORKER_API_SERVICE_AUTH_CLIENT_TOKEN\" http://localhost:8080/health > /dev/null || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
     ports:
       - "5072:8080"
 
@@ -198,7 +210,7 @@ services:
     restart: unless-stopped
     depends_on:
       core-api:
-        condition: service_started
+        condition: service_healthy
     environment:
       NEXT_TELEMETRY_DISABLED: "1"
     ports:

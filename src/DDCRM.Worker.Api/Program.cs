@@ -88,6 +88,13 @@ var startedAtUtc = DateTimeOffset.UtcNow;
 app.UseDdcrmCommonPipeline();
 app.UseServiceTokenAuth();
 
+app.MapGet("/health", (HttpContext httpContext) =>
+    Results.Ok(new
+    {
+        requestId = httpContext.GetOrCreateRequestId(),
+        status = "ok",
+    }));
+
 var worker = app.MapGroup("/internal/v1/worker");
 
 worker.MapGet("/health", (HttpContext httpContext) =>

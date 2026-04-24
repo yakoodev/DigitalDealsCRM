@@ -454,3 +454,22 @@
 - `Exception`: n/a
 - `Changed files`: `src/ddcrm-rbac-ui/*`, `docs/implementation/patchnotes.md`
 - `Date`: `2026-04-24`
+
+### W4-T03
+- `Task ID`: `W4-T03`
+- `WP`: `cross-cutting`, `WP-OPS-READY`
+- `Status`: `started`
+- `Operations`: унифицировать runtime-health для docker стека: `/health` во всех API, compose healthcheck с service-auth токенами, hardening runtime image системными зависимостями для Npgsql
+- `Gates`: `docker compose up -d --build`, `docker compose ps`, smoke health probes
+- `Exception`: n/a
+- `Changed files`: `docker-compose.yml`, `docker/api.Dockerfile`, `docker/README.md`, `src/DDCRM.Core.Api/Program.cs`, `src/DDCRM.Iam.Api/Program.cs`, `src/DDCRM.RouteRegistry.Api/Program.cs`, `src/DDCRM.AccountsManager.Api/Program.cs`, `src/DDCRM.Billing.Api/Program.cs`, `src/DDCRM.Entitlement.Api/Program.cs`, `src/DDCRM.Gateway.Api/Program.cs`, `src/DDCRM.Worker.Api/Program.cs`
+- `Date`: `2026-04-24`
+
+- `Task ID`: `W4-T03`
+- `WP`: `cross-cutting`, `WP-OPS-READY`
+- `Status`: `completed`
+- `Operations`: добавлены endpoint-ы `/health` для всех API-контуров; docker runtime-образ теперь содержит `libgssapi-krb5-2` и `curl`; `docker-compose` healthchecks используют `X-Service-Token` (internal/worker token isolation сохранен); подтверждён полный green-статус `healthy` по всем контейнерам и smoke HTTP `200` по UI/API health
+- `Gates`: `docker compose up -d --build`, `docker compose ps` (all healthy), `contracts:validate`, `contracts:lint`, `contracts:diff:external`, `contracts:diff:worker`, `contracts:test:services`, `contracts:test:security`, `contracts:test:cors`, `contracts:test:worker` (зелёные локальные прогоны)
+- `Exception`: n/a
+- `Changed files`: `docker-compose.yml`, `docker/api.Dockerfile`, `docker/README.md`, `src/DDCRM.Core.Api/Program.cs`, `src/DDCRM.Iam.Api/Program.cs`, `src/DDCRM.RouteRegistry.Api/Program.cs`, `src/DDCRM.AccountsManager.Api/Program.cs`, `src/DDCRM.Billing.Api/Program.cs`, `src/DDCRM.Entitlement.Api/Program.cs`, `src/DDCRM.Gateway.Api/Program.cs`, `src/DDCRM.Worker.Api/Program.cs`, `docs/implementation/patchnotes.md`
+- `Date`: `2026-04-24`

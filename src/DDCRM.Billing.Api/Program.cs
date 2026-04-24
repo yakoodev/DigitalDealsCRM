@@ -66,6 +66,14 @@ using (var scope = app.Services.CreateScope())
 app.UseDdcrmCommonPipeline();
 app.UseServiceTokenAuth();
 
+app.MapGet("/health", (HttpContext httpContext) =>
+    Results.Ok(new GenericObjectResponse(
+        httpContext.GetOrCreateRequestId(),
+        new Dictionary<string, object?>
+        {
+            ["status"] = "ok",
+        })));
+
 app.MapPost("/internal/v1/payments/create", async (
     HttpContext httpContext,
     Dictionary<string, JsonElement> request,

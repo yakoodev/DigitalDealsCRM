@@ -158,6 +158,14 @@ app.UseCors("external-cors");
 app.UseAuthentication();
 app.UseAuthorization();
 
+app.MapGet("/health", (HttpContext httpContext) =>
+    Results.Ok(new GenericObjectResponse(
+        httpContext.GetOrCreateRequestId(),
+        new Dictionary<string, object?>
+        {
+            ["status"] = "ok",
+        })));
+
 app.MapMethods("/v1/{*path}", ["OPTIONS"], () => Results.Ok());
 
 var external = app.MapGroup("/v1").RequireAuthorization();

@@ -53,6 +53,14 @@ using (var scope = app.Services.CreateScope())
 app.UseDdcrmCommonPipeline();
 app.UseServiceTokenAuth();
 
+app.MapGet("/health", (HttpContext httpContext) =>
+    Results.Ok(new GenericObjectResponse(
+        httpContext.GetOrCreateRequestId(),
+        new Dictionary<string, object?>
+        {
+            ["status"] = "ok",
+        })));
+
 var iam = app.MapGroup("/internal/v1/iam");
 
 iam.MapPost("/check-permission", async (

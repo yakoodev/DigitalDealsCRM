@@ -20,6 +20,9 @@ RUN dotnet publish "${SERVICE_PROJECT}" -c Release -o /app/publish --no-restore 
 
 FROM mcr.microsoft.com/dotnet/aspnet:${DOTNET_VERSION} AS runtime
 WORKDIR /app
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl libgssapi-krb5-2 \
+    && rm -rf /var/lib/apt/lists/*
 ENV ASPNETCORE_URLS=http://+:8080
 EXPOSE 8080
 

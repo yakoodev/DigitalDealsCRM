@@ -135,6 +135,13 @@ app.UseCors("external-cors");
 app.UseAuthentication();
 app.UseAuthorization();
 
+app.MapGet("/health", (HttpContext httpContext) =>
+    Results.Ok(new
+    {
+        requestId = httpContext.GetOrCreateRequestId(),
+        status = "ok",
+    }));
+
 app.MapMethods("/v1/{*path}", ["OPTIONS"], () => Results.Ok());
 
 var gateway = app.MapGroup("/v1").RequireAuthorization();
