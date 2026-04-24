@@ -1,4 +1,5 @@
 using System.Text.Json;
+using DDCRM.Billing.Api.Entitlement;
 using DDCRM.Billing.Persistence;
 using DDCRM.Billing.Persistence.Entities;
 using DDCRM.Shared.Auth;
@@ -6,6 +7,7 @@ using DDCRM.Shared.Errors;
 using DDCRM.Shared.Extensions;
 using DDCRM.Shared.Idempotency;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -27,6 +29,18 @@ builder.Services.AddDbContext<BillingDbContext>((serviceProvider, options) =>
 });
 
 builder.Services.AddScoped<IdempotencyExecutor>();
+builder.Services.Configure<EntitlementClientOptions>(builder.Configuration.GetSection(EntitlementClientOptions.SectionName));
+builder.Services.PostConfigure<EntitlementClientOptions>(options =>
+{
+    options.ServiceToken ??= builder.Configuration["INTERNAL_API_SERVICE_AUTH_CLIENT_TOKEN"];
+});
+
+builder.Services.AddHttpClient<IEntitlementClient, EntitlementHttpClient>((serviceProvider, client) =>
+{
+    var options = serviceProvider.GetRequiredService<IOptions<EntitlementClientOptions>>().Value;
+    client.BaseAddress = new Uri(options.BaseUrl);
+});
+
 builder.Services.AddServiceTokenAuth(options =>
 {
     options.Enabled = builder.Configuration.GetValue("INTERNAL_API_SERVICE_AUTH_ENABLED", true);
@@ -115,6 +129,7 @@ app.MapPost("/internal/v1/payments/webhook", async (
     HttpContext httpContext,
     Dictionary<string, JsonElement> request,
     BillingDbContext dbContext,
+    IEntitlementClient entitlementClient,
     CancellationToken cancellationToken) =>
 {
     var eventId = ReadString(request, "eventId");
@@ -145,6 +160,11 @@ app.MapPost("/internal/v1/payments/webhook", async (
             "projectId обязателен, если paymentId не найден.");
     }
 
+    var shouldRecalculateEntitlement = false;
+    var entitlementStatus = string.Empty;
+    var entitlementPlanKey = string.Empty;
+    var entitlementSource = $"billing.webhook:{eventType}";
+
     switch (eventType)
     {
         case "payment.succeeded":
@@ -163,6 +183,10 @@ app.MapPost("/internal/v1/payments/webhook", async (
                 graceEndsAtUtc: null,
                 now,
                 cancellationToken);
+
+            shouldRecalculateEntitlement = true;
+            entitlementStatus = "active";
+            entitlementPlanKey = ReadOptionalString(request, "planKey") ?? payment?.PlanKey ?? "basic";
 
             dbContext.Audits.Add(CreateAudit(
                 effectiveProjectId.Value,
@@ -187,6 +211,10 @@ app.MapPost("/internal/v1/payments/webhook", async (
                 graceEndsAtUtc: now.AddDays(7),
                 now,
                 cancellationToken);
+
+            shouldRecalculateEntitlement = true;
+            entitlementStatus = "grace";
+            entitlementPlanKey = ReadOptionalString(request, "planKey") ?? payment?.PlanKey ?? "basic";
 
             dbContext.Audits.Add(CreateAudit(
                 effectiveProjectId.Value,
@@ -229,6 +257,17 @@ app.MapPost("/internal/v1/payments/webhook", async (
         CreatedAtUtc = now,
         ProcessedAtUtc = now,
     });
+
+    if (shouldRecalculateEntitlement)
+    {
+        await entitlementClient.RecalculateAsync(
+            effectiveProjectId.Value,
+            entitlementStatus,
+            entitlementPlanKey,
+            entitlementSource,
+            $"billing:webhook:{eventId}",
+            cancellationToken);
+    }
 
     try
     {
@@ -311,6 +350,7 @@ app.MapPost("/internal/v1/subscriptions/manual-activate", async (
     HttpContext httpContext,
     Dictionary<string, JsonElement> request,
     BillingDbContext dbContext,
+    IEntitlementClient entitlementClient,
     IdempotencyExecutor idempotency,
     CancellationToken cancellationToken) =>
 {
@@ -337,6 +377,14 @@ app.MapPost("/internal/v1/subscriptions/manual-activate", async (
                 now,
                 ct);
 
+            await entitlementClient.RecalculateAsync(
+                projectId,
+                "active",
+                planKey,
+                "billing.manual-activate",
+                idempotencyKey,
+                ct);
+
             dbContext.Audits.Add(CreateAudit(projectId, "subscriptions.manual-activate", actor, reason));
 
             await dbContext.SaveChangesAsync(ct);
@@ -349,6 +397,7 @@ app.MapPost("/internal/v1/subscriptions/reconcile", async (
     HttpContext httpContext,
     Dictionary<string, JsonElement> request,
     BillingDbContext dbContext,
+    IEntitlementClient entitlementClient,
     CancellationToken cancellationToken) =>
 {
     var projectId = TryReadGuid(request, "projectId");
@@ -362,6 +411,7 @@ app.MapPost("/internal/v1/subscriptions/reconcile", async (
 
     var subscriptions = await query.ToListAsync(cancellationToken);
     var changed = 0;
+    var changedSubscriptions = new List<BillingSubscriptionEntity>();
 
     foreach (var subscription in subscriptions)
     {
@@ -370,6 +420,7 @@ app.MapPost("/internal/v1/subscriptions/reconcile", async (
             subscription.Status = "blocked";
             subscription.UpdatedAtUtc = now;
             changed++;
+            changedSubscriptions.Add(subscription);
 
             dbContext.Audits.Add(CreateAudit(
                 subscription.ProjectId,
@@ -381,6 +432,17 @@ app.MapPost("/internal/v1/subscriptions/reconcile", async (
 
     if (changed > 0)
     {
+        foreach (var subscription in changedSubscriptions)
+        {
+            await entitlementClient.RecalculateAsync(
+                subscription.ProjectId,
+                "blocked",
+                subscription.PlanKey,
+                "billing.reconcile",
+                $"billing:reconcile:{subscription.ProjectId}:{now.ToUnixTimeSeconds()}",
+                cancellationToken);
+        }
+
         await dbContext.SaveChangesAsync(cancellationToken);
     }
 

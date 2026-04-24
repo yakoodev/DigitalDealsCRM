@@ -311,6 +311,25 @@
 - `Changed files`: `DigitalDealsCRM.slnx`, `src/DDCRM.Entitlement.Api/*`, `src/DDCRM.Entitlement.Persistence/*`, `tests/DDCRM.Entitlement.Api.Tests/*`, `eng/contracts.ps1`, `eng/contracts.sh`, `docs/implementation/patchnotes.md`
 - `Date`: `2026-04-24`
 
+### W3-T04
+- `Task ID`: `W3-T04`
+- `WP`: `WP-BILLING`, `WP-ENTITLEMENT`
+- `Status`: `started`
+- `Operations`: оркестрация billing -> entitlement recalculate на событиях подписки (`webhook`, `manual-activate`, `reconcile`) через internal Entitlement client
+- `Gates`: `OAG-TEST-CONTRACT-SERVICES`, `OAG-TEST-INTERNAL-SERVICE-AUTH`, `OAG-TEST-SERVICE-AUTH-TOKEN-ISOLATION`
+- `Exception`: n/a
+- `Changed files`: `src/DDCRM.Billing.Api/*`, `tests/DDCRM.Billing.Api.Tests/*`, `docs/implementation/patchnotes.md`
+- `Date`: `2026-04-24`
+
+- `Task ID`: `W3-T04`
+- `WP`: `WP-BILLING`, `WP-ENTITLEMENT`
+- `Status`: `completed`
+- `Operations`: добавлен `EntitlementHttpClient` в Billing API; на `payment.succeeded/payment.failed`, `subscriptions/manual-activate`, `subscriptions/reconcile` выполняется вызов `entitlementRecalculate` с service-auth и idempotency key; расширены integration-тесты orchestration/dedup
+- `Gates`: `OAG-TEST-CONTRACT-SERVICES`, `OAG-TEST-INTERNAL-SERVICE-AUTH`, `OAG-TEST-SERVICE-AUTH-TOKEN-ISOLATION` (зелёные локальные прогоны)
+- `Exception`: n/a
+- `Changed files`: `src/DDCRM.Billing.Api/*`, `tests/DDCRM.Billing.Api.Tests/*`, `docs/implementation/patchnotes.md`
+- `Date`: `2026-04-24`
+
 - `Task ID`: `W1-T09`
 - `WP`: `process`
 - `Status`: `completed`

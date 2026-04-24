@@ -1,3 +1,4 @@
+using DDCRM.Billing.Api.Entitlement;
 using DDCRM.Billing.Persistence;
 using DDCRM.Billing.Persistence.Entities;
 using Microsoft.AspNetCore.Hosting;
@@ -5,11 +6,14 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace DDCRM.Billing.Api.Tests.Infrastructure;
 
 public sealed class BillingApiFactory : WebApplicationFactory<Program>
 {
+    public FakeEntitlementClient EntitlementClient { get; } = new();
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.ConfigureAppConfiguration((_, configurationBuilder) =>
@@ -22,6 +26,15 @@ public sealed class BillingApiFactory : WebApplicationFactory<Program>
                 ["TEST_USE_INMEMORY_DB"] = "true",
                 ["TEST_INMEMORY_DB_NAME"] = $"billing-tests-{Guid.NewGuid():N}",
             });
+        });
+
+        builder.ConfigureServices(services =>
+        {
+            services.RemoveAll<IEntitlementClient>();
+            services.RemoveAll<FakeEntitlementClient>();
+
+            services.AddSingleton(EntitlementClient);
+            services.AddSingleton<IEntitlementClient>(serviceProvider => serviceProvider.GetRequiredService<FakeEntitlementClient>());
         });
     }
 

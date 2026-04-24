@@ -57,6 +57,8 @@ public sealed class BillingApiIntegrationTests(BillingApiFactory factory) : ICla
     [Trait("Category", "Integration")]
     public async Task PaymentsWebhook_DuplicateEvent_IsDeduplicated()
     {
+        factory.EntitlementClient.Reset();
+
         using var client = factory.CreateClient();
         client.DefaultRequestHeaders.Add("X-Service-Token", "internal-token-a");
 
@@ -95,6 +97,13 @@ public sealed class BillingApiIntegrationTests(BillingApiFactory factory) : ICla
         Assert.Equal(HttpStatusCode.OK, firstWebhook.StatusCode);
         Assert.Equal(HttpStatusCode.OK, secondWebhook.StatusCode);
         Assert.Equal(1, factory.CountWebhookEvents(eventId));
+        Assert.Single(factory.EntitlementClient.Calls);
+
+        var recalculateCall = factory.EntitlementClient.Calls[0];
+        Assert.Equal(projectId, recalculateCall.ProjectId);
+        Assert.Equal("active", recalculateCall.SubscriptionStatus);
+        Assert.Equal("business", recalculateCall.PlanKey);
+        Assert.Equal($"billing:webhook:{eventId}", recalculateCall.IdempotencyKey);
 
         var payment = factory.FindPayment(paymentId);
         Assert.NotNull(payment);
@@ -160,6 +169,8 @@ public sealed class BillingApiIntegrationTests(BillingApiFactory factory) : ICla
     [Trait("Category", "Integration")]
     public async Task ManualActivate_ThenReconcile_TransitionsGraceToBlocked()
     {
+        factory.EntitlementClient.Reset();
+
         using var client = factory.CreateClient();
         client.DefaultRequestHeaders.Add("X-Service-Token", "internal-token-a");
 
@@ -181,6 +192,9 @@ public sealed class BillingApiIntegrationTests(BillingApiFactory factory) : ICla
         var subscription = factory.FindSubscription(projectId);
         Assert.NotNull(subscription);
         Assert.Equal("active", subscription!.Status);
+        Assert.Single(factory.EntitlementClient.Calls);
+        Assert.Equal("active", factory.EntitlementClient.Calls[0].SubscriptionStatus);
+        Assert.Equal("pro", factory.EntitlementClient.Calls[0].PlanKey);
 
         factory.ForceSubscriptionGraceExpired(projectId);
         var reconcileResponse = await client.PostAsJsonAsync("/internal/v1/subscriptions/reconcile", new
@@ -192,6 +206,9 @@ public sealed class BillingApiIntegrationTests(BillingApiFactory factory) : ICla
         var updated = factory.FindSubscription(projectId);
         Assert.NotNull(updated);
         Assert.Equal("blocked", updated!.Status);
+        Assert.Equal(2, factory.EntitlementClient.Calls.Count);
+        Assert.Equal("blocked", factory.EntitlementClient.Calls[1].SubscriptionStatus);
+        Assert.Equal(projectId, factory.EntitlementClient.Calls[1].ProjectId);
     }
 
     [Fact]
