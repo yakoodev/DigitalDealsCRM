@@ -24,8 +24,10 @@
   - платформенно-специфичные операции выполняются через `actions/{action}`;
   - все endpoint-ы worker API требуют `service-auth` через `X-Service-Token` (security scheme `workerServiceToken`);
   - обязательна публикация `capabilities` для проверки поддерживаемых операций.
+- тестовый воркер (симулятор) использует тот же `openapi-worker` контракт и не добавляет новые production endpoint-ы.
 - service-auth токены internal и worker контуров должны быть изолированы (без переиспользования значений).
 - каноника action-key вынесена в `docs/standards/worker-action-conventions.md`.
+- политика non-production действий `ext.test.*` определяется в `docs/standards/test-worker-governance.md`.
 
 ### 3.1 Runtime env-конфигурация
 - канонические env-шаблоны и правила формата определяются в `docs/standards/runtime-configuration.md`;
@@ -49,6 +51,7 @@
 - `internal`: допускаются более быстрые изменения, но только через обновление контрактных тестов зависимых сервисов.
 - `worker`: обратная совместимость обязательна в рамках минорных релизов платформы.
 - `worker` extension-операции через `actions/{action}` не должны дублировать типовые ресурсные endpoint-ы.
+- релизный прогон worker-контракта обязателен и на симуляторе, и минимум на одной реальной интеграции.
 
 ## 6. Связанные документы
 - `docs/spec/technical-specification.md`
@@ -56,6 +59,8 @@
 - `docs/testing/contract-gates-execution.md`
 - `docs/testing/internal-contract-checklist.md`
 - `docs/testing/worker-contract-checklist.md`
+- `docs/testing/test-worker-checklist.md`
 - `docs/standards/openapi-governance.md`
+- `docs/standards/test-worker-governance.md`
 - `docs/state-machines/subscription-state-machine.md`
 - `docs/standards/runtime-configuration.md`

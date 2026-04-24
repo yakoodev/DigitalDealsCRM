@@ -4,6 +4,7 @@
 - предотвратить регресс в платежах, entitlement и account lifecycle
 - гарантировать корректность доступа по ролям и подписке
 - подтвердить устойчивость route и worker lifecycle-процессов
+- обеспечить воспроизводимую контрактную проверку worker API через тестовый воркер (симулятор)
 
 ## 2. Уровни тестирования
 ### Unit
@@ -44,6 +45,8 @@
 - worker публикует capability-набор и не принимает неподдерживаемые действия
 - типовые worker-операции покрыты ресурсными endpoint-тестами, extension-сценарии покрыты отдельно
 - extension endpoint worker-а принимает только `ext.*` action-key
+- `ext.test.*` доступен только в non-production профиле тестового воркера
+- сценарии `TW-SCN-AUTH-FAIL`, `TW-SCN-TIMEOUT`, `TW-SCN-CONTRACT-DRIFT` проходят с ожидаемой диагностикой
 - internal API недоступен без валидного `X-Service-Token`
 - worker API недоступен без валидного `X-Service-Token`
 - service-auth токены internal и worker контуров не переиспользуются между собой
@@ -60,6 +63,8 @@
 - contract-tests строятся от `docs/api-contracts/openapi-external.yaml`, `docs/api-contracts/openapi-internal.yaml`, `docs/api-contracts/openapi-worker.yaml`
 - contract quality gates выполняются по ID из `docs/standards/openapi-governance.md` (`OAG-*`)
 - порядок запуска contract quality gates в CI определяется в `docs/testing/contract-gates-execution.md`
+- сценарии и capability-профили тестового воркера определяются в `docs/standards/test-worker-governance.md`
+- операционный порядок прогона тестового воркера определяется в `docs/testing/test-worker-checklist.md`
 - RBAC-тесты строятся от `docs/standards/access-control-matrix.md`
 - детальный набор internal contract-checks поддерживается в `docs/testing/internal-contract-checklist.md`
 - для worker API обязательны: schema validation запросов/ответов и backward compatibility проверки
@@ -71,6 +76,7 @@
 - нет блокирующих дефектов в платежных и lifecycle-потоках
 - E2E сценарии коммерческого контура зелёные
 - регресс роли/доступа зелёный
+- обязательные прогоны worker-контракта выполнены и на тестовом воркере, и минимум на одной реальной интеграции
 - на staging подтверждены обязательные quality gates для релизного этапа
 
 ## 6. Выходная аналитика по тестам

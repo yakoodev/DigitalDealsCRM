@@ -41,6 +41,12 @@
 - каждый extension action обязан быть согласован с capability-набором worker-а;
 - Gateway не должен проксировать action, который не объявлен capability-набором worker-а.
 
+## 4.1 Тестовый воркер (non-production)
+- тестовый воркер реализует тот же `openapi-worker` контракт без новых production endpoint-ов;
+- `ext.test.*` используется только в non-production профиле по `docs/standards/test-worker-governance.md`;
+- в production-профиле `ext.test.*` должен отклоняться как неподдерживаемый action;
+- тестовый воркер используется для `local/ci/staging` контрактных проверок и не заменяет боевые интеграции.
+
 ## 5. Политика совместимости
 - совместимыми считаются изменения вида: добавление новых optional-полей, новых endpoint-ов, новых enum-значений и новых error-кодов;
 - breaking change: удаление/переименование endpoint-а, удаление/переименование поля, перевод optional-поля в required, несовместимое изменение типа или семантики;
@@ -61,6 +67,13 @@
 - `OAG-TEST-SERVICE-AUTH-TOKEN-ISOLATION`: internal и worker service-auth токены изолированы по `docs/standards/runtime-configuration.md`;
 - `OAG-TEST-CORS-EXTERNAL`: CORS/preflight проверки для `external` API зелёные.
 
+## 6.1 Обязательный сценарный набор для worker gate
+- обязательный набор симуляторных сценариев определяется канонически в `docs/standards/test-worker-governance.md`;
+- `OAG-TEST-CONTRACT-WORKER` обязан включать `TW-SCN-HAPPY-PATH`, `TW-SCN-IDEMPOTENCY-REPLAY`, `TW-SCN-TRANSIENT-ERROR`;
+- `OAG-TEST-CAPABILITY-ACTION` обязан включать `TW-SCN-CAPABILITY-MISMATCH` и проверку политики `ext.test.*`;
+- `OAG-TEST-WORKER-SERVICE-AUTH` обязан включать `TW-SCN-AUTH-FAIL`;
+- сценарии "ошибка площадки" и "контрактный дрейф" обязательны в CI-профиле по `docs/testing/contract-gates-execution.md`.
+
 Профиль запуска и обязательность gate по этапам CI определяются в:
 - `docs/testing/contract-gates-execution.md`
 
@@ -78,7 +91,9 @@
 - `docs/testing/contract-gates-execution.md`
 - `docs/testing/internal-contract-checklist.md`
 - `docs/testing/worker-contract-checklist.md`
+- `docs/testing/test-worker-checklist.md`
 - `docs/spec/technical-specification.md`
 - `docs/standards/documentation-governance.md`
 - `docs/standards/runtime-configuration.md`
+- `docs/standards/test-worker-governance.md`
 - `docs/standards/source-of-truth-map.md`

@@ -8,6 +8,7 @@
 - `docs/standards/openapi-governance.md`
 - `docs/standards/worker-action-conventions.md`
 - `docs/standards/runtime-configuration.md`
+- `docs/standards/test-worker-governance.md`
 
 ## 1. Базовая контрактная проверка
 - OpenAPI-спека `openapi-worker.yaml` валидна и не содержит битых `$ref`;
@@ -36,3 +37,7 @@
 - `WORKER_INVALID_ACTION` для неподдерживаемого `action`;
 - `409` конфликт состояния runtime для конфликтных mutating-операций;
 - отклонение extension action, отсутствующего в capability-наборе.
+
+## 6. Тестовый воркер (симулятор)
+- для прогона через симулятор использовать `docs/testing/test-worker-checklist.md`;
+- каталог `TW-SCN-*` и capability-профили `TW-CAP-*` поддерживаются канонически в `docs/standards/test-worker-governance.md`.

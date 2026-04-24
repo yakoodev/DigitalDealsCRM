@@ -37,10 +37,12 @@
 - [../.env.external-api.example](../.env.external-api.example) — CORS-конфигурация external API
 - [../.env.internal-api.example](../.env.internal-api.example) — service-auth конфигурация internal API
 - [../.env.worker-api.example](../.env.worker-api.example) — service-auth конфигурация worker API
+- [../.env.test-worker.example](../.env.test-worker.example) — non-production профиль тестового воркера (симулятор)
 
 ## Стандарты
 - [quality-gates.md](./standards/quality-gates.md) — канонический каталог NFR/SLO/порогов инцидентов
 - [worker-action-conventions.md](./standards/worker-action-conventions.md) — каноника action-key для Gateway/worker
+- [test-worker-governance.md](./standards/test-worker-governance.md) — каноника тестового воркера и `ext.test.*`
 - [access-control-matrix.md](./standards/access-control-matrix.md) — каноническая матрица ролей и прав
 - [openapi-governance.md](./standards/openapi-governance.md) — каноника правил OpenAPI-совместимости и contract quality gates
 - [runtime-configuration.md](./standards/runtime-configuration.md) — каноника runtime env-конфигурации
@@ -54,6 +56,7 @@
 - [contract-gates-execution.md](./testing/contract-gates-execution.md)
 - [internal-contract-checklist.md](./testing/internal-contract-checklist.md)
 - [worker-contract-checklist.md](./testing/worker-contract-checklist.md)
+- [test-worker-checklist.md](./testing/test-worker-checklist.md)
 - [runbook.md](./operations/runbook.md)
 - [rollout-rollback-plan.md](./operations/rollout-rollback-plan.md)
 - [service-auth-rotation-playbook.md](./operations/service-auth-rotation-playbook.md)

@@ -17,11 +17,13 @@
 - `messages.*` — операции над сообщениями
 - `orders.*` — операции над заказами
 - `ext.*` — платформенно-специфичные extension операции
+- `ext.test.*` — симуляторные extension-операции только для non-production контуров
 
 ## 3. Политика использования
 - типовые операции должны реализовываться ресурсными endpoint-ами worker API;
 - `actions/{action}` используется только для extension операций, не покрытых типовыми endpoint-ами;
 - extension ключи обязаны иметь префикс `ext.`.
+- `ext.test.*` разрешён только для тестового воркера по `docs/standards/test-worker-governance.md`.
 
 ## 4. Capability-согласование
 - любой `ext.*` action должен иметь соответствующий capability-флаг в `/internal/v1/worker/capabilities`;
@@ -31,3 +33,10 @@
 - добавление нового `action` должно быть backward-compatible для существующих ключей;
 - переименование `action` допускается только с миграционным периодом и dual-support;
 - удаление `action` возможно только после удаления зависимости в Gateway/clients/tests.
+- `ext.test.*` не должен использоваться как часть production-бизнес-флоу.
+
+## 6. Связанные документы
+- `docs/standards/openapi-governance.md`
+- `docs/standards/test-worker-governance.md`
+- `docs/testing/worker-contract-checklist.md`
+- `docs/testing/test-worker-checklist.md`

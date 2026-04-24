@@ -68,8 +68,11 @@
 - Scope:
   - базовый worker runtime по `openapi-worker.yaml`
   - capabilities + `ext.*` extension policy
+  - тестовый воркер (симулятор площадок) как канонический контур разработки/контрактных тестов
 - Done:
   - `docs/testing/worker-contract-checklist.md` выполнен
+  - `docs/testing/test-worker-checklist.md` выполнен
+  - политика `ext.test.*` реализована только для non-production профиля
   - `OAG-TEST-CONTRACT-WORKER`, `OAG-TEST-CAPABILITY-ACTION` зелёные
 
 ### 2.7 `WP-BILLING`
