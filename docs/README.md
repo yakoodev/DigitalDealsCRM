@@ -23,6 +23,7 @@
 ## Блок ТЗ и планирования
 - [technical-specification.md](./spec/technical-specification.md)
 - [full-product-roadmap.md](./roadmap/full-product-roadmap.md)
+- [delivery-work-packages.md](./implementation/delivery-work-packages.md)
 
 ## API-контракты
 - [api-contracts.md](./api-contracts/api-contracts.md)

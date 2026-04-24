@@ -132,6 +132,7 @@
 ## 10. Текущие артефакты
 - архитектурные черновики: `docs/architecture_draft`
 - roadmap: `docs/roadmap/full-product-roadmap.md`
+- delivery packages: `docs/implementation/delivery-work-packages.md`
 - API (описание): `docs/api-contracts/api-contracts.md`
 - API common components: `docs/api-contracts/openapi-common.yaml`
 - API external: `docs/api-contracts/openapi-external.yaml`

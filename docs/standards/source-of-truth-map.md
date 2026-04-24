@@ -11,6 +11,7 @@
 | Роли и права доступа (RBAC) | `docs/standards/access-control-matrix.md` |
 | Action key формат и extension-политика | `docs/standards/worker-action-conventions.md` |
 | NFR/SLO и пороги инцидентов | `docs/standards/quality-gates.md` |
+| Структура реализации (work packages) | `docs/implementation/delivery-work-packages.md` |
 | Общие правила сопровождения документации | `docs/standards/documentation-governance.md` |
 
 ## Операционные источники
