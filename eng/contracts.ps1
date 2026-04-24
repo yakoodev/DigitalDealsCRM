@@ -37,6 +37,7 @@ switch ($Command) {
         Invoke-Step -Title 'contracts:test:services (core)' -Action { dotnet test tests/DDCRM.Core.Api.Tests/DDCRM.Core.Api.Tests.csproj --configuration Release }
         Invoke-Step -Title 'contracts:test:services (iam)' -Action { dotnet test tests/DDCRM.Iam.Api.Tests/DDCRM.Iam.Api.Tests.csproj --configuration Release }
         Invoke-Step -Title 'contracts:test:services (route)' -Action { dotnet test tests/DDCRM.RouteRegistry.Api.Tests/DDCRM.RouteRegistry.Api.Tests.csproj --configuration Release }
+        Invoke-Step -Title 'contracts:test:services (accounts-manager)' -Action { dotnet test tests/DDCRM.AccountsManager.Api.Tests/DDCRM.AccountsManager.Api.Tests.csproj --configuration Release }
     }
     'contracts:test:security' {
         Invoke-Step -Title 'contracts:test:security (all)' -Action { dotnet test DigitalDealsCRM.slnx --configuration Release --filter "Category=Security" }

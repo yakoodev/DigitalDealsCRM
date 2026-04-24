@@ -174,6 +174,27 @@
 - `Changed files`: `docs/implementation/patchnotes.md`
 - `Date`: `2026-04-24`
 
+## Wave 2 (Фаза 1, Accounts Manager)
+
+### W2-T01
+- `Task ID`: `W2-T01`
+- `WP`: `WP-ACCOUNTS-MANAGER`
+- `Status`: `started`
+- `Operations`: bootstrap Accounts Manager API/Persistence/Test projects + lifecycle orchestration implementation
+- `Gates`: `OAG-TEST-CONTRACT-SERVICES`, `OAG-TEST-INTERNAL-SERVICE-AUTH`, `OAG-TEST-SERVICE-AUTH-TOKEN-ISOLATION`
+- `Exception`: n/a
+- `Changed files`: `DigitalDealsCRM.slnx`, `src/DDCRM.AccountsManager.Api/*`, `src/DDCRM.AccountsManager.Persistence/*`, `tests/DDCRM.AccountsManager.Api.Tests/*`, `eng/contracts.ps1`, `eng/contracts.sh`
+- `Date`: `2026-04-24`
+
+- `Task ID`: `W2-T01`
+- `WP`: `WP-ACCOUNTS-MANAGER`
+- `Status`: `completed`
+- `Operations`: lifecycle `create/update/delete/migrate` (`202 Ack`), persisted idempotency, route cleanup on delete, route-switch/upsert orchestration, DB migration, integration/security tests, CI entrypoint wiring
+- `Gates`: `OAG-TEST-CONTRACT-SERVICES`, `OAG-TEST-INTERNAL-SERVICE-AUTH`, `OAG-TEST-SERVICE-AUTH-TOKEN-ISOLATION` (подготовка)
+- `Exception`: n/a
+- `Changed files`: `DigitalDealsCRM.slnx`, `src/DDCRM.AccountsManager.Api/*`, `src/DDCRM.AccountsManager.Persistence/*`, `tests/DDCRM.AccountsManager.Api.Tests/*`, `eng/contracts.ps1`, `eng/contracts.sh`, `docs/implementation/patchnotes.md`
+- `Date`: `2026-04-24`
+
 - `Task ID`: `W1-T09`
 - `WP`: `process`
 - `Status`: `completed`
