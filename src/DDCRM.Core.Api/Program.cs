@@ -2,6 +2,7 @@ using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
 using System.Text.Json;
+using DDCRM.Core.Api.Billing;
 using DDCRM.Core.Persistence;
 using DDCRM.Core.Persistence.Entities;
 using DDCRM.Shared.Authorization;
@@ -12,6 +13,7 @@ using DDCRM.Shared.Idempotency;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
+using Microsoft.Extensions.Options;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -33,6 +35,17 @@ builder.Services.AddDbContext<CoreDbContext>((serviceProvider, options) =>
 });
 
 builder.Services.AddScoped<IdempotencyExecutor>();
+builder.Services.Configure<BillingClientOptions>(builder.Configuration.GetSection(BillingClientOptions.SectionName));
+builder.Services.PostConfigure<BillingClientOptions>(options =>
+{
+    options.ServiceToken ??= builder.Configuration["INTERNAL_API_SERVICE_AUTH_CLIENT_TOKEN"];
+});
+
+builder.Services.AddHttpClient<IBillingClient, BillingHttpClient>((serviceProvider, client) =>
+{
+    var options = serviceProvider.GetRequiredService<IOptions<BillingClientOptions>>().Value;
+    client.BaseAddress = new Uri(options.BaseUrl);
+});
 
 builder.Services
     .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
@@ -479,9 +492,96 @@ external.MapDelete("/projects/{projectId:guid}/accounts/{accountId:guid}", (Http
 external.MapGet("/projects/{projectId:guid}/accounts/{accountId:guid}/proxy-credentials", (HttpContext context) => ThrowFeatureNotReady(context, "getAccountProxyCredentialsMasked"));
 external.MapPatch("/projects/{projectId:guid}/accounts/{accountId:guid}/proxy-credentials", (HttpContext context) => ThrowFeatureNotReadyWithIdempotency(context, "updateAccountProxyCredentials"));
 external.MapPost("/projects/{projectId:guid}/accounts/{accountId:guid}/proxy-credentials/reveal", (HttpContext context) => ThrowFeatureNotReadyWithIdempotency(context, "revealAccountProxyCredentials"));
-external.MapPost("/projects/{projectId:guid}/billing/payments", (HttpContext context) => ThrowFeatureNotReadyWithIdempotency(context, "createPayment"));
-external.MapPost("/projects/{projectId:guid}/billing/addons/{addonId}/purchase", (HttpContext context) => ThrowFeatureNotReadyWithIdempotency(context, "purchaseAddon"));
-external.MapPost("/projects/{projectId:guid}/billing/subscription/change-plan", (HttpContext context) => ThrowFeatureNotReadyWithIdempotency(context, "changePlan"));
+external.MapPost("/projects/{projectId:guid}/billing/payments", async (
+    HttpContext httpContext,
+    Guid projectId,
+    Dictionary<string, JsonElement>? request,
+    CoreDbContext dbContext,
+    IBillingClient billingClient,
+    IdempotencyExecutor idempotency,
+    CancellationToken cancellationToken) =>
+{
+    var actorId = GetCurrentUserId(httpContext);
+    var idempotencyKey = httpContext.RequireIdempotencyKey();
+
+    await EnsurePermissionAsync(dbContext, projectId, actorId, ProjectPermissions.ProjectBillingChangePlan, cancellationToken);
+
+    return await idempotency.ExecuteAsync(
+        dbContext,
+        $"core:billing:createPayment:{projectId}",
+        idempotencyKey,
+        async ct =>
+        {
+            var data = await billingClient.CreatePaymentAsync(projectId, request, idempotencyKey, ct);
+            return new IdempotentExecutionResult(
+                StatusCodes.Status200OK,
+                new GenericObjectResponse(httpContext.GetOrCreateRequestId(), data));
+        },
+        cancellationToken);
+});
+
+external.MapPost("/projects/{projectId:guid}/billing/addons/{addonId}/purchase", async (
+    HttpContext httpContext,
+    Guid projectId,
+    string addonId,
+    Dictionary<string, JsonElement>? request,
+    CoreDbContext dbContext,
+    IBillingClient billingClient,
+    IdempotencyExecutor idempotency,
+    CancellationToken cancellationToken) =>
+{
+    var actorId = GetCurrentUserId(httpContext);
+    var idempotencyKey = httpContext.RequireIdempotencyKey();
+
+    await EnsurePermissionAsync(dbContext, projectId, actorId, ProjectPermissions.ProjectBillingChangePlan, cancellationToken);
+
+    return await idempotency.ExecuteAsync(
+        dbContext,
+        $"core:billing:purchaseAddon:{projectId}:{addonId}",
+        idempotencyKey,
+        async ct =>
+        {
+            var payload = MergePayload(request, new Dictionary<string, object?>
+            {
+                ["addonId"] = addonId,
+                ["operation"] = "addon.purchase",
+            });
+
+            var data = await billingClient.CreatePaymentAsync(projectId, payload, idempotencyKey, ct);
+            return new IdempotentExecutionResult(
+                StatusCodes.Status200OK,
+                new GenericObjectResponse(httpContext.GetOrCreateRequestId(), data));
+        },
+        cancellationToken);
+});
+
+external.MapPost("/projects/{projectId:guid}/billing/subscription/change-plan", async (
+    HttpContext httpContext,
+    Guid projectId,
+    Dictionary<string, JsonElement> request,
+    CoreDbContext dbContext,
+    IBillingClient billingClient,
+    IdempotencyExecutor idempotency,
+    CancellationToken cancellationToken) =>
+{
+    var actorId = GetCurrentUserId(httpContext);
+    var idempotencyKey = httpContext.RequireIdempotencyKey();
+
+    await EnsurePermissionAsync(dbContext, projectId, actorId, ProjectPermissions.ProjectBillingChangePlan, cancellationToken);
+
+    return await idempotency.ExecuteAsync(
+        dbContext,
+        $"core:billing:changePlan:{projectId}",
+        idempotencyKey,
+        async ct =>
+        {
+            var status = await billingClient.ManualActivateSubscriptionAsync(projectId, request, idempotencyKey, ct);
+            return new IdempotentExecutionResult(
+                StatusCodes.Status200OK,
+                new AckResponse(httpContext.GetOrCreateRequestId(), status));
+        },
+        cancellationToken);
+});
 external.MapPost("/account-api/{routeKey}/{action}", (HttpContext context) => ThrowFeatureNotReadyWithIdempotency(context, "proxyAccountApiAction"));
 
 app.Run();
@@ -557,6 +657,22 @@ static string ReadString(Dictionary<string, JsonElement> payload, string key)
     return value.GetString()!.Trim();
 }
 
+static Dictionary<string, JsonElement> MergePayload(
+    IDictionary<string, JsonElement>? payload,
+    IDictionary<string, object?> additions)
+{
+    var merged = payload is null
+        ? new Dictionary<string, JsonElement>(StringComparer.Ordinal)
+        : payload.ToDictionary(x => x.Key, x => x.Value.Clone(), StringComparer.Ordinal);
+
+    foreach (var (key, value) in additions)
+    {
+        merged[key] = JsonSerializer.SerializeToElement(value, value?.GetType() ?? typeof(object));
+    }
+
+    return merged;
+}
+
 static IResult ThrowFeatureNotReady(HttpContext httpContext, string operation)
 {
     throw new ApiErrorException(
@@ -599,5 +715,7 @@ public sealed record AccountDto(
     string? ProxyLoginMasked);
 
 public sealed record AccountListResponse(string RequestId, IReadOnlyCollection<AccountDto> Items);
+
+public sealed record GenericObjectResponse(string RequestId, IDictionary<string, object?> Data);
 
 public partial class Program;

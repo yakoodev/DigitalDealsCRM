@@ -12,9 +12,7 @@ public sealed class CoreApiIntegrationTests(CoreApiFactory factory) : IClassFixt
     [Trait("Category", "Integration")]
     public async Task CreateProject_ThenListProjects_ReturnsCreatedProject()
     {
-        using var client = factory.CreateClient();
-        var userId = Guid.NewGuid();
-        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", factory.CreateToken(userId));
+        using var client = CreateAuthorizedClient(Guid.NewGuid());
 
         using var request = new HttpRequestMessage(HttpMethod.Post, "/v1/projects");
         request.Headers.Add("Idempotency-Key", Guid.NewGuid().ToString("N"));
@@ -38,10 +36,7 @@ public sealed class CoreApiIntegrationTests(CoreApiFactory factory) : IClassFixt
     [Trait("Category", "Integration")]
     public async Task CreateProject_WithSameIdempotencyKey_IsIdempotent()
     {
-        using var client = factory.CreateClient();
-        var userId = Guid.NewGuid();
-        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", factory.CreateToken(userId));
-
+        using var client = CreateAuthorizedClient(Guid.NewGuid());
         var idempotencyKey = Guid.NewGuid().ToString("N");
 
         var first = await SendCreateProjectAsync(client, idempotencyKey, "Bravo");
@@ -93,25 +88,172 @@ public sealed class CoreApiIntegrationTests(CoreApiFactory factory) : IClassFixt
 
     [Fact]
     [Trait("Category", "Integration")]
-    public async Task BillingEndpoint_InWave1_ReturnsFeatureNotReady()
+    public async Task BillingPayments_ReturnsDataAndIsIdempotent()
     {
-        using var client = factory.CreateClient();
-        var userId = Guid.NewGuid();
+        factory.BillingClient.Reset();
+
+        using var client = CreateAuthorizedClient(Guid.NewGuid());
+        var projectId = await CreateProjectAsync(client, "Gamma");
+        var idempotencyKey = Guid.NewGuid().ToString("N");
+
+        var first = await SendJsonAsync(
+            client,
+            HttpMethod.Post,
+            $"/v1/projects/{projectId}/billing/payments",
+            idempotencyKey,
+            new { amount = 1000, currency = "RUB" });
+
+        var second = await SendJsonAsync(
+            client,
+            HttpMethod.Post,
+            $"/v1/projects/{projectId}/billing/payments",
+            idempotencyKey,
+            new { amount = 1000, currency = "RUB" });
+
+        Assert.Equal(HttpStatusCode.OK, first.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, second.StatusCode);
+
+        using var firstJson = JsonDocument.Parse(await first.Content.ReadAsStringAsync());
+        using var secondJson = JsonDocument.Parse(await second.Content.ReadAsStringAsync());
+
+        var firstData = firstJson.RootElement.GetProperty("data");
+        var secondData = secondJson.RootElement.GetProperty("data");
+
+        Assert.Equal(projectId, firstData.GetProperty("projectId").GetGuid());
+        Assert.Equal(firstData.GetProperty("paymentId").GetString(), secondData.GetProperty("paymentId").GetString());
+        Assert.Single(factory.BillingClient.CreatePaymentCalls);
+    }
+
+    [Fact]
+    [Trait("Category", "Integration")]
+    public async Task BillingPurchaseAddon_ForwardsAddonMetadata()
+    {
+        factory.BillingClient.Reset();
+
+        using var client = CreateAuthorizedClient(Guid.NewGuid());
+        var projectId = await CreateProjectAsync(client, "Delta");
+
+        var response = await SendJsonAsync(
+            client,
+            HttpMethod.Post,
+            $"/v1/projects/{projectId}/billing/addons/premium/purchase",
+            Guid.NewGuid().ToString("N"),
+            new { seats = 5 });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var data = json.RootElement.GetProperty("data");
+
+        Assert.Equal("premium", data.GetProperty("addonId").GetString());
+        Assert.Equal("addon.purchase", data.GetProperty("operation").GetString());
+        Assert.Equal(5, data.GetProperty("seats").GetInt32());
+        Assert.Single(factory.BillingClient.CreatePaymentCalls);
+    }
+
+    [Fact]
+    [Trait("Category", "Integration")]
+    public async Task BillingChangePlan_ReturnsAckAndIsIdempotent()
+    {
+        factory.BillingClient.Reset();
+
+        using var client = CreateAuthorizedClient(Guid.NewGuid());
+        var projectId = await CreateProjectAsync(client, "Epsilon");
+        var idempotencyKey = Guid.NewGuid().ToString("N");
+
+        var first = await SendJsonAsync(
+            client,
+            HttpMethod.Post,
+            $"/v1/projects/{projectId}/billing/subscription/change-plan",
+            idempotencyKey,
+            new { planId = "enterprise" });
+
+        var second = await SendJsonAsync(
+            client,
+            HttpMethod.Post,
+            $"/v1/projects/{projectId}/billing/subscription/change-plan",
+            idempotencyKey,
+            new { planId = "enterprise" });
+
+        Assert.Equal(HttpStatusCode.OK, first.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, second.StatusCode);
+
+        using var firstJson = JsonDocument.Parse(await first.Content.ReadAsStringAsync());
+        using var secondJson = JsonDocument.Parse(await second.Content.ReadAsStringAsync());
+
+        Assert.Equal("completed", firstJson.RootElement.GetProperty("status").GetString());
+        Assert.Equal(
+            firstJson.RootElement.GetProperty("requestId").GetString(),
+            secondJson.RootElement.GetProperty("requestId").GetString());
+        Assert.Single(factory.BillingClient.ManualActivateCalls);
+    }
+
+    [Fact]
+    [Trait("Category", "Security")]
+    public async Task BillingPayments_ModeratorRole_IsForbidden()
+    {
+        factory.BillingClient.Reset();
+
+        var ownerId = Guid.NewGuid();
+        var moderatorId = Guid.NewGuid();
+
+        using var ownerClient = CreateAuthorizedClient(ownerId);
+        var projectId = await CreateProjectAsync(ownerClient, "Zeta");
+
+        var addMemberResponse = await SendJsonAsync(
+            ownerClient,
+            HttpMethod.Post,
+            $"/v1/projects/{projectId}/members",
+            Guid.NewGuid().ToString("N"),
+            new { userId = moderatorId, role = "moderator" });
+
+        Assert.Equal(HttpStatusCode.OK, addMemberResponse.StatusCode);
+
+        using var moderatorClient = CreateAuthorizedClient(moderatorId);
+
+        var billingResponse = await SendJsonAsync(
+            moderatorClient,
+            HttpMethod.Post,
+            $"/v1/projects/{projectId}/billing/payments",
+            Guid.NewGuid().ToString("N"),
+            new { amount = 777 });
+
+        Assert.Equal(HttpStatusCode.Forbidden, billingResponse.StatusCode);
+        Assert.Empty(factory.BillingClient.CreatePaymentCalls);
+    }
+
+    private HttpClient CreateAuthorizedClient(Guid userId)
+    {
+        var client = factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", factory.CreateToken(userId));
+        return client;
+    }
 
-        var projectResponse = await SendCreateProjectAsync(client, Guid.NewGuid().ToString("N"), "Gamma");
-        using var projectJson = JsonDocument.Parse(await projectResponse.Content.ReadAsStringAsync());
-        var projectId = projectJson.RootElement.GetProperty("project").GetProperty("id").GetGuid();
+    private static async Task<Guid> CreateProjectAsync(HttpClient client, string name)
+    {
+        var response = await SendCreateProjectAsync(client, Guid.NewGuid().ToString("N"), name);
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
 
-        using var request = new HttpRequestMessage(HttpMethod.Post, $"/v1/projects/{projectId}/billing/payments");
-        request.Headers.Add("Idempotency-Key", Guid.NewGuid().ToString("N"));
-        request.Content = JsonContent.Create(new { amount = 1000 });
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        return json.RootElement.GetProperty("project").GetProperty("id").GetGuid();
+    }
 
-        var response = await client.SendAsync(request);
-        Assert.Equal(HttpStatusCode.NotImplemented, response.StatusCode);
+    private static async Task<HttpResponseMessage> SendJsonAsync(
+        HttpClient client,
+        HttpMethod method,
+        string url,
+        string idempotencyKey,
+        object? payload)
+    {
+        var request = new HttpRequestMessage(method, url);
+        request.Headers.Add("Idempotency-Key", idempotencyKey);
 
-        using var responseJson = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-        Assert.Equal("FEATURE_NOT_READY", responseJson.RootElement.GetProperty("errorCode").GetString());
+        if (payload is not null)
+        {
+            request.Content = JsonContent.Create(payload);
+        }
+
+        return await client.SendAsync(request);
     }
 
     private static async Task<HttpResponseMessage> SendCreateProjectAsync(HttpClient client, string idempotencyKey, string name)

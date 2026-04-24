@@ -273,6 +273,25 @@
 - `Changed files`: `DigitalDealsCRM.slnx`, `src/DDCRM.Billing.Api/*`, `src/DDCRM.Billing.Persistence/*`, `tests/DDCRM.Billing.Api.Tests/*`, `eng/contracts.ps1`, `eng/contracts.sh`, `docs/implementation/patchnotes.md`
 - `Date`: `2026-04-24`
 
+### W3-T02
+- `Task ID`: `W3-T02`
+- `WP`: `WP-PLATFORM-CORE`, `WP-BILLING`
+- `Status`: `started`
+- `Operations`: подключить external billing операции `createPayment`, `purchaseAddon`, `changePlan` в Core API через internal Billing API client + идемпотентность + RBAC
+- `Gates`: `OAG-TEST-CONTRACT-SERVICES`, `OAG-TEST-INTERNAL-SERVICE-AUTH`, `OAG-TEST-SERVICE-AUTH-TOKEN-ISOLATION`
+- `Exception`: n/a
+- `Changed files`: `src/DDCRM.Core.Api/Program.cs`, `src/DDCRM.Core.Api/Billing/*`, `tests/DDCRM.Core.Api.Tests/*`, `docs/implementation/patchnotes.md`
+- `Date`: `2026-04-24`
+
+- `Task ID`: `W3-T02`
+- `WP`: `WP-PLATFORM-CORE`, `WP-BILLING`
+- `Status`: `completed`
+- `Operations`: реализованы external billing handlers в `Core API` с вызовом `BillingHttpClient`; добавлены `GenericObjectResponse` ответы для `createPayment`/`purchaseAddon`, `AckResponse` для `changePlan`; покрытие интеграционными тестами по success/idempotency/RBAC
+- `Gates`: `OAG-TEST-CONTRACT-SERVICES`, `OAG-TEST-INTERNAL-SERVICE-AUTH`, `OAG-TEST-SERVICE-AUTH-TOKEN-ISOLATION` (зелёные локальные прогоны)
+- `Exception`: n/a
+- `Changed files`: `src/DDCRM.Core.Api/Program.cs`, `src/DDCRM.Core.Api/Billing/*`, `tests/DDCRM.Core.Api.Tests/*`, `docs/implementation/patchnotes.md`
+- `Date`: `2026-04-24`
+
 - `Task ID`: `W1-T09`
 - `WP`: `process`
 - `Status`: `completed`

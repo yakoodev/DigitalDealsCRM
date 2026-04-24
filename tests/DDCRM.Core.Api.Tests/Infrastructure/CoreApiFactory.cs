@@ -1,9 +1,12 @@
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
+using DDCRM.Core.Api.Billing;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.IdentityModel.Tokens;
 
 namespace DDCRM.Core.Api.Tests.Infrastructure;
@@ -13,6 +16,8 @@ public sealed class CoreApiFactory : WebApplicationFactory<Program>
     private const string Issuer = "ddcrm-tests";
     private const string Audience = "ddcrm-tests-api";
     private const string SigningKey = "ddcrm-tests-signing-key-which-is-long-enough-123";
+
+    public FakeBillingClient BillingClient { get; } = new();
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
@@ -33,6 +38,15 @@ public sealed class CoreApiFactory : WebApplicationFactory<Program>
                 ["TEST_USE_INMEMORY_DB"] = "true",
                 ["TEST_INMEMORY_DB_NAME"] = $"core-tests-{Guid.NewGuid():N}",
             });
+        });
+
+        builder.ConfigureServices(services =>
+        {
+            services.RemoveAll<IBillingClient>();
+            services.RemoveAll<FakeBillingClient>();
+
+            services.AddSingleton(BillingClient);
+            services.AddSingleton<IBillingClient>(serviceProvider => serviceProvider.GetRequiredService<FakeBillingClient>());
         });
     }
 
