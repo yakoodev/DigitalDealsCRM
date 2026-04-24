@@ -1,4 +1,4 @@
-# DDCRM — Runbook (черновик)
+# DDCRM — Runbook
 
 Канонический источник порогов, SLO и recovery-критериев:
 - `docs/standards/quality-gates.md`
@@ -6,6 +6,11 @@
 ## 0. Целевые SLO и пороги инцидентов
 - инцидентные пороги: `QG-INC-SEV1-5XX-RATE`, `QG-INC-SEV1-ROUTE-NOT-FOUND-RATE`, `QG-INC-SEV1-WEBHOOK-OLDEST-AGE`, `QG-INC-SEV2-GW-CHECK-P95`, `QG-INC-SEV2-IAM-CACHE-P99`, `QG-INC-SEV2-CORS-PREFLIGHT-FAIL-RATE`, `QG-INC-SEV2-INTERNAL-AUTH-FAIL-RATE`, `QG-INC-SEV2-WORKER-AUTH-FAIL-RATE`
 - операционные SLA реакции: `QG-OPS-MTTA-SEV1`, `QG-OPS-MITIGATION-START-SEV1`
+
+## 0.1 Операционный dry-run (обязательный)
+- перед pre-release и rollback rehearsal выполнить `./eng/ops-ready.ps1` (или `./eng/ops-ready.sh`);
+- fast-mode `-SkipContracts` / `--skip-contracts` допускается только если contract gates уже прогнаны в текущем изменении;
+- если хотя бы один шаг dry-run красный, rollout блокируется до устранения причины.
 
 ## 1. Инцидент: недоступен Gateway
 ### Симптомы

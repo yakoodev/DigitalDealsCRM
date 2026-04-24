@@ -1,4 +1,4 @@
-# DDCRM — Rollout and Rollback Plan (черновик)
+# DDCRM — Rollout and Rollback Plan
 
 Канонический источник порогов:
 - `docs/standards/quality-gates.md`
@@ -9,6 +9,7 @@
 - включение новых проверок доступа через feature flags
 
 ## 2. Pre-release checklist
+- выполнен dry-run `./eng/ops-ready.ps1` (или `./eng/ops-ready.sh`) с зелёным результатом
 - миграции БД проверены на staging
 - contract-tests сервисов зелёные
 - E2E сценарии платежей и lifecycle зелёные
@@ -19,6 +20,7 @@
 - проверено, что worker API отклоняет запросы без валидного `X-Service-Token`
 - подтверждена изоляция service-auth токенов между internal и worker контурами
 - для релизных изменений auth-конфигурации подготовлен `docs/operations/service-auth-rotation-playbook.md`
+- для изменений service-auth выполнен rehearsal ротации по `docs/operations/service-auth-rotation-playbook.md`
 - есть нагрузочный прогон staging с проверкой `QG-SLO-LAT-GW-CHECK-P95`, `QG-SLO-LAT-CORE-P95`, `QG-SLO-WEBHOOK-P95`, `QG-SLO-ENT-RECALC-P95`
 
 ## 3. Rollout steps

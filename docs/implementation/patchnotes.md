@@ -473,3 +473,24 @@
 - `Exception`: n/a
 - `Changed files`: `docker-compose.yml`, `docker/api.Dockerfile`, `docker/README.md`, `src/DDCRM.Core.Api/Program.cs`, `src/DDCRM.Iam.Api/Program.cs`, `src/DDCRM.RouteRegistry.Api/Program.cs`, `src/DDCRM.AccountsManager.Api/Program.cs`, `src/DDCRM.Billing.Api/Program.cs`, `src/DDCRM.Entitlement.Api/Program.cs`, `src/DDCRM.Gateway.Api/Program.cs`, `src/DDCRM.Worker.Api/Program.cs`, `docs/implementation/patchnotes.md`
 - `Date`: `2026-04-24`
+
+## Wave 5 (Фаза 6, WP-OPS-READY baseline)
+
+### W5-T01
+- `Task ID`: `W5-T01`
+- `WP`: `WP-OPS-READY`
+- `Status`: `started`
+- `Operations`: автоматизировать dry-run операционной готовности (`docker health`, `smoke probes`, `contract gates`) и синхронизировать ops-документы под воспроизводимый rollout/rotation rehearsal
+- `Gates`: `QG-OPS-MTTA-SEV1`, `QG-OPS-MITIGATION-START-SEV1`, `QG-INC-SEV2-INTERNAL-AUTH-FAIL-RATE`, `QG-INC-SEV2-WORKER-AUTH-FAIL-RATE`
+- `Exception`: n/a
+- `Changed files`: `eng/ops-ready.ps1`, `eng/ops-ready.sh`, `eng/README.md`, `docs/operations/runbook.md`, `docs/operations/rollout-rollback-plan.md`, `docs/operations/service-auth-rotation-playbook.md`
+- `Date`: `2026-04-24`
+
+- `Task ID`: `W5-T01`
+- `WP`: `WP-OPS-READY`
+- `Status`: `completed`
+- `Operations`: добавлены entrypoint-скрипты `eng/ops-ready.ps1/.sh` с проверкой `docker compose` health-статусов, HTTP smoke (`/health` + service-auth headers) и полным прогоном contract gates; `runbook`, `rollout/rollback` и `service-auth rotation playbook` синхронизированы с обязательным dry-run/rehearsal процессом
+- `Gates`: `./eng/ops-ready.ps1` (зелёный локальный прогон), `contracts:validate`, `contracts:lint`, `contracts:diff:external`, `contracts:diff:worker`, `contracts:test:services`, `contracts:test:security`, `contracts:test:cors`, `contracts:test:worker` (зелёные локальные прогоны)
+- `Exception`: n/a
+- `Changed files`: `eng/ops-ready.ps1`, `eng/ops-ready.sh`, `eng/README.md`, `docs/operations/runbook.md`, `docs/operations/rollout-rollback-plan.md`, `docs/operations/service-auth-rotation-playbook.md`, `docs/implementation/patchnotes.md`
+- `Date`: `2026-04-24`

@@ -14,3 +14,15 @@
 Linux/macOS эквивалент:
 
 - `./eng/contracts.sh <entrypoint>`
+
+## Ops-ready dry-run entrypoint
+
+Полный dry-run `WP-OPS-READY` (docker health + smoke + contract gates):
+
+- `./eng/ops-ready.ps1`
+- `./eng/ops-ready.sh`
+
+Быстрый режим (без повторного прогона contract gates):
+
+- `./eng/ops-ready.ps1 -SkipContracts`
+- `./eng/ops-ready.sh --skip-contracts`
