@@ -23,7 +23,9 @@
 - матрица RBAC меняется только в `access-control-matrix.md`;
 - правила OpenAPI-совместимости и contract quality gates меняются только в `openapi-governance.md`;
 - runtime env-настройки OpenAPI-контуров меняются только по правилам `docs/standards/runtime-configuration.md`;
+- технологический стек backend/frontend/tooling меняется только в `docs/standards/technology-stack.md`;
 - каноника тестового воркера и политика `ext.test.*` меняются только в `docs/standards/test-worker-governance.md`;
+- правила для coding-агента в репозитории меняются только в `AGENTS.md`;
 - изменения в канонике должны сопровождаться ссылочными обновлениями зависимых документов.
 
 ## 4. Идентификаторы стандартов

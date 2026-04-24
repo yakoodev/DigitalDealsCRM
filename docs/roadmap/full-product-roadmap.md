@@ -16,6 +16,7 @@ Roadmap разделён на фазы с gate-критериями.
 - зафиксированное ТЗ
 - зафиксированные API-контракты в формате OpenAPI 3.1 (`external/internal/worker`), ERD, state machine, test strategy, runbook, rollout/rollback
 - зафиксированные числовые NFR/SLO и пороги алертов
+- зафиксированный технологический стек (`C#/.NET` для платформенных сервисов, `React + Next.js + TypeScript` для frontend, `TanStack Query + Orval` для data/API слоя)
 
 ### Gate
 - все документы из `docs/README.md` существуют и синхронизированы
@@ -23,6 +24,7 @@ Roadmap разделён на фазы с gate-критериями.
 - правила OpenAPI-совместимости и contract quality gates зафиксированы в `docs/standards/openapi-governance.md`
 - профиль запуска contract quality gates в CI зафиксирован в `docs/testing/contract-gates-execution.md`
 - runtime-источники CORS/service-auth (`external/internal/worker`) зафиксированы в `docs/standards/runtime-configuration.md`
+- технологический стек зафиксирован в `docs/standards/technology-stack.md`
 - `docs/standards/quality-gates.md` принят как единый источник числовых порогов
 - ТЗ, runbook, rollout/rollback и test strategy ссылаются на ID quality gates без дублирования чисел
 

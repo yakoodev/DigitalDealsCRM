@@ -14,6 +14,7 @@
 - контрактное тестирование сервисов и worker-ов;
 - единая схема валидации request/response;
 - контроль обратной совместимости API.
+- стек генерации frontend-клиентов фиксируется в `docs/standards/technology-stack.md`.
 
 ## 3. Scope текущих спецификаций
 - `openapi-common.yaml` содержит общие компоненты (`security`, `parameters`, `requestId/error/ack/generic schemas`).
@@ -62,5 +63,6 @@
 - `docs/testing/test-worker-checklist.md`
 - `docs/standards/openapi-governance.md`
 - `docs/standards/test-worker-governance.md`
+- `docs/standards/technology-stack.md`
 - `docs/state-machines/subscription-state-machine.md`
 - `docs/standards/runtime-configuration.md`

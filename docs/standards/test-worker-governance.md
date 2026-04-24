@@ -35,6 +35,7 @@
 - детерминированный движок сценариев: один и тот же `scenario + fixture-set + idempotency key` даёт повторяемый результат;
 - фикстуры являются версионируемыми входными данными, источник задаётся через env;
 - ответы симулятора формируются так, чтобы воспроизводить типовые коды/ошибки реальных площадок;
+- реализация тестового воркера в DDCRM выполняется на `C#/.NET` (по `docs/standards/technology-stack.md`);
 - симулятор не хранит production-состояние и не является источником бизнес-истины.
 
 ## 5. Каталог обязательных сценариев
@@ -79,6 +80,7 @@
 - `docs/standards/openapi-governance.md`
 - `docs/standards/worker-action-conventions.md`
 - `docs/standards/runtime-configuration.md`
+- `docs/standards/technology-stack.md`
 - `docs/testing/test-strategy.md`
 - `docs/testing/contract-gates-execution.md`
 - `docs/testing/test-worker-checklist.md`

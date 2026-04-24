@@ -93,6 +93,8 @@
 
 ### 2.9 `WP-RBAC-UI`
 - Scope:
+  - frontend stack: `React + Next.js (App Router) + TypeScript`
+  - API/data слой: `TanStack Query v5 + Orval` (клиенты из OpenAPI)
   - role-aware UI guards
   - скрытие финансовых/чувствительных операций для moderator
 - Done:
@@ -111,6 +113,7 @@
 ## 3. Cross-cutting Definition of Done
 - контрактные проверки выполняются по `docs/testing/contract-gates-execution.md`;
 - нет нерегламентированных breaking-изменений OpenAPI;
+- backend/frontend/tooling соответствуют канонике `docs/standards/technology-stack.md`;
 - runtime env-настройки соответствуют `docs/standards/runtime-configuration.md`;
 - инцидентные и recovery пороги проверяемы по `docs/standards/quality-gates.md`.
 

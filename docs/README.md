@@ -41,6 +41,7 @@
 
 ## Стандарты
 - [quality-gates.md](./standards/quality-gates.md) — канонический каталог NFR/SLO/порогов инцидентов
+- [technology-stack.md](./standards/technology-stack.md) — каноника backend/frontend/tooling стека
 - [worker-action-conventions.md](./standards/worker-action-conventions.md) — каноника action-key для Gateway/worker
 - [test-worker-governance.md](./standards/test-worker-governance.md) — каноника тестового воркера и `ext.test.*`
 - [access-control-matrix.md](./standards/access-control-matrix.md) — каноническая матрица ролей и прав
@@ -60,3 +61,6 @@
 - [runbook.md](./operations/runbook.md)
 - [rollout-rollback-plan.md](./operations/rollout-rollback-plan.md)
 - [service-auth-rotation-playbook.md](./operations/service-auth-rotation-playbook.md)
+
+## Правила Для Агентов
+- [../AGENTS.md](../AGENTS.md) — обязательные инструкции для coding-агентов в репозитории

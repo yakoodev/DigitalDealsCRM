@@ -32,6 +32,11 @@ Frontend работает:
 - **Core**
 - **Account API Gateway**
 
+## Технологический стек
+- frontend-стек фиксируется канонически в `docs/standards/technology-stack.md`;
+- текущий утверждённый стек: `React + Next.js (App Router) + TypeScript`;
+- API/data слой: `TanStack Query v5 + Orval` (генерация клиентов из OpenAPI).
+
 ## Что не делает
 - не управляет worker-ами
 - не знает физическое размещение worker-ов

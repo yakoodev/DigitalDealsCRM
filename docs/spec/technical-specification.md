@@ -25,6 +25,7 @@
 - прокси обязателен для каждого подключаемого аккаунта площадки
 - proxy credentials и session secrets хранятся только в Worker State Storage
 - модератор не имеет доступа к финансам
+- технологический стек backend/frontend/tooling фиксируется канонически в `docs/standards/technology-stack.md`
 
 ## 4. Термины
 - `Проект` — изолированный коммерческий и доступный контур
@@ -120,6 +121,7 @@
 - есть API-контракты в формате **OpenAPI 3.1** по контурам `external/internal/worker`
 - OpenAPI-контракты пригодны для генерации клиентов и контрактных тестов
 - правила OpenAPI-совместимости и contract quality gates определены в `docs/standards/openapi-governance.md`
+- технологический стек зафиксирован в `docs/standards/technology-stack.md`
 - числовые NFR/SLO зафиксированы в `docs/standards/quality-gates.md`
 - runbook и rollout/rollback используют ID quality gates без дублирования числовых значений
 - правила doc governance зафиксированы в `docs/standards/documentation-governance.md`

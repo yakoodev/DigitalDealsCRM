@@ -8,12 +8,14 @@
 |---|---|
 | OpenAPI правила, quality gates, совместимость | `docs/standards/openapi-governance.md` |
 | Runtime env-конфигурация (`external/internal/worker/test-worker`) | `docs/standards/runtime-configuration.md` |
+| Технологический стек backend/frontend/tooling | `docs/standards/technology-stack.md` |
 | Роли и права доступа (RBAC) | `docs/standards/access-control-matrix.md` |
 | Action key формат и extension-политика | `docs/standards/worker-action-conventions.md` |
 | Тестовый воркер (симулятор площадок) и его сценарии | `docs/standards/test-worker-governance.md` |
 | NFR/SLO и пороги инцидентов | `docs/standards/quality-gates.md` |
 | Структура реализации (work packages) | `docs/implementation/delivery-work-packages.md` |
 | Общие правила сопровождения документации | `docs/standards/documentation-governance.md` |
+| Инструкции для coding-агента в репозитории | `AGENTS.md` |
 
 ## Операционные источники
 | Тема | Канонический документ |
