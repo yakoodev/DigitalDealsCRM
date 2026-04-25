@@ -12,7 +12,8 @@
 
 ## 1. Базовая контрактная проверка
 - OpenAPI-спека `openapi-worker.yaml` валидна и не содержит битых `$ref`;
-- реализация worker-а покрывает обязательные ресурсные endpoint-ы (`account/listings/messages/orders`);
+- реализация worker-а покрывает обязательные resource endpoint-ы `v2` (`account/conversations/products`) и extension endpoint `actions/{action}`;
+- `products.create` валидирует `schemaId` и обязательные provider-специфичные поля по `schemas/products`;
 - все mutating endpoint-ы поддерживают `Idempotency-Key`.
 
 ## 2. Service-auth проверка
@@ -22,14 +23,15 @@
 - worker service-auth токены не пересекаются с internal service-auth токенами.
 
 ## 3. Capability и extension проверки
-- `/internal/v1/worker/capabilities` публикует актуальный capability-набор;
+- `/internal/v2/worker/capabilities` публикует актуальный capability-набор;
+- provider-профиль (`funpay/playerok/ggsell/platimarket`) консистентен между `/capabilities`, `/account` и `/schemas/products`;
 - extension endpoint принимает только `ext.*` action-key;
 - Gateway не вызывает extension action без соответствующего capability.
 
 ## 4. Совместимость и регресс
 - backward compatibility проверена для `openapi-worker.yaml`;
 - новые поля и операции добавляются как backward-compatible изменения;
-- breaking-изменения допускаются только с миграционным периодом и dual-support.
+- breaking-изменения допускаются только с миграционным планом, версионированием и обновлением contract gates.
 
 ## 5. Минимальный набор негативных тестов
 - `401/403` при отсутствии/некорректном `X-Service-Token`;

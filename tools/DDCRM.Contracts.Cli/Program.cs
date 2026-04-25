@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Text.RegularExpressions;
+using System.Text.Json;
 
 var command = args.FirstOrDefault();
 if (string.IsNullOrWhiteSpace(command))
@@ -134,13 +135,35 @@ static int DiffSpec(string repositoryRoot, string? scope)
     var removedOps = baselineOps.Except(currentOps).OrderBy(x => x).ToList();
     if (removedOps.Count > 0)
     {
-        Console.Error.WriteLine("[diff] обнаружены потенциальные breaking changes (удаленные операции):");
-        foreach (var removed in removedOps)
+        var resolution = ResolveDiffExceptions(repositoryRoot, scope, removedOps);
+        if (resolution.Unresolved.Count > 0)
         {
-            Console.Error.WriteLine($"  - {removed}");
+            Console.Error.WriteLine("[diff] обнаружены потенциальные breaking changes (удаленные операции):");
+            foreach (var unresolved in resolution.Unresolved)
+            {
+                Console.Error.WriteLine($"  - {unresolved}");
+            }
+
+            if (resolution.WaivedByRule.Count > 0)
+            {
+                Console.Error.WriteLine("[diff] Следующие удаления покрыты активными exception-правилами:");
+                foreach (var (operation, ruleId) in resolution.WaivedByRule.OrderBy(x => x.Key, StringComparer.OrdinalIgnoreCase))
+                {
+                    Console.Error.WriteLine($"  - {operation} (rule: {ruleId})");
+                }
+            }
+
+            return 1;
         }
 
-        return 1;
+        Console.WriteLine("[diff] удалённые операции покрыты активными exception-правилами:");
+        foreach (var (operation, ruleId) in resolution.WaivedByRule.OrderBy(x => x.Key, StringComparer.OrdinalIgnoreCase))
+        {
+            Console.WriteLine($"  - {operation} (rule: {ruleId})");
+        }
+
+        Console.WriteLine($"[diff] Потенциальных breaking changes для {scope} не обнаружено (с учетом exception-правил).");
+        return 0;
     }
 
     Console.WriteLine($"[diff] Потенциальных breaking changes для {scope} не обнаружено.");
@@ -243,6 +266,66 @@ static Dictionary<string, string> GetSpecPaths(string root)
     };
 }
 
+static DiffExceptionResolution ResolveDiffExceptions(
+    string repositoryRoot,
+    string scope,
+    IReadOnlyCollection<string> removedOperations)
+{
+    var path = Path.Combine(repositoryRoot, "docs", "implementation", "contract-gate-exceptions.json");
+    if (!File.Exists(path))
+    {
+        return new DiffExceptionResolution(
+            removedOperations.OrderBy(x => x, StringComparer.OrdinalIgnoreCase).ToList(),
+            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase));
+    }
+
+    ContractGateExceptionsRoot? root;
+    try
+    {
+        root = JsonSerializer.Deserialize<ContractGateExceptionsRoot>(
+            File.ReadAllText(path),
+            new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true,
+            });
+    }
+    catch (Exception exception)
+    {
+        Console.Error.WriteLine($"[diff] Не удалось прочитать exception-файл {path}: {exception.Message}");
+        return new DiffExceptionResolution(
+            removedOperations.OrderBy(x => x, StringComparer.OrdinalIgnoreCase).ToList(),
+            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase));
+    }
+
+    var rules = root?.Rules ?? [];
+    var today = DateOnly.FromDateTime(DateTime.UtcNow);
+    var activeRules = rules
+        .Where(rule => string.Equals(rule.Scope, scope, StringComparison.OrdinalIgnoreCase))
+        .Where(rule => DateOnly.TryParse(rule.ExpiresOn, out var expiryDate) && expiryDate >= today)
+        .ToList();
+
+    var waivedByRule = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+    foreach (var operation in removedOperations)
+    {
+        foreach (var rule in activeRules)
+        {
+            var removedByRule = rule.RemovedOperations ?? [];
+            if (removedByRule.Any(candidate => string.Equals(candidate, operation, StringComparison.OrdinalIgnoreCase)))
+            {
+                waivedByRule[operation] = rule.Id;
+                break;
+            }
+        }
+    }
+
+    var unresolved = removedOperations
+        .Where(operation => !waivedByRule.ContainsKey(operation))
+        .OrderBy(x => x, StringComparer.OrdinalIgnoreCase)
+        .ToList();
+
+    return new DiffExceptionResolution(unresolved, waivedByRule);
+}
+
 static string? TryReadFromGit(string repositoryRoot, string revisionSpec)
 {
     var psi = new ProcessStartInfo
@@ -299,6 +382,20 @@ static void PrintUsage()
 }
 
 sealed record OperationMeta(string Path, string Method, bool HasOperationId, bool HasDefaultResponse);
+
+sealed record ContractGateExceptionsRoot(IReadOnlyCollection<ContractGateExceptionRule> Rules);
+
+sealed record ContractGateExceptionRule(
+    string Id,
+    string Scope,
+    string Owner,
+    string Reason,
+    string ExpiresOn,
+    IReadOnlyCollection<string>? RemovedOperations);
+
+sealed record DiffExceptionResolution(
+    IReadOnlyCollection<string> Unresolved,
+    IReadOnlyDictionary<string, string> WaivedByRule);
 
 sealed class OperationMetaBuilder(string path, string method)
 {

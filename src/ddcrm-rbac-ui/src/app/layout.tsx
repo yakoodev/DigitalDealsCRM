@@ -15,9 +15,9 @@ const ibmPlexMono = IBM_Plex_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "DDCRM RBAC Console",
+  title: "DDCRM Platform",
   description:
-    "Базовый UI для DDCRM: role-aware операции проектов, аккаунтов, billing и gateway.",
+    "Платформенный UI DDCRM: авторизация, проекты, аккаунты, товары, сообщения и schema-driven workflow.",
 };
 
 export default function RootLayout({

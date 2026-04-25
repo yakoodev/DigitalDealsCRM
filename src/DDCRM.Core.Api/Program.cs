@@ -180,8 +180,14 @@ external.MapGet("/projects", async (HttpContext httpContext, CoreDbContext dbCon
             dbContext.Projects,
             member => member.ProjectId,
             project => project.Id,
-            (member, project) => new ProjectDto(project.Id, project.Name, project.Status))
+            (member, project) => new
+            {
+                project.Id,
+                project.Name,
+                project.Status,
+            })
         .OrderBy(x => x.Name)
+        .Select(x => new ProjectDto(x.Id, x.Name, x.Status))
         .ToListAsync(cancellationToken);
 
     return Results.Ok(new ProjectListResponse(httpContext.GetOrCreateRequestId(), projects));

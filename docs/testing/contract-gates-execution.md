@@ -80,6 +80,7 @@
 ## 5. Политика падения пайплайна
 - любой красный gate из обязательного профиля блокирует merge/release;
 - временный bypass допустим только через документированный exception с owner, reason и сроком.
+- для `contracts:diff:*` exception-правила фиксируются в `docs/implementation/contract-gate-exceptions.json` с полями `id/scope/owner/reason/expiresOn/removedOperations`.
 
 ## 6. Связанные документы
 - `docs/standards/openapi-governance.md`

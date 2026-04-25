@@ -8,7 +8,7 @@ public sealed class WorkerProxyClientOptions
 
     public string BaseUrlTemplate { get; set; } = "http://localhost:5140";
 
-    public string PathPrefix { get; set; } = "/internal/v1/worker";
+    public string PathPrefix { get; set; } = "/internal/v2/worker";
 
     public string? ServiceToken { get; set; }
 }

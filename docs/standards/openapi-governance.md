@@ -35,11 +35,16 @@
 - CORS должен работать по allowlist origins и не открываться wildcard-правилом в production.
 
 ## 4. Правила worker API
-- типовые операции worker-а реализуются через ресурсные endpoint-ы (`account/listings/messages/orders`);
+- типовые операции worker-а реализуются через ресурсные endpoint-ы (`account/conversations/products`);
 - `actions/{action}` используется только для extension-операций;
 - extension action-key обязан соответствовать правилам `docs/standards/worker-action-conventions.md`;
 - каждый extension action обязан быть согласован с capability-набором worker-а;
 - Gateway не должен проксировать action, который не объявлен capability-набором worker-а.
+
+## 4.2 Политика версий worker endpoint-ов
+- production baseline worker API зафиксирован на `/internal/v2/worker/*`;
+- `v1` endpoint-ы выведены из контракта и runtime после завершения migration window;
+- новые изменения `worker`-контракта должны быть additive внутри `v2` (без скрытых breaking-изменений).
 
 ## 4.1 Тестовый воркер (non-production)
 - тестовый воркер реализует тот же `openapi-worker` контракт без новых production endpoint-ов;

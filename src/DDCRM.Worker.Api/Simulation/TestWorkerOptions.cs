@@ -19,4 +19,6 @@ public sealed class TestWorkerOptions
     public string FixtureRevision { get; set; } = "main";
 
     public bool ExtActionsEnabled { get; set; } = true;
+
+    public string Provider { get; set; } = "platimarket";
 }

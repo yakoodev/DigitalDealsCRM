@@ -114,13 +114,20 @@ public sealed class WorkerProxyHttpClient(
         string action,
         Dictionary<string, JsonElement>? requestPayload)
     {
+        var isExtensionAction = action.StartsWith("ext.", StringComparison.Ordinal);
         var (method, path) = ResolveWorkerEndpoint(action, requestPayload);
         var absoluteUri = BuildAbsoluteUri(route, path);
+        var payload = SanitizeRequestPayload(action, requestPayload);
 
         var request = new HttpRequestMessage(method, absoluteUri);
-        if (requestPayload is not null)
+        if (isExtensionAction)
         {
-            request.Content = JsonContent.Create(requestPayload);
+            // Worker extension contract expects body shape: { payload: { ... } }.
+            request.Content = JsonContent.Create(new ExtensionActionProxyRequest(requestPayload));
+        }
+        else if (payload is not null && method != HttpMethod.Get)
+        {
+            request.Content = JsonContent.Create(payload);
         }
 
         return request;
@@ -133,29 +140,94 @@ public sealed class WorkerProxyHttpClient(
             return (HttpMethod.Post, BuildPath($"/actions/{Uri.EscapeDataString(action)}"));
         }
 
-        if (string.Equals(action, "listings.search", StringComparison.Ordinal))
+        if (string.Equals(action, "account.info", StringComparison.Ordinal))
         {
-            return (HttpMethod.Post, BuildPath("/listings/search"));
+            return (HttpMethod.Get, BuildPath("/account"));
         }
 
-        if (string.Equals(action, "messages.send", StringComparison.Ordinal))
+        if (string.Equals(action, "conversations.list", StringComparison.Ordinal))
         {
-            return (HttpMethod.Post, BuildPath("/messages/send"));
+            var query = BuildQueryString(requestPayload, "limit", "cursor", "onlyUnread");
+            return (HttpMethod.Get, BuildPath($"/conversations{query}"));
         }
 
-        if (string.Equals(action, "orders.search", StringComparison.Ordinal))
+        if (string.Equals(action, "conversations.messages.list", StringComparison.Ordinal))
         {
-            return (HttpMethod.Post, BuildPath("/orders/search"));
+            var conversationId = ReadRequiredPathId(requestPayload, "conversationId");
+            var query = BuildQueryString(requestPayload, "limit", "cursor");
+            return (HttpMethod.Get, BuildPath($"/conversations/{Uri.EscapeDataString(conversationId)}/messages{query}"));
         }
 
-        if (action.StartsWith("orders.", StringComparison.Ordinal) && TryReadPathId(requestPayload, "orderId", out var orderId))
+        if (string.Equals(action, "conversations.messages.send", StringComparison.Ordinal))
         {
-            return (
-                HttpMethod.Post,
-                BuildPath($"/orders/{Uri.EscapeDataString(orderId)}/actions/{Uri.EscapeDataString(action)}"));
+            var conversationId = ReadRequiredPathId(requestPayload, "conversationId");
+            return (HttpMethod.Post, BuildPath($"/conversations/{Uri.EscapeDataString(conversationId)}/messages"));
+        }
+
+        if (string.Equals(action, "products.list", StringComparison.Ordinal))
+        {
+            var query = BuildQueryString(requestPayload, "status", "limit", "cursor");
+            return (HttpMethod.Get, BuildPath($"/products{query}"));
+        }
+
+        if (string.Equals(action, "products.create", StringComparison.Ordinal))
+        {
+            return (HttpMethod.Post, BuildPath("/products"));
+        }
+
+        if (string.Equals(action, "products.update", StringComparison.Ordinal))
+        {
+            var productId = ReadRequiredPathId(requestPayload, "productId");
+            return (HttpMethod.Patch, BuildPath($"/products/{Uri.EscapeDataString(productId)}"));
+        }
+
+        if (string.Equals(action, "products.delete", StringComparison.Ordinal))
+        {
+            var productId = ReadRequiredPathId(requestPayload, "productId");
+            return (HttpMethod.Delete, BuildPath($"/products/{Uri.EscapeDataString(productId)}"));
+        }
+
+        if (string.Equals(action, "products.schemas.list", StringComparison.Ordinal)
+            || string.Equals(action, "products.schemas", StringComparison.Ordinal))
+        {
+            var query = BuildQueryString(requestPayload, "schemaId");
+            return (HttpMethod.Get, BuildPath($"/schemas/products{query}"));
         }
 
         return (HttpMethod.Post, BuildPath($"/actions/{Uri.EscapeDataString(action)}"));
+    }
+
+    private static Dictionary<string, JsonElement>? SanitizeRequestPayload(
+        string action,
+        Dictionary<string, JsonElement>? requestPayload)
+    {
+        if (requestPayload is null)
+        {
+            return null;
+        }
+
+        if (string.Equals(action, "conversations.messages.send", StringComparison.Ordinal))
+        {
+            return RemovePayloadKeys(requestPayload, "conversationId");
+        }
+
+        if (string.Equals(action, "products.update", StringComparison.Ordinal)
+            || string.Equals(action, "products.delete", StringComparison.Ordinal))
+        {
+            return RemovePayloadKeys(requestPayload, "productId");
+        }
+
+        return requestPayload;
+    }
+
+    private static Dictionary<string, JsonElement> RemovePayloadKeys(
+        Dictionary<string, JsonElement> payload,
+        params string[] keysToRemove)
+    {
+        var keys = keysToRemove.ToHashSet(StringComparer.Ordinal);
+        return payload
+            .Where(x => !keys.Contains(x.Key))
+            .ToDictionary(x => x.Key, x => x.Value.Clone(), StringComparer.Ordinal);
     }
 
     private static bool TryReadPathId(Dictionary<string, JsonElement>? payload, string key, out string id)
@@ -168,6 +240,69 @@ public sealed class WorkerProxyHttpClient(
 
         id = value.GetString()!.Trim();
         return true;
+    }
+
+    private static string ReadRequiredPathId(Dictionary<string, JsonElement>? payload, string key)
+    {
+        if (TryReadPathId(payload, key, out var id))
+        {
+            return id;
+        }
+
+        throw new ApiErrorException(
+            StatusCodes.Status400BadRequest,
+            ApiErrorCodes.ValidationError,
+            $"Для action требуется payload.{key}.");
+    }
+
+    private static string BuildQueryString(Dictionary<string, JsonElement>? payload, params string[] keys)
+    {
+        if (payload is null || payload.Count == 0)
+        {
+            return string.Empty;
+        }
+
+        var parts = new List<string>();
+        foreach (var key in keys)
+        {
+            if (!payload.TryGetValue(key, out var value) || !TryReadQueryValue(value, out var rawValue))
+            {
+                continue;
+            }
+
+            if (string.IsNullOrWhiteSpace(rawValue))
+            {
+                continue;
+            }
+
+            parts.Add($"{Uri.EscapeDataString(key)}={Uri.EscapeDataString(rawValue)}");
+        }
+
+        return parts.Count == 0
+            ? string.Empty
+            : $"?{string.Join("&", parts)}";
+    }
+
+    private static bool TryReadQueryValue(JsonElement value, out string rawValue)
+    {
+        rawValue = string.Empty;
+        switch (value.ValueKind)
+        {
+            case JsonValueKind.String:
+                rawValue = value.GetString() ?? string.Empty;
+                return true;
+            case JsonValueKind.Number:
+                rawValue = value.GetRawText();
+                return true;
+            case JsonValueKind.True:
+                rawValue = "true";
+                return true;
+            case JsonValueKind.False:
+                rawValue = "false";
+                return true;
+            default:
+                return false;
+        }
     }
 
     private Uri BuildAbsoluteUri(RouteResolution route, string path)
@@ -219,4 +354,6 @@ public sealed class WorkerProxyHttpClient(
             request.Headers.TryAddWithoutValidation(HeaderNames.IdempotencyKey, idempotencyKey);
         }
     }
+
+    private sealed record ExtensionActionProxyRequest(Dictionary<string, JsonElement>? Payload);
 }

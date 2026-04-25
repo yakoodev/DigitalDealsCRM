@@ -10,10 +10,12 @@
 - подтверждено, что контур запуска не `production`;
 - загружен env-профиль `.env.test-worker.example` с валидными значениями;
 - `TEST_WORKER_ENABLED=true` и `TEST_WORKER_SCENARIO` установлен в требуемый `TW-SCN-*`;
+- `TEST_WORKER_PROVIDER` установлен в целевой provider (`funpay/playerok/ggsell/platimarket`);
 - `TEST_WORKER_BLOCK_IN_PRODUCTION=true`.
 
 ## 2. Проверка профиля возможностей
-- активный capability-профиль (`TW-CAP-*`) опубликован в `/internal/v1/worker/capabilities`;
+- активный capability-профиль (`TW-CAP-*`) опубликован в `/internal/v2/worker/capabilities`;
+- активный provider-профиль опубликован в `/internal/v2/worker/capabilities` (`provider`) и `/internal/v2/worker/account`;
 - выбранный сценарий совместим с активным capability-профилем;
 - тесты Gateway не отправляют action вне объявленного capability-набора.
 

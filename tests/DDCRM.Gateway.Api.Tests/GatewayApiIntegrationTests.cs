@@ -37,11 +37,11 @@ public sealed class GatewayApiIntegrationTests
 
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", factory.CreateToken(userId));
 
-        using var request = new HttpRequestMessage(HttpMethod.Post, "/v1/account-api/rk.alpha/messages.send")
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/v1/account-api/rk.alpha/conversations.messages.send")
         {
             Content = JsonContent.Create(new
             {
-                threadId = "th-1",
+                conversationId = "conv-100",
                 text = "hello",
             }),
         };
@@ -61,7 +61,7 @@ public sealed class GatewayApiIntegrationTests
         Assert.Equal(ProjectPermissions.ProjectWorkersOperate, factory.IamClient.LastCall.Permission);
 
         Assert.NotNull(factory.WorkerProxyClient.LastInvocation);
-        Assert.Equal("messages.send", factory.WorkerProxyClient.LastInvocation!.Action);
+        Assert.Equal("conversations.messages.send", factory.WorkerProxyClient.LastInvocation!.Action);
     }
 
     [Fact]
@@ -159,7 +159,7 @@ public sealed class GatewayApiIntegrationTests
         using var client = factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", factory.CreateToken(Guid.NewGuid()));
 
-        using var request = new HttpRequestMessage(HttpMethod.Post, "/v1/account-api/rk.missing/messages.send")
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/v1/account-api/rk.missing/conversations.messages.send")
         {
             Content = JsonContent.Create(new { }),
         };
@@ -221,7 +221,7 @@ public sealed class GatewayApiIntegrationTests
         using var factory = new GatewayApiFactory();
         using var client = factory.CreateClient();
 
-        using var request = new HttpRequestMessage(HttpMethod.Post, "/v1/account-api/rk.alpha/messages.send")
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/v1/account-api/rk.alpha/conversations.messages.send")
         {
             Content = JsonContent.Create(new { }),
         };
@@ -248,7 +248,7 @@ public sealed class GatewayApiIntegrationTests
 
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", factory.CreateToken(Guid.NewGuid()));
 
-        using var request = new HttpRequestMessage(HttpMethod.Post, "/v1/account-api/rk.alpha/messages.send")
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/v1/account-api/rk.alpha/conversations.messages.send")
         {
             Content = JsonContent.Create(new { }),
         };
@@ -299,7 +299,7 @@ public sealed class GatewayApiIntegrationTests
         using var factory = new GatewayApiFactory();
         using var client = factory.CreateClient();
 
-        using var request = new HttpRequestMessage(HttpMethod.Options, "/v1/account-api/rk.alpha/messages.send");
+        using var request = new HttpRequestMessage(HttpMethod.Options, "/v1/account-api/rk.alpha/conversations.messages.send");
         request.Headers.Add("Origin", "https://app.ddcrm.local");
         request.Headers.Add("Access-Control-Request-Method", "POST");
         request.Headers.Add("Access-Control-Request-Headers", "Authorization,Content-Type,Idempotency-Key");

@@ -1,11 +1,11 @@
 openapi: 3.1.0
 info:
   title: DDCRM Worker Contract API
-  version: 0.2.0
+  version: 2.0.0
   description: >-
-    Унифицированный контракт account worker-а.
-    Типовые операции описываются ресурсными endpoint-ами,
-    платформенно-специфичные операции выполняются через extension endpoint actions/{action}.
+    Унифицированный контракт account worker-а (v2).
+    Типовые операции выполняются через ресурсные endpoint-ы account/conversations/products,
+    платформенно-специфичные операции — через extension endpoint actions/{action}.
 jsonSchemaDialect: https://json-schema.org/draft/2020-12/schema
 servers:
   - url: http://worker.local
@@ -17,19 +17,18 @@ x-service-auth:
   envFile: .env.worker-api.example
   envPrefix: WORKER_API_SERVICE_AUTH_
 tags:
-  - name: worker-health
-  - name: worker-meta
-  - name: worker-account
-  - name: worker-listings
-  - name: worker-messages
-  - name: worker-orders
-  - name: worker-extensions
+  - name: worker-v2-health
+  - name: worker-v2-meta
+  - name: worker-v2-account
+  - name: worker-v2-conversations
+  - name: worker-v2-products
+  - name: worker-v2-extensions
 
 paths:
-  /internal/v1/worker/health:
+  /internal/v2/worker/health:
     get:
-      tags: [worker-health]
-      operationId: workerHealth
+      tags: [worker-v2-health]
+      operationId: workerV2Health
       responses:
         '200':
           description: Worker доступен
@@ -40,155 +39,207 @@ paths:
         default:
           $ref: '#/components/responses/Error'
 
-  /internal/v1/worker/capabilities:
+  /internal/v2/worker/capabilities:
     get:
-      tags: [worker-meta]
-      operationId: workerCapabilities
+      tags: [worker-v2-meta]
+      operationId: workerV2Capabilities
       responses:
         '200':
-          description: Список поддерживаемых возможностей worker-а
+          description: Матрица поддерживаемых возможностей worker-а
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/CapabilitiesResponse'
+                $ref: '#/components/schemas/WorkerV2CapabilitiesResponse'
         default:
           $ref: '#/components/responses/Error'
 
-  /internal/v1/worker/account:
+  /internal/v2/worker/account:
     get:
-      tags: [worker-account]
-      operationId: workerAccountInfo
+      tags: [worker-v2-account]
+      operationId: workerV2AccountInfo
       responses:
         '200':
-          description: Сводная информация по аккаунту площадки
+          description: Нормализованная информация аккаунта
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AccountInfoResponse'
+                $ref: '#/components/schemas/WorkerV2AccountInfoResponse'
         default:
           $ref: '#/components/responses/Error'
 
-  /internal/v1/worker/listings/search:
-    post:
-      tags: [worker-listings]
-      operationId: workerListingsSearch
-      requestBody:
-        required: false
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/ListingsSearchRequest'
-      responses:
-        '200':
-          description: Результат поиска объявлений
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ListingsSearchResponse'
-        default:
-          $ref: '#/components/responses/Error'
-
-  /internal/v1/worker/listings/{listingId}:
-    patch:
-      tags: [worker-listings]
-      operationId: workerListingUpdate
+  /internal/v2/worker/conversations:
+    get:
+      tags: [worker-v2-conversations]
+      operationId: workerV2ConversationsList
       parameters:
-        - $ref: '#/components/parameters/ListingId'
+        - $ref: '#/components/parameters/LimitQuery'
+        - $ref: '#/components/parameters/CursorQuery'
+        - $ref: '#/components/parameters/OnlyUnreadQuery'
+      responses:
+        '200':
+          description: Список переписок
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkerV2ConversationsResponse'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /internal/v2/worker/conversations/{conversationId}/messages:
+    get:
+      tags: [worker-v2-conversations]
+      operationId: workerV2ConversationMessages
+      parameters:
+        - $ref: '#/components/parameters/ConversationId'
+        - $ref: '#/components/parameters/LimitQuery'
+        - $ref: '#/components/parameters/CursorQuery'
+      responses:
+        '200':
+          description: История переписки
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkerV2ConversationMessagesResponse'
+        default:
+          $ref: '#/components/responses/Error'
+
+    post:
+      tags: [worker-v2-conversations]
+      operationId: workerV2ConversationMessageSend
+      parameters:
+        - $ref: '#/components/parameters/ConversationId'
         - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/ListingUpdateRequest'
-      responses:
-        '200':
-          description: Объявление обновлено
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ListingResponse'
-        '409':
-          $ref: '#/components/responses/Conflict'
-        default:
-          $ref: '#/components/responses/Error'
-
-  /internal/v1/worker/messages/send:
-    post:
-      tags: [worker-messages]
-      operationId: workerMessageSend
-      parameters:
-        - $ref: '#/components/parameters/IdempotencyKey'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/MessageSendRequest'
+              $ref: '#/components/schemas/WorkerV2MessageSendRequest'
       responses:
         '200':
           description: Сообщение отправлено
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/MessageSendResponse'
+                $ref: '#/components/schemas/WorkerV2MessageSendResponse'
         '409':
           $ref: '#/components/responses/Conflict'
         default:
           $ref: '#/components/responses/Error'
 
-  /internal/v1/worker/orders/search:
-    post:
-      tags: [worker-orders]
-      operationId: workerOrdersSearch
-      requestBody:
-        required: false
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/OrdersSearchRequest'
+  /internal/v2/worker/products:
+    get:
+      tags: [worker-v2-products]
+      operationId: workerV2ProductsList
+      parameters:
+        - $ref: '#/components/parameters/LimitQuery'
+        - $ref: '#/components/parameters/CursorQuery'
+        - $ref: '#/components/parameters/ProductStatusQuery'
       responses:
         '200':
-          description: Результат поиска заказов
+          description: Список товаров аккаунта
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/OrdersSearchResponse'
+                $ref: '#/components/schemas/WorkerV2ProductsResponse'
         default:
           $ref: '#/components/responses/Error'
 
-  /internal/v1/worker/orders/{orderId}/actions/{action}:
     post:
-      tags: [worker-orders]
-      operationId: workerOrderAction
+      tags: [worker-v2-products]
+      operationId: workerV2ProductCreate
       parameters:
-        - $ref: '#/components/parameters/OrderId'
-        - $ref: '#/components/parameters/Action'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WorkerV2ProductCreateRequest'
+      responses:
+        '200':
+          description: Товар создан
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkerV2ProductMutationResponse'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /internal/v2/worker/products/{productId}:
+    patch:
+      tags: [worker-v2-products]
+      operationId: workerV2ProductUpdate
+      parameters:
+        - $ref: '#/components/parameters/ProductId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WorkerV2ProductUpdateRequest'
+      responses:
+        '200':
+          description: Товар изменен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkerV2ProductMutationResponse'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        default:
+          $ref: '#/components/responses/Error'
+
+    delete:
+      tags: [worker-v2-products]
+      operationId: workerV2ProductDelete
+      parameters:
+        - $ref: '#/components/parameters/ProductId'
         - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
         required: false
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/OrderActionRequest'
+              $ref: '#/components/schemas/WorkerV2ProductDeleteRequest'
       responses:
         '200':
-          description: Действие над заказом выполнено
+          description: Товар удален (hard/soft по mode)
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/OrderActionResponse'
+                $ref: '#/components/schemas/WorkerV2ProductMutationResponse'
         '409':
           $ref: '#/components/responses/Conflict'
         default:
           $ref: '#/components/responses/Error'
 
-  /internal/v1/worker/actions/{action}:
+  /internal/v2/worker/schemas/products:
+    get:
+      tags: [worker-v2-products]
+      operationId: workerV2ProductSchemas
+      parameters:
+        - $ref: '#/components/parameters/SchemaIdQuery'
+        - $ref: '#/components/parameters/ProviderQuery'
+      responses:
+        '200':
+          description: Схемы полей товаров для platform-specific расширений
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkerV2ProductSchemasResponse'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /internal/v2/worker/actions/{action}:
     post:
-      tags: [worker-extensions]
-      operationId: workerExtensionAction
+      tags: [worker-v2-extensions]
+      operationId: workerV2ExtensionAction
       description: >-
-        Extension endpoint для платформенно-специфичных операций, которые не покрыты
+        Extension endpoint для платформенно-специфичных операций, не покрытых
         типовыми ресурсными endpoint-ами.
       parameters:
         - $ref: '#/components/parameters/ExtensionAction'
@@ -217,16 +268,61 @@ components:
       $ref: './openapi-common.yaml#/components/securitySchemes/workerServiceToken'
 
   parameters:
-    Action:
-      $ref: './openapi-common.yaml#/components/parameters/Action'
     ExtensionAction:
       $ref: './openapi-common.yaml#/components/parameters/ExtensionAction'
-    ListingId:
-      $ref: './openapi-common.yaml#/components/parameters/ListingId'
-    OrderId:
-      $ref: './openapi-common.yaml#/components/parameters/OrderId'
     IdempotencyKey:
       $ref: './openapi-common.yaml#/components/parameters/IdempotencyKey'
+    LimitQuery:
+      name: limit
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 200
+    CursorQuery:
+      name: cursor
+      in: query
+      required: false
+      schema:
+        type: string
+    OnlyUnreadQuery:
+      name: onlyUnread
+      in: query
+      required: false
+      schema:
+        type: boolean
+    ProductStatusQuery:
+      name: status
+      in: query
+      required: false
+      schema:
+        type: string
+    SchemaIdQuery:
+      name: schemaId
+      in: query
+      required: false
+      schema:
+        type: string
+    ProviderQuery:
+      name: provider
+      in: query
+      required: false
+      schema:
+        type: string
+        enum: [funpay, playerok, ggsell, platimarket]
+    ConversationId:
+      name: conversationId
+      in: path
+      required: true
+      schema:
+        type: string
+    ProductId:
+      name: productId
+      in: path
+      required: true
+      schema:
+        type: string
 
   responses:
     Error:
@@ -240,19 +336,6 @@ components:
 
     ErrorResponse:
       $ref: './openapi-common.yaml#/components/schemas/WorkerErrorResponse'
-
-    PlatformRef:
-      type: object
-      required: [accountId, platform]
-      properties:
-        accountId:
-          type: string
-          format: uuid
-        projectId:
-          type: string
-          format: uuid
-        platform:
-          type: string
 
     HealthResponse:
       allOf:
@@ -276,80 +359,71 @@ components:
         enabled:
           type: boolean
 
-    CapabilitiesResponse:
+    WorkerV2CapabilitiesResponse:
       allOf:
         - $ref: '#/components/schemas/RequestMeta'
         - type: object
-          required: [capabilities]
+          required: [provider, features]
           properties:
+            provider:
+              type: string
+            features:
+              type: object
+              additionalProperties:
+                type: boolean
             capabilities:
               type: array
               items:
                 $ref: '#/components/schemas/CapabilityItem'
 
-    AccountInfo:
-      allOf:
-        - $ref: '#/components/schemas/PlatformRef'
-        - type: object
-          properties:
-            displayName:
-              type: string
-            status:
-              type: string
-            balance:
-              type: number
+    WorkerV2AccountInfo:
+      type: object
+      required: [provider, accountId, nickname, status]
+      properties:
+        provider:
+          type: string
+        accountId:
+          type: string
+        nickname:
+          type: string
+        status:
+          type: string
+        profile:
+          type: object
+          additionalProperties: true
+        raw:
+          type: object
+          additionalProperties: true
 
-    AccountInfoResponse:
+    WorkerV2AccountInfoResponse:
       allOf:
         - $ref: '#/components/schemas/RequestMeta'
         - type: object
           required: [account]
           properties:
             account:
-              $ref: '#/components/schemas/AccountInfo'
+              $ref: '#/components/schemas/WorkerV2AccountInfo'
 
-    PagingRequest:
+    WorkerV2ConversationSummary:
       type: object
+      required: [conversationId, peerId, peerName, unreadCount, lastMessageAt]
       properties:
-        limit:
+        conversationId:
+          type: string
+        peerId:
+          type: string
+        peerName:
+          type: string
+        unreadCount:
           type: integer
-          minimum: 1
-          maximum: 200
-        cursor:
+          minimum: 0
+        lastMessagePreview:
           type: string
+        lastMessageAt:
+          type: string
+          format: date-time
 
-    PagingMeta:
-      type: object
-      properties:
-        nextCursor:
-          type: string
-
-    ListingsSearchRequest:
-      allOf:
-        - $ref: '#/components/schemas/PagingRequest'
-        - type: object
-          properties:
-            query:
-              type: string
-            statuses:
-              type: array
-              items:
-                type: string
-
-    Listing:
-      type: object
-      required: [id, title, status]
-      properties:
-        id:
-          type: string
-        title:
-          type: string
-        status:
-          type: string
-        price:
-          type: number
-
-    ListingsSearchResponse:
+    WorkerV2ConversationsResponse:
       allOf:
         - $ref: '#/components/schemas/RequestMeta'
         - type: object
@@ -358,82 +432,39 @@ components:
             items:
               type: array
               items:
-                $ref: '#/components/schemas/Listing'
-            paging:
-              $ref: '#/components/schemas/PagingMeta'
+                $ref: '#/components/schemas/WorkerV2ConversationSummary'
+            nextCursor:
+              type: string
 
-    ListingUpdateRequest:
+    WorkerV2MessageAttachment:
       type: object
-      additionalProperties: false
+      required: [type]
       properties:
-        title:
+        type:
           type: string
-        price:
-          type: number
-        status:
+        url:
           type: string
 
-    ListingResponse:
-      allOf:
-        - $ref: '#/components/schemas/RequestMeta'
-        - type: object
-          required: [listing]
-          properties:
-            listing:
-              $ref: '#/components/schemas/Listing'
-
-    MessageSendRequest:
+    WorkerV2ConversationMessage:
       type: object
-      required: [threadId, text]
+      required: [messageId, direction, text, createdAt]
       properties:
-        threadId:
+        messageId:
           type: string
+        direction:
+          type: string
+          enum: [in, out]
         text:
           type: string
         attachments:
           type: array
           items:
-            type: string
-
-    MessageSendResponse:
-      allOf:
-        - $ref: '#/components/schemas/RequestMeta'
-        - type: object
-          required: [messageId]
-          properties:
-            messageId:
-              type: string
-
-    OrdersSearchRequest:
-      allOf:
-        - $ref: '#/components/schemas/PagingRequest'
-        - type: object
-          properties:
-            statuses:
-              type: array
-              items:
-                type: string
-            fromDate:
-              type: string
-              format: date-time
-            toDate:
-              type: string
-              format: date-time
-
-    Order:
-      type: object
-      required: [id, status]
-      properties:
-        id:
+            $ref: '#/components/schemas/WorkerV2MessageAttachment'
+        createdAt:
           type: string
-        status:
-          type: string
-        total:
-          type: number
-        currency:
-          type: string
+          format: date-time
 
-    OrdersSearchResponse:
+    WorkerV2ConversationMessagesResponse:
       allOf:
         - $ref: '#/components/schemas/RequestMeta'
         - type: object
@@ -442,26 +473,215 @@ components:
             items:
               type: array
               items:
-                $ref: '#/components/schemas/Order'
-            paging:
-              $ref: '#/components/schemas/PagingMeta'
+                $ref: '#/components/schemas/WorkerV2ConversationMessage'
+            nextCursor:
+              type: string
 
-    OrderActionRequest:
+    WorkerV2MessageSendRequest:
       type: object
-      additionalProperties: true
+      required: [text]
       properties:
-        payload:
-          type: object
-          additionalProperties: true
+        text:
+          type: string
+        attachments:
+          type: array
+          items:
+            $ref: '#/components/schemas/WorkerV2MessageAttachment'
 
-    OrderActionResponse:
+    WorkerV2MessageSendResponse:
       allOf:
         - $ref: '#/components/schemas/RequestMeta'
         - type: object
+          required: [messageId, status, createdAt]
           properties:
-            result:
-              type: object
-              additionalProperties: true
+            messageId:
+              type: string
+            status:
+              type: string
+              enum: [sent]
+            createdAt:
+              type: string
+              format: date-time
+
+    WorkerV2Money:
+      type: object
+      required: [amount, currency]
+      properties:
+        amount:
+          type: number
+        currency:
+          type: string
+
+    WorkerV2MediaItem:
+      type: object
+      required: [type, url]
+      properties:
+        type:
+          type: string
+        url:
+          type: string
+
+    WorkerV2Product:
+      type: object
+      required: [productId, title, status, price, version, schemaId]
+      properties:
+        productId:
+          type: string
+        title:
+          type: string
+        description:
+          type: string
+        price:
+          $ref: '#/components/schemas/WorkerV2Money'
+        status:
+          type: string
+        quantity:
+          type: integer
+          minimum: 0
+        media:
+          type: array
+          items:
+            $ref: '#/components/schemas/WorkerV2MediaItem'
+        attributes:
+          type: object
+          additionalProperties: true
+        version:
+          type: string
+        schemaId:
+          type: string
+
+    WorkerV2ProductsResponse:
+      allOf:
+        - $ref: '#/components/schemas/RequestMeta'
+        - type: object
+          required: [items]
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/WorkerV2Product'
+            nextCursor:
+              type: string
+
+    WorkerV2ProductCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [schemaId, title, price]
+      properties:
+        schemaId:
+          type: string
+        title:
+          type: string
+        description:
+          type: string
+        price:
+          $ref: '#/components/schemas/WorkerV2Money'
+        status:
+          type: string
+        quantity:
+          type: integer
+          minimum: 0
+        media:
+          type: array
+          items:
+            $ref: '#/components/schemas/WorkerV2MediaItem'
+        attributes:
+          type: object
+          additionalProperties: true
+
+    WorkerV2ProductChanges:
+      type: object
+      additionalProperties: false
+      properties:
+        title:
+          type: string
+        description:
+          type: string
+        price:
+          $ref: '#/components/schemas/WorkerV2Money'
+        status:
+          type: string
+        quantity:
+          type: integer
+          minimum: 0
+        media:
+          type: array
+          items:
+            $ref: '#/components/schemas/WorkerV2MediaItem'
+        attributes:
+          type: object
+          additionalProperties: true
+
+    WorkerV2ProductUpdateRequest:
+      type: object
+      additionalProperties: false
+      required: [changes]
+      properties:
+        expectedVersion:
+          type: string
+        changes:
+          $ref: '#/components/schemas/WorkerV2ProductChanges'
+
+    WorkerV2ProductDeleteRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        mode:
+          type: string
+          enum: [soft, hard]
+        reason:
+          type: string
+        expectedVersion:
+          type: string
+
+    WorkerV2ProductMutationResponse:
+      allOf:
+        - $ref: '#/components/schemas/RequestMeta'
+        - type: object
+          required: [productId, status, version]
+          properties:
+            productId:
+              type: string
+            status:
+              type: string
+            version:
+              type: string
+
+    WorkerV2ProductSchemaField:
+      type: object
+      required: [key, type, required]
+      properties:
+        key:
+          type: string
+        type:
+          type: string
+        required:
+          type: boolean
+
+    WorkerV2ProductSchema:
+      type: object
+      required: [schemaId, provider, fields]
+      properties:
+        schemaId:
+          type: string
+        provider:
+          type: string
+          enum: [funpay, playerok, ggsell, platimarket]
+        fields:
+          type: array
+          items:
+            $ref: '#/components/schemas/WorkerV2ProductSchemaField'
+
+    WorkerV2ProductSchemasResponse:
+      allOf:
+        - $ref: '#/components/schemas/RequestMeta'
+        - type: object
+          required: [items]
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/WorkerV2ProductSchema'
 
     ExtensionActionRequest:
       type: object

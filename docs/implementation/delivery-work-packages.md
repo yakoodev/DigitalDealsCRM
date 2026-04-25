@@ -51,8 +51,10 @@
 - Scope:
   - lifecycle create/update/delete/migrate с idempotency
   - orchestration worker provisioning
+  - worker control-plane registry (`worker-servers`, `heartbeat`, placement/rebalance policy)
 - Done:
   - e2e lifecycle сценарии зелёные
+  - placement использует least-loaded healthy `active` server с fallback `srv-default` при пустом registry
   - удаление аккаунта гарантированно убирает route
 
 ### 2.5 `WP-GATEWAY`

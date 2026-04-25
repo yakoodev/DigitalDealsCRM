@@ -16,6 +16,7 @@ public sealed class RecordingWorkerControlClient : IWorkerControlClient
         Guid accountId,
         Dictionary<string, object?> proxyConfig,
         string idempotencyKey,
+        string? baseUrlTemplateOverride,
         CancellationToken cancellationToken)
     {
         if (_failNextApply)
@@ -31,7 +32,8 @@ public sealed class RecordingWorkerControlClient : IWorkerControlClient
             workerBinding,
             accountId,
             new Dictionary<string, object?>(proxyConfig, StringComparer.Ordinal),
-            idempotencyKey));
+            idempotencyKey,
+            baseUrlTemplateOverride));
 
         return Task.CompletedTask;
     }
@@ -49,4 +51,5 @@ public sealed record WorkerControlApplyCall(
     WorkerBindingDto WorkerBinding,
     Guid AccountId,
     IReadOnlyDictionary<string, object?> ProxyConfig,
-    string IdempotencyKey);
+    string IdempotencyKey,
+    string? BaseUrlTemplateOverride);

@@ -21,6 +21,7 @@
 - `WORKER_PROXY_CREDENTIALS_ENCRYPTION_KEY` — ключ шифрования proxy credentials в worker state storage;
 - `WORKER_CONTROL_CLIENT_*` — переменные internal worker-control client-а (service-to-service вызовы internal -> worker);
 - `TEST_WORKER_*` — переменные управления тестовым воркером по `docs/standards/test-worker-governance.md`;
+- `TEST_WORKER_PROVIDER` — выбор provider-профиля симулятора (`funpay/playerok/ggsell/platimarket`);
 - булевы значения задаются как `true/false` (lowercase);
 - списки значений задаются comma-separated строкой без пробелов.
 

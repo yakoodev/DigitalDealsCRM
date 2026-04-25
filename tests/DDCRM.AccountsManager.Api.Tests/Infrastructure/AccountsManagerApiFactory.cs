@@ -60,4 +60,18 @@ public sealed class AccountsManagerApiFactory : WebApplicationFactory<Program>
         var dbContext = scope.ServiceProvider.GetRequiredService<AccountsManagerDbContext>();
         return dbContext.LifecycleAudits.AsNoTracking().Count(x => x.AccountId == accountId);
     }
+
+    public WorkerServerEntity? FindWorkerServer(string serverId)
+    {
+        using var scope = Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<AccountsManagerDbContext>();
+        return dbContext.WorkerServers.AsNoTracking().SingleOrDefault(x => x.ServerId == serverId);
+    }
+
+    public IReadOnlyList<WorkerServerEntity> ListWorkerServers()
+    {
+        using var scope = Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<AccountsManagerDbContext>();
+        return dbContext.WorkerServers.AsNoTracking().OrderBy(x => x.ServerId).ToList();
+    }
 }

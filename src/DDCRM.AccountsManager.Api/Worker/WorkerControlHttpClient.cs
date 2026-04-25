@@ -18,6 +18,7 @@ public sealed class WorkerControlHttpClient(
         Guid accountId,
         Dictionary<string, object?> proxyConfig,
         string idempotencyKey,
+        string? baseUrlTemplateOverride,
         CancellationToken cancellationToken)
     {
         if (!IsEnabled())
@@ -25,7 +26,10 @@ public sealed class WorkerControlHttpClient(
             return;
         }
 
-        var absoluteUri = BuildAbsoluteUri(workerBinding, BuildPath("/actions/ext.account.proxy-credentials.apply"));
+        var absoluteUri = BuildAbsoluteUri(
+            workerBinding,
+            BuildPath("/actions/ext.account.proxy-credentials.apply"),
+            baseUrlTemplateOverride);
         var payload = new Dictionary<string, object?>
         {
             ["accountId"] = accountId,
@@ -60,7 +64,7 @@ public sealed class WorkerControlHttpClient(
             });
     }
 
-    private bool IsEnabled() => _options.Enabled && !string.IsNullOrWhiteSpace(_options.BaseUrlTemplate);
+    private bool IsEnabled() => _options.Enabled;
 
     private void ApplyHeaders(HttpRequestMessage message, string idempotencyKey)
     {
@@ -72,9 +76,23 @@ public sealed class WorkerControlHttpClient(
         message.Headers.TryAddWithoutValidation(HeaderNames.IdempotencyKey, idempotencyKey);
     }
 
-    private Uri BuildAbsoluteUri(WorkerBindingDto workerBinding, string path)
+    private Uri BuildAbsoluteUri(
+        WorkerBindingDto workerBinding,
+        string path,
+        string? baseUrlTemplateOverride)
     {
-        var baseAddress = _options.BaseUrlTemplate;
+        var baseAddress = !string.IsNullOrWhiteSpace(baseUrlTemplateOverride)
+            ? baseUrlTemplateOverride
+            : _options.BaseUrlTemplate;
+
+        if (string.IsNullOrWhiteSpace(baseAddress))
+        {
+            throw new ApiErrorException(
+                StatusCodes.Status500InternalServerError,
+                ApiErrorCodes.InternalError,
+                "Не задана конфигурация WorkerControlClient.BaseUrlTemplate.");
+        }
+
         baseAddress = baseAddress.Replace("{serverId}", workerBinding.ServerId, StringComparison.OrdinalIgnoreCase);
         baseAddress = baseAddress.Replace("{workerId}", workerBinding.WorkerId, StringComparison.OrdinalIgnoreCase);
         baseAddress = baseAddress.Replace("{podId}", workerBinding.PodId ?? string.Empty, StringComparison.OrdinalIgnoreCase);

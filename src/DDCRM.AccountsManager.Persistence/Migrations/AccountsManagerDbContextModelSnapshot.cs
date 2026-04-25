@@ -112,6 +112,52 @@ namespace DDCRM.AccountsManager.Persistence.Migrations
                     b.ToTable("worker_placements", (string)null);
                 });
 
+            modelBuilder.Entity("DDCRM.AccountsManager.Persistence.Entities.WorkerServerEntity", b =>
+                {
+                    b.Property<string>("ServerId")
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)");
+
+                    b.Property<string>("BaseUrlTemplate")
+                        .IsRequired()
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)");
+
+                    b.Property<int>("Capacity")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("CurrentLoad")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Health")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<DateTimeOffset?>("LastHeartbeatAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("MetadataJson")
+                        .HasMaxLength(4000)
+                        .HasColumnType("character varying(4000)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<DateTimeOffset>("UpdatedAtUtc")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasDefaultValueSql("NOW()");
+
+                    b.HasKey("ServerId");
+
+                    b.HasIndex("Status", "Health");
+
+                    b.ToTable("worker_servers", (string)null);
+                });
+
             modelBuilder.Entity("DDCRM.Shared.Idempotency.IdempotencyRecord", b =>
                 {
                     b.Property<Guid>("Id")

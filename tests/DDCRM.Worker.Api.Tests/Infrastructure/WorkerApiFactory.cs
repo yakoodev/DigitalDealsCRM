@@ -36,6 +36,7 @@ public sealed class WorkerApiFactory : WebApplicationFactory<Program>
                 ["TEST_WORKER_ALLOWED_ENVIRONMENTS"] = "development,local,ci,staging",
                 ["TEST_WORKER_BLOCK_IN_PRODUCTION"] = "true",
                 ["TEST_WORKER_EXT_ACTIONS_ENABLED"] = "true",
+                ["TEST_WORKER_PROVIDER"] = "platimarket",
                 ["TEST_WORKER_FIXTURE_SOURCE"] = "./fixtures/test-worker",
                 ["TEST_WORKER_FIXTURE_REVISION"] = "main",
             };

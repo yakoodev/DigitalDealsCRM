@@ -397,22 +397,22 @@ public sealed class CoreApiIntegrationTests(CoreApiFactory factory) : IClassFixt
         var idempotencyKey = Guid.NewGuid().ToString("N");
         var payload = new
         {
-            accountId = Guid.NewGuid(),
-            operation = "sync",
-            retries = 2,
+            conversationId = "conv-100",
+            text = "hello from core-test",
+            onlyUnread = false,
         };
 
         var first = await SendJsonAsync(
             client,
             HttpMethod.Post,
-            "/v1/account-api/rk.alpha/messages.send",
+            "/v1/account-api/rk.alpha/conversations.messages.send",
             idempotencyKey,
             payload);
 
         var second = await SendJsonAsync(
             client,
             HttpMethod.Post,
-            "/v1/account-api/rk.alpha/messages.send",
+            "/v1/account-api/rk.alpha/conversations.messages.send",
             idempotencyKey,
             payload);
 
@@ -422,7 +422,7 @@ public sealed class CoreApiIntegrationTests(CoreApiFactory factory) : IClassFixt
 
         var call = factory.GatewayProxyClient.Calls[0];
         Assert.Equal("rk.alpha", call.RouteKey);
-        Assert.Equal("messages.send", call.Action);
+        Assert.Equal("conversations.messages.send", call.Action);
         Assert.Equal(idempotencyKey, call.IdempotencyKey);
         Assert.StartsWith("Bearer ", call.AuthorizationHeader, StringComparison.Ordinal);
 
@@ -433,13 +433,13 @@ public sealed class CoreApiIntegrationTests(CoreApiFactory factory) : IClassFixt
         var secondResult = secondJson.RootElement.GetProperty("result");
 
         Assert.Equal("rk.alpha", firstResult.GetProperty("routeKey").GetString());
-        Assert.Equal("messages.send", firstResult.GetProperty("action").GetString());
+        Assert.Equal("conversations.messages.send", firstResult.GetProperty("action").GetString());
         Assert.Equal(idempotencyKey, firstResult.GetProperty("idempotencyKey").GetString());
 
         var firstEcho = firstResult.GetProperty("echo");
-        Assert.Equal(payload.accountId.ToString(), firstEcho.GetProperty("accountId").GetString());
-        Assert.Equal(payload.operation, firstEcho.GetProperty("operation").GetString());
-        Assert.Equal(payload.retries, firstEcho.GetProperty("retries").GetInt32());
+        Assert.Equal(payload.conversationId, firstEcho.GetProperty("conversationId").GetString());
+        Assert.Equal(payload.text, firstEcho.GetProperty("text").GetString());
+        Assert.Equal(payload.onlyUnread, firstEcho.GetProperty("onlyUnread").GetBoolean());
 
         Assert.Equal(firstResult.GetRawText(), secondResult.GetRawText());
     }

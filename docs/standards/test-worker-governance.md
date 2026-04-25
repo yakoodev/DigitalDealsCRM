@@ -55,7 +55,7 @@
 
 ## 6. Capability-профили тестового воркера
 - capability-профили фиксированы и версионируемы (идентификаторы `TW-CAP-*`);
-- активный профиль публикуется через `/internal/v1/worker/capabilities`;
+- активный профиль публикуется через `/internal/v2/worker/capabilities`;
 - Gateway и contract-tests обязаны проверять соответствие выбранного `TW-SCN-*` и активного `TW-CAP-*` профиля;
 - изменение capability-профилей допускается только с новой версией профиля, без silent-изменений существующей версии.
 
@@ -63,6 +63,12 @@
 - `TW-CAP-CORE-V1` — happy-path и базовые ресурсные операции;
 - `TW-CAP-FAILURES-V1` — сценарии отказов и диагностики (`timeout/rate-limit/transient`);
 - `TW-CAP-CONTRACT-V1` — сценарии валидации контракта (`malformed-payload/contract-drift`).
+
+## 6.1 Provider-профиль тестового воркера
+- активная симулируемая площадка задаётся env-переменной `TEST_WORKER_PROVIDER`;
+- допустимые значения: `funpay`, `playerok`, `ggsell`, `platimarket`;
+- выбранный provider должен согласовываться с данными `/internal/v2/worker/account`, `/internal/v2/worker/capabilities` и `/internal/v2/worker/schemas/products`;
+- при смене provider-профиля contract-tests должны проверять provider-специфичные product schema (`*.item.v1`) и совместимость feature-map.
 
 ## 7. Политика `ext.test.*`
 - namespace `ext.test.*` зарезервирован только для симуляторных действий;

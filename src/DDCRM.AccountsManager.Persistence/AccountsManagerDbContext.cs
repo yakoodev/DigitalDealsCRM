@@ -9,6 +9,8 @@ public sealed class AccountsManagerDbContext(DbContextOptions<AccountsManagerDbC
 {
     public DbSet<WorkerPlacementEntity> WorkerPlacements => Set<WorkerPlacementEntity>();
 
+    public DbSet<WorkerServerEntity> WorkerServers => Set<WorkerServerEntity>();
+
     public DbSet<LifecycleAuditEntity> LifecycleAudits => Set<LifecycleAuditEntity>();
 
     public DbSet<IdempotencyRecord> IdempotencyRecords => Set<IdempotencyRecord>();
@@ -26,6 +28,19 @@ public sealed class AccountsManagerDbContext(DbContextOptions<AccountsManagerDbC
             entity.Property(x => x.LifecycleStatus).HasMaxLength(32).IsRequired();
             entity.Property(x => x.UpdatedAtUtc).HasDefaultValueSql("NOW()");
             entity.HasIndex(x => x.ProjectId);
+        });
+
+        modelBuilder.Entity<WorkerServerEntity>(entity =>
+        {
+            entity.ToTable("worker_servers");
+            entity.HasKey(x => x.ServerId);
+            entity.Property(x => x.ServerId).HasMaxLength(120).IsRequired();
+            entity.Property(x => x.BaseUrlTemplate).HasMaxLength(512).IsRequired();
+            entity.Property(x => x.Status).HasMaxLength(32).IsRequired();
+            entity.Property(x => x.Health).HasMaxLength(32).IsRequired();
+            entity.Property(x => x.MetadataJson).HasMaxLength(4000);
+            entity.Property(x => x.UpdatedAtUtc).HasDefaultValueSql("NOW()");
+            entity.HasIndex(x => new { x.Status, x.Health });
         });
 
         modelBuilder.Entity<LifecycleAuditEntity>(entity =>

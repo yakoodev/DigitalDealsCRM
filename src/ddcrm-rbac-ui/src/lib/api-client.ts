@@ -7,7 +7,10 @@ import {
   type Project,
   type ProxyConfig,
   type ProxyCredentialsMasked,
+  type RoleChangeRequest,
+  addMember,
   changePlan,
+  changeMemberRole,
   createAccount,
   createPayment,
   createProject,
@@ -17,6 +20,7 @@ import {
   proxyAccountApiAction,
   purchaseAddon,
   revealAccountProxyCredentials,
+  removeMember,
   updateAccountProxyCredentials,
 } from "@/generated/external-api";
 import { createIdempotencyKey } from "@/lib/idempotency";
@@ -113,6 +117,53 @@ export async function createProjectRequest(
   );
 
   return unwrapOrThrow(response).project;
+}
+
+export async function addProjectMemberRequest(
+  session: ApiSession,
+  projectId: string,
+  payload: GenericObjectRequest,
+) {
+  const response = await addMember(
+    projectId,
+    payload,
+    buildRequestInit(session, true),
+    createBaseUrlFetcher(session.baseUrl),
+  );
+
+  return unwrapOrThrow(response);
+}
+
+export async function changeProjectMemberRoleRequest(
+  session: ApiSession,
+  projectId: string,
+  userId: string,
+  role: RoleChangeRequest["role"],
+) {
+  const response = await changeMemberRole(
+    projectId,
+    userId,
+    { role },
+    buildRequestInit(session, true),
+    createBaseUrlFetcher(session.baseUrl),
+  );
+
+  return unwrapOrThrow(response);
+}
+
+export async function removeProjectMemberRequest(
+  session: ApiSession,
+  projectId: string,
+  userId: string,
+) {
+  const response = await removeMember(
+    projectId,
+    userId,
+    buildRequestInit(session, true),
+    createBaseUrlFetcher(session.baseUrl),
+  );
+
+  return unwrapOrThrow(response);
 }
 
 export async function listAccountsRequest(
@@ -254,6 +305,16 @@ export async function proxyAccountActionRequest(
   );
 
   return unwrapOrThrow(response).result;
+}
+
+export async function runAccountActionRequest(
+  session: ApiSession,
+  accountId: string,
+  action: string,
+  payload?: GenericObjectRequest,
+) {
+  const routeKey = buildRouteKey(accountId);
+  return proxyAccountActionRequest(session, routeKey, action, payload);
 }
 
 export function buildRouteKey(accountId: string) {

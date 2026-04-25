@@ -10,6 +10,7 @@ using DDCRM.Shared.Idempotency;
 using DDCRM.Worker.Api.Simulation;
 using DDCRM.Worker.Persistence;
 using DDCRM.Worker.Persistence.Entities;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 
@@ -57,6 +58,7 @@ builder.Services.Configure<TestWorkerOptions>(options =>
     options.FixtureSource = builder.Configuration["TEST_WORKER_FIXTURE_SOURCE"] ?? "./fixtures/test-worker";
     options.FixtureRevision = builder.Configuration["TEST_WORKER_FIXTURE_REVISION"] ?? "main";
     options.ExtActionsEnabled = builder.Configuration.GetValue("TEST_WORKER_EXT_ACTIONS_ENABLED", true);
+    options.Provider = builder.Configuration["TEST_WORKER_PROVIDER"] ?? WorkerV2ProviderAliases.PlatiMarket;
 });
 
 builder.Services.AddSingleton<TransientFailureState>();
@@ -84,6 +86,7 @@ using (var scope = app.Services.CreateScope())
 }
 
 var startedAtUtc = DateTimeOffset.UtcNow;
+var v2State = WorkerV2State.CreateDefault();
 
 app.UseDdcrmCommonPipeline();
 app.UseServiceTokenAuth();
@@ -95,7 +98,7 @@ app.MapGet("/health", (HttpContext httpContext) =>
         status = "ok",
     }));
 
-var worker = app.MapGroup("/internal/v1/worker");
+var worker = app.MapGroup("/internal/v2/worker");
 
 worker.MapGet("/health", (HttpContext httpContext) =>
 {
@@ -106,6 +109,11 @@ worker.MapGet("/health", (HttpContext httpContext) =>
 worker.MapGet("/capabilities", (HttpContext httpContext) =>
 {
     var requestId = httpContext.GetOrCreateRequestId();
+    var provider = runtimeSettings.Provider;
+    var capabilityItems = runtimeSettings.Capabilities
+        .Select(x => new CapabilityItem(x, true))
+        .ToArray();
+    var features = ResolveWorkerV2FeatureMap(provider);
 
     if (runtimeSettings.Scenario == WorkerScenarioIds.ContractDrift)
     {
@@ -113,6 +121,7 @@ worker.MapGet("/capabilities", (HttpContext httpContext) =>
         return Results.Json(new Dictionary<string, object?>
         {
             ["requestId"] = requestId,
+            ["provider"] = "contract-drift",
             ["capabilities"] = new[]
             {
                 new Dictionary<string, object?>
@@ -123,291 +132,36 @@ worker.MapGet("/capabilities", (HttpContext httpContext) =>
         });
     }
 
-    var capabilities = runtimeSettings.Capabilities
-        .Select(x => new CapabilityItem(x, true))
-        .ToArray();
-
-    return Results.Ok(new CapabilitiesResponse(requestId, capabilities));
+    return Results.Ok(new WorkerV2CapabilitiesResponse(requestId, provider, features, capabilityItems));
 });
 
 worker.MapGet("/account", (HttpContext httpContext, TransientFailureState transientFailureState) =>
 {
-    ApplyScenarioGuard(runtimeSettings, transientFailureState, "workerAccountInfo");
+    ApplyScenarioGuard(runtimeSettings, transientFailureState, "workerV2AccountInfo");
+    var descriptor = ResolveWorkerV2AccountDescriptor(runtimeSettings.Provider);
 
-    var account = new AccountInfo(
-        Guid.Parse("11111111-1111-1111-1111-111111111111"),
-        Guid.Parse("22222222-2222-2222-2222-222222222222"),
-        "test-worker",
-        "DDCRM Test Worker Account",
+    var profile = new Dictionary<string, object?>(StringComparer.Ordinal)
+    {
+        ["displayName"] = descriptor.DisplayName,
+        ["balance"] = descriptor.Balance,
+        ["sandbox"] = true,
+    };
+
+    var raw = new Dictionary<string, object?>(StringComparer.Ordinal)
+    {
+        ["projectId"] = "22222222-2222-2222-2222-222222222222",
+        ["workerMode"] = runtimeSettings.TestWorkerEnabled ? "test-worker" : "runtime",
+    };
+
+    var account = new WorkerV2AccountInfo(
+        runtimeSettings.Provider,
+        descriptor.AccountId,
+        descriptor.Nickname,
         "active",
-        1000.00m);
+        profile,
+        raw);
 
-    return Results.Ok(new AccountInfoResponse(httpContext.GetOrCreateRequestId(), account));
-});
-
-worker.MapPost("/listings/search", async (
-    HttpContext httpContext,
-    ListingsSearchRequest? request,
-    WorkerDbContext dbContext,
-    TransientFailureState transientFailureState,
-    CancellationToken cancellationToken) =>
-{
-    ApplyScenarioGuard(runtimeSettings, transientFailureState, "workerListingsSearch");
-
-    var requestId = httpContext.GetOrCreateRequestId();
-    if (runtimeSettings.Scenario == WorkerScenarioIds.MalformedPayload)
-    {
-        // Намеренный malformed payload для `TW-SCN-MALFORMED-PAYLOAD`.
-        return Results.Json(new Dictionary<string, object?>
-        {
-            ["requestId"] = requestId,
-            ["items"] = "malformed-items",
-        });
-    }
-
-    var limit = NormalizeLimit(request?.Limit);
-    var statuses = request?.Statuses is { Count: > 0 }
-        ? request.Statuses.Where(x => !string.IsNullOrWhiteSpace(x)).Select(x => x.Trim()).ToHashSet(StringComparer.OrdinalIgnoreCase)
-        : null;
-    var query = string.IsNullOrWhiteSpace(request?.Query) ? null : request.Query.Trim();
-
-    var listings = await dbContext.Listings
-        .AsNoTracking()
-        .OrderBy(x => x.Id)
-        .ToListAsync(cancellationToken);
-
-    IEnumerable<WorkerListingEntity> filtered = listings;
-
-    if (statuses is not null)
-    {
-        filtered = filtered.Where(x => statuses.Contains(x.Status));
-    }
-
-    if (!string.IsNullOrWhiteSpace(query))
-    {
-        filtered = filtered.Where(x => x.Title.Contains(query, StringComparison.OrdinalIgnoreCase));
-    }
-
-    var filteredList = filtered.ToList();
-    var (paged, nextCursor) = ApplyCursorPaging(filteredList, limit, request?.Cursor, x => x.Id);
-    var items = paged.Select(ToListing).ToArray();
-
-    return Results.Ok(new ListingsSearchResponse(requestId, items, new PagingMeta(nextCursor)));
-});
-
-worker.MapPatch("/listings/{listingId}", async (
-    HttpContext httpContext,
-    string listingId,
-    ListingUpdateRequest request,
-    WorkerDbContext dbContext,
-    IdempotencyExecutor idempotency,
-    TransientFailureState transientFailureState,
-    CancellationToken cancellationToken) =>
-{
-    if (string.IsNullOrWhiteSpace(listingId))
-    {
-        throw CreatePlatformError(StatusCodes.Status400BadRequest, "listingId обязателен.");
-    }
-
-    if (request.Title is null && request.Price is null && request.Status is null)
-    {
-        throw CreatePlatformError(StatusCodes.Status400BadRequest, "Требуется минимум одно поле для обновления listing.");
-    }
-
-    ApplyScenarioGuard(runtimeSettings, transientFailureState, "workerListingUpdate");
-
-    var idempotencyKey = httpContext.RequireIdempotencyKey();
-    return await idempotency.ExecuteAsync(
-        dbContext,
-        $"worker:listing:update:{listingId.Trim()}",
-        idempotencyKey,
-        async ct =>
-        {
-            var listing = await dbContext.Listings.SingleOrDefaultAsync(x => x.Id == listingId.Trim(), ct);
-            if (listing is null)
-            {
-                throw CreateRuntimeConflict("Объявление не найдено в текущем runtime state.");
-            }
-
-            if (request.Title is not null)
-            {
-                if (string.IsNullOrWhiteSpace(request.Title))
-                {
-                    throw CreatePlatformError(StatusCodes.Status400BadRequest, "title не может быть пустым.");
-                }
-
-                listing.Title = request.Title.Trim();
-            }
-
-            if (request.Status is not null)
-            {
-                if (string.IsNullOrWhiteSpace(request.Status))
-                {
-                    throw CreatePlatformError(StatusCodes.Status400BadRequest, "status не может быть пустым.");
-                }
-
-                listing.Status = request.Status.Trim();
-            }
-
-            if (request.Price is not null)
-            {
-                if (request.Price < 0)
-                {
-                    throw CreatePlatformError(StatusCodes.Status400BadRequest, "price не может быть отрицательным.");
-                }
-
-                listing.Price = decimal.Round(request.Price.Value, 2);
-            }
-
-            listing.UpdatedAtUtc = DateTimeOffset.UtcNow;
-            await dbContext.SaveChangesAsync(ct);
-
-            return new IdempotentExecutionResult(
-                StatusCodes.Status200OK,
-                new ListingResponse(httpContext.GetOrCreateRequestId(), ToListing(listing)));
-        },
-        cancellationToken);
-});
-
-worker.MapPost("/messages/send", async (
-    HttpContext httpContext,
-    MessageSendRequest request,
-    WorkerDbContext dbContext,
-    IdempotencyExecutor idempotency,
-    TransientFailureState transientFailureState,
-    CancellationToken cancellationToken) =>
-{
-    if (string.IsNullOrWhiteSpace(request.ThreadId))
-    {
-        throw CreatePlatformError(StatusCodes.Status400BadRequest, "threadId обязателен.");
-    }
-
-    if (string.IsNullOrWhiteSpace(request.Text))
-    {
-        throw CreatePlatformError(StatusCodes.Status400BadRequest, "text обязателен.");
-    }
-
-    ApplyScenarioGuard(runtimeSettings, transientFailureState, "workerMessageSend");
-
-    var idempotencyKey = httpContext.RequireIdempotencyKey();
-
-    return await idempotency.ExecuteAsync(
-        dbContext,
-        $"worker:messages:send:{request.ThreadId.Trim()}",
-        idempotencyKey,
-        _ =>
-        {
-            var messageId = $"msg-{Guid.NewGuid():N}"[..20];
-            return Task.FromResult(new IdempotentExecutionResult(
-                StatusCodes.Status200OK,
-                new MessageSendResponse(httpContext.GetOrCreateRequestId(), messageId)));
-        },
-        cancellationToken);
-});
-
-worker.MapPost("/orders/search", async (
-    HttpContext httpContext,
-    OrdersSearchRequest? request,
-    WorkerDbContext dbContext,
-    TransientFailureState transientFailureState,
-    CancellationToken cancellationToken) =>
-{
-    ApplyScenarioGuard(runtimeSettings, transientFailureState, "workerOrdersSearch");
-
-    var limit = NormalizeLimit(request?.Limit);
-    var statuses = request?.Statuses is { Count: > 0 }
-        ? request.Statuses.Where(x => !string.IsNullOrWhiteSpace(x)).Select(x => x.Trim()).ToHashSet(StringComparer.OrdinalIgnoreCase)
-        : null;
-
-    var orders = await dbContext.Orders
-        .AsNoTracking()
-        .OrderBy(x => x.Id)
-        .ToListAsync(cancellationToken);
-
-    IEnumerable<WorkerOrderEntity> filtered = orders;
-
-    if (statuses is not null)
-    {
-        filtered = filtered.Where(x => statuses.Contains(x.Status));
-    }
-
-    if (request?.FromDate is not null)
-    {
-        filtered = filtered.Where(x => x.UpdatedAtUtc >= request.FromDate.Value);
-    }
-
-    if (request?.ToDate is not null)
-    {
-        filtered = filtered.Where(x => x.UpdatedAtUtc <= request.ToDate.Value);
-    }
-
-    var filteredList = filtered.ToList();
-    var (paged, nextCursor) = ApplyCursorPaging(filteredList, limit, request?.Cursor, x => x.Id);
-    var items = paged.Select(ToOrder).ToArray();
-
-    return Results.Ok(new OrdersSearchResponse(httpContext.GetOrCreateRequestId(), items, new PagingMeta(nextCursor)));
-});
-
-worker.MapPost("/orders/{orderId}/actions/{action}", async (
-    HttpContext httpContext,
-    string orderId,
-    string action,
-    OrderActionRequest? request,
-    WorkerDbContext dbContext,
-    IdempotencyExecutor idempotency,
-    TransientFailureState transientFailureState,
-    CancellationToken cancellationToken) =>
-{
-    if (string.IsNullOrWhiteSpace(orderId))
-    {
-        throw CreatePlatformError(StatusCodes.Status400BadRequest, "orderId обязателен.");
-    }
-
-    ValidateAction(action);
-    if (!action.StartsWith("orders.", StringComparison.Ordinal))
-    {
-        throw CreateInvalidActionError("Для endpoint orders/actions поддерживаются только action с префиксом orders.");
-    }
-
-    ApplyScenarioGuard(runtimeSettings, transientFailureState, $"workerOrderAction:{action}");
-
-    var idempotencyKey = httpContext.RequireIdempotencyKey();
-    return await idempotency.ExecuteAsync(
-        dbContext,
-        $"worker:orders:action:{orderId.Trim()}:{action}",
-        idempotencyKey,
-        async ct =>
-        {
-            var order = await dbContext.Orders.SingleOrDefaultAsync(x => x.Id == orderId.Trim(), ct);
-            if (order is null)
-            {
-                throw CreateRuntimeConflict("Заказ не найден в текущем runtime state.");
-            }
-
-            order.Status = action switch
-            {
-                "orders.cancel" => "cancelled",
-                "orders.ship" => "shipped",
-                "orders.complete" => "completed",
-                _ => throw CreateInvalidActionError($"Неподдерживаемый action для заказа: {action}."),
-            };
-
-            order.UpdatedAtUtc = DateTimeOffset.UtcNow;
-            await dbContext.SaveChangesAsync(ct);
-
-            var result = new Dictionary<string, object?>
-            {
-                ["orderId"] = order.Id,
-                ["action"] = action,
-                ["status"] = order.Status,
-                ["payload"] = request?.Payload,
-            };
-
-            return new IdempotentExecutionResult(
-                StatusCodes.Status200OK,
-                new OrderActionResponse(httpContext.GetOrCreateRequestId(), result));
-        },
-        cancellationToken);
+    return Results.Ok(new WorkerV2AccountInfoResponse(httpContext.GetOrCreateRequestId(), account));
 });
 
 worker.MapPost("/actions/{action}", async (
@@ -542,6 +296,420 @@ worker.MapPost("/actions/{action}", async (
         cancellationToken);
 });
 
+var workerV2 = worker;
+
+workerV2.MapGet("/conversations", (
+    HttpContext httpContext,
+    int? limit,
+    string? cursor,
+    bool? onlyUnread,
+    TransientFailureState transientFailureState) =>
+{
+    ApplyScenarioGuard(runtimeSettings, transientFailureState, "workerV2ConversationsList");
+
+    if (runtimeSettings.Scenario == WorkerScenarioIds.MalformedPayload)
+    {
+        // Намеренный malformed payload для `TW-SCN-MALFORMED-PAYLOAD`.
+        return Results.Json(new Dictionary<string, object?>
+        {
+            ["requestId"] = httpContext.GetOrCreateRequestId(),
+            ["items"] = "malformed-items",
+        });
+    }
+
+    var normalizedLimit = NormalizeLimit(limit);
+    var conversations = v2State.GetConversationSummaries(onlyUnread ?? false)
+        .OrderBy(x => x.ConversationId, StringComparer.Ordinal)
+        .ToList();
+    var (paged, nextCursor) = ApplyCursorPaging(conversations, normalizedLimit, cursor, x => x.ConversationId);
+
+    return Results.Ok(new WorkerV2ConversationsResponse(httpContext.GetOrCreateRequestId(), paged, nextCursor));
+});
+
+workerV2.MapGet("/conversations/{conversationId}/messages", (
+    HttpContext httpContext,
+    string conversationId,
+    int? limit,
+    string? cursor,
+    TransientFailureState transientFailureState) =>
+{
+    if (string.IsNullOrWhiteSpace(conversationId))
+    {
+        throw CreatePlatformError(StatusCodes.Status400BadRequest, "conversationId обязателен.");
+    }
+
+    ApplyScenarioGuard(runtimeSettings, transientFailureState, "workerV2ConversationMessages");
+
+    var normalizedLimit = NormalizeLimit(limit);
+    var messages = v2State.GetConversationMessages(conversationId.Trim())
+        .OrderBy(x => x.MessageId, StringComparer.Ordinal)
+        .ToList();
+    var (paged, nextCursor) = ApplyCursorPaging(messages, normalizedLimit, cursor, x => x.MessageId);
+
+    return Results.Ok(new WorkerV2ConversationMessagesResponse(httpContext.GetOrCreateRequestId(), paged, nextCursor));
+});
+
+workerV2.MapPost("/conversations/{conversationId}/messages", async (
+    HttpContext httpContext,
+    string conversationId,
+    WorkerV2MessageSendRequest request,
+    WorkerDbContext dbContext,
+    IdempotencyExecutor idempotency,
+    TransientFailureState transientFailureState,
+    CancellationToken cancellationToken) =>
+{
+    if (string.IsNullOrWhiteSpace(conversationId))
+    {
+        throw CreatePlatformError(StatusCodes.Status400BadRequest, "conversationId обязателен.");
+    }
+
+    if (string.IsNullOrWhiteSpace(request.Text))
+    {
+        throw CreatePlatformError(StatusCodes.Status400BadRequest, "text обязателен.");
+    }
+
+    ApplyScenarioGuard(runtimeSettings, transientFailureState, "workerV2ConversationMessageSend");
+
+    var idempotencyKey = httpContext.RequireIdempotencyKey();
+    return await idempotency.ExecuteAsync(
+        dbContext,
+        $"worker:v2:conversations:{conversationId.Trim()}:messages:send",
+        idempotencyKey,
+        _ =>
+        {
+            var message = v2State.AddOutgoingMessage(
+                conversationId.Trim(),
+                request.Text.Trim(),
+                request.Attachments ?? []);
+
+            return Task.FromResult(new IdempotentExecutionResult(
+                StatusCodes.Status200OK,
+                new WorkerV2MessageSendResponse(
+                    httpContext.GetOrCreateRequestId(),
+                    message.MessageId,
+                    "sent",
+                    message.CreatedAt)));
+        },
+        cancellationToken);
+});
+
+workerV2.MapGet("/products", async (
+    HttpContext httpContext,
+    int? limit,
+    string? cursor,
+    string? status,
+    WorkerDbContext dbContext,
+    TransientFailureState transientFailureState,
+    CancellationToken cancellationToken) =>
+{
+    ApplyScenarioGuard(runtimeSettings, transientFailureState, "workerV2ProductsList");
+
+    var normalizedLimit = NormalizeLimit(limit);
+    var statusFilter = string.IsNullOrWhiteSpace(status) ? null : status.Trim();
+
+    var listings = await dbContext.Listings
+        .AsNoTracking()
+        .OrderBy(x => x.Id)
+        .ToListAsync(cancellationToken);
+
+    IEnumerable<WorkerListingEntity> filtered = listings;
+    if (statusFilter is not null)
+    {
+        filtered = filtered.Where(x => string.Equals(x.Status, statusFilter, StringComparison.OrdinalIgnoreCase));
+    }
+
+    var filteredList = filtered.ToList();
+    var (paged, nextCursor) = ApplyCursorPaging(filteredList, normalizedLimit, cursor, x => x.Id);
+    var items = paged
+        .Select(x => ToWorkerV2Product(x, v2State.GetOrCreateProductState(x.Id)))
+        .ToArray();
+
+    return Results.Ok(new WorkerV2ProductsResponse(httpContext.GetOrCreateRequestId(), items, nextCursor));
+});
+
+workerV2.MapPost("/products", async (
+    HttpContext httpContext,
+    WorkerV2ProductCreateRequest request,
+    WorkerDbContext dbContext,
+    IdempotencyExecutor idempotency,
+    TransientFailureState transientFailureState,
+    CancellationToken cancellationToken) =>
+{
+    if (string.IsNullOrWhiteSpace(request.SchemaId))
+    {
+        throw CreatePlatformError(StatusCodes.Status400BadRequest, "schemaId обязателен.");
+    }
+
+    if (string.IsNullOrWhiteSpace(request.Title))
+    {
+        throw CreatePlatformError(StatusCodes.Status400BadRequest, "title обязателен.");
+    }
+
+    if (request.Price.Amount < 0)
+    {
+        throw CreatePlatformError(StatusCodes.Status400BadRequest, "price.amount не может быть отрицательным.");
+    }
+
+    var normalizedCreateCurrency = NormalizeCurrency(request.Price.Currency);
+
+    if (request.Quantity is < 0)
+    {
+        throw CreatePlatformError(StatusCodes.Status400BadRequest, "quantity не может быть отрицательным.");
+    }
+
+    if (request.Status is not null && string.IsNullOrWhiteSpace(request.Status))
+    {
+        throw CreatePlatformError(StatusCodes.Status400BadRequest, "status не может быть пустым.");
+    }
+
+    ValidateWorkerV2ProductCreateSchema(runtimeSettings.Provider, request);
+
+    ApplyScenarioGuard(runtimeSettings, transientFailureState, "workerV2ProductCreate");
+
+    var idempotencyKey = httpContext.RequireIdempotencyKey();
+    return await idempotency.ExecuteAsync(
+        dbContext,
+        "worker:v2:products:create",
+        idempotencyKey,
+        async ct =>
+        {
+            var now = DateTimeOffset.UtcNow;
+            var productId = $"product-{Guid.NewGuid():N}";
+            var listing = new WorkerListingEntity
+            {
+                Id = productId,
+                Title = request.Title.Trim(),
+                Status = NormalizeProductStatus(request.Status, "draft"),
+                Price = decimal.Round(request.Price.Amount, 2),
+                UpdatedAtUtc = now,
+            };
+
+            dbContext.Listings.Add(listing);
+            await dbContext.SaveChangesAsync(ct);
+
+            var createdState = WorkerV2ProductState.FromRequest(request);
+            createdState.Currency = normalizedCreateCurrency;
+            v2State.SetProductState(productId, createdState);
+
+            return new IdempotentExecutionResult(
+                StatusCodes.Status200OK,
+                new WorkerV2ProductMutationResponse(
+                    httpContext.GetOrCreateRequestId(),
+                    listing.Id,
+                    listing.Status,
+                    ToWorkerV2Version(listing)));
+        },
+        cancellationToken);
+});
+
+workerV2.MapPatch("/products/{productId}", async (
+    HttpContext httpContext,
+    string productId,
+    WorkerV2ProductUpdateRequest request,
+    WorkerDbContext dbContext,
+    IdempotencyExecutor idempotency,
+    TransientFailureState transientFailureState,
+    CancellationToken cancellationToken) =>
+{
+    if (string.IsNullOrWhiteSpace(productId))
+    {
+        throw CreatePlatformError(StatusCodes.Status400BadRequest, "productId обязателен.");
+    }
+
+    if (!HasWorkerV2ProductChanges(request.Changes))
+    {
+        throw CreatePlatformError(StatusCodes.Status400BadRequest, "Требуется минимум одно поле в changes.");
+    }
+
+    if (request.Changes.Price is not null && request.Changes.Price.Amount < 0)
+    {
+        throw CreatePlatformError(StatusCodes.Status400BadRequest, "price.amount не может быть отрицательным.");
+    }
+
+    if (request.Changes.Quantity is < 0)
+    {
+        throw CreatePlatformError(StatusCodes.Status400BadRequest, "quantity не может быть отрицательным.");
+    }
+
+    ApplyScenarioGuard(runtimeSettings, transientFailureState, "workerV2ProductUpdate");
+
+    var normalizedProductId = productId.Trim();
+    var idempotencyKey = httpContext.RequireIdempotencyKey();
+    return await idempotency.ExecuteAsync(
+        dbContext,
+        $"worker:v2:products:update:{normalizedProductId}",
+        idempotencyKey,
+        async ct =>
+        {
+            var listing = await dbContext.Listings.SingleOrDefaultAsync(x => x.Id == normalizedProductId, ct);
+            if (listing is null)
+            {
+                throw CreatePlatformError(StatusCodes.Status404NotFound, "Товар не найден.");
+            }
+
+            ValidateWorkerV2ExpectedVersion(request.ExpectedVersion, listing);
+
+            if (request.Changes.Title is not null)
+            {
+                if (string.IsNullOrWhiteSpace(request.Changes.Title))
+                {
+                    throw CreatePlatformError(StatusCodes.Status400BadRequest, "title не может быть пустым.");
+                }
+
+                listing.Title = request.Changes.Title.Trim();
+            }
+
+            if (request.Changes.Status is not null)
+            {
+                if (string.IsNullOrWhiteSpace(request.Changes.Status))
+                {
+                    throw CreatePlatformError(StatusCodes.Status400BadRequest, "status не может быть пустым.");
+                }
+
+                listing.Status = NormalizeProductStatus(request.Changes.Status, listing.Status);
+            }
+
+            if (request.Changes.Price is not null)
+            {
+                listing.Price = decimal.Round(request.Changes.Price.Amount, 2);
+            }
+
+            var nextState = v2State.GetOrCreateProductState(normalizedProductId);
+
+            if (request.Changes.Description is not null)
+            {
+                nextState.Description = request.Changes.Description.Trim();
+            }
+
+            if (request.Changes.Quantity is not null)
+            {
+                nextState.Quantity = request.Changes.Quantity.Value;
+            }
+
+            if (request.Changes.Media is not null)
+            {
+                nextState.Media = request.Changes.Media
+                    .Select(x => new WorkerV2MediaItem(x.Type, x.Url))
+                    .ToArray();
+            }
+
+            if (request.Changes.Attributes is not null)
+            {
+                nextState.Attributes = request.Changes.Attributes
+                    .ToDictionary(x => x.Key, x => x.Value.Clone(), StringComparer.Ordinal);
+            }
+
+            if (request.Changes.Price is not null)
+            {
+                nextState.Currency = NormalizeCurrency(request.Changes.Price.Currency);
+            }
+
+            listing.UpdatedAtUtc = DateTimeOffset.UtcNow;
+            await dbContext.SaveChangesAsync(ct);
+            v2State.SetProductState(normalizedProductId, nextState);
+
+            return new IdempotentExecutionResult(
+                StatusCodes.Status200OK,
+                new WorkerV2ProductMutationResponse(
+                    httpContext.GetOrCreateRequestId(),
+                    listing.Id,
+                    listing.Status,
+                    ToWorkerV2Version(listing)));
+        },
+        cancellationToken);
+});
+
+workerV2.MapDelete("/products/{productId}", async (
+    HttpContext httpContext,
+    string productId,
+    [FromBody] WorkerV2ProductDeleteRequest? request,
+    WorkerDbContext dbContext,
+    IdempotencyExecutor idempotency,
+    TransientFailureState transientFailureState,
+    CancellationToken cancellationToken) =>
+{
+    if (string.IsNullOrWhiteSpace(productId))
+    {
+        throw CreatePlatformError(StatusCodes.Status400BadRequest, "productId обязателен.");
+    }
+
+    ApplyScenarioGuard(runtimeSettings, transientFailureState, "workerV2ProductDelete");
+
+    var normalizedProductId = productId.Trim();
+    var idempotencyKey = httpContext.RequireIdempotencyKey();
+    return await idempotency.ExecuteAsync(
+        dbContext,
+        $"worker:v2:products:delete:{normalizedProductId}",
+        idempotencyKey,
+        async ct =>
+        {
+            var listing = await dbContext.Listings.SingleOrDefaultAsync(x => x.Id == normalizedProductId, ct);
+            if (listing is null)
+            {
+                throw CreatePlatformError(StatusCodes.Status404NotFound, "Товар не найден.");
+            }
+
+            ValidateWorkerV2ExpectedVersion(request?.ExpectedVersion, listing);
+
+            var mode = (request?.Mode ?? "soft").Trim().ToLowerInvariant();
+            if (mode is not ("soft" or "hard"))
+            {
+                throw CreatePlatformError(StatusCodes.Status400BadRequest, "mode должен быть soft или hard.");
+            }
+
+            if (mode == "hard")
+            {
+                dbContext.Listings.Remove(listing);
+                await dbContext.SaveChangesAsync(ct);
+                v2State.RemoveProductState(normalizedProductId);
+
+                return new IdempotentExecutionResult(
+                    StatusCodes.Status200OK,
+                    new WorkerV2ProductMutationResponse(
+                        httpContext.GetOrCreateRequestId(),
+                        normalizedProductId,
+                        "deleted",
+                        DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString()));
+            }
+
+            listing.Status = "archived";
+            listing.UpdatedAtUtc = DateTimeOffset.UtcNow;
+            await dbContext.SaveChangesAsync(ct);
+
+            return new IdempotentExecutionResult(
+                StatusCodes.Status200OK,
+                new WorkerV2ProductMutationResponse(
+                    httpContext.GetOrCreateRequestId(),
+                    listing.Id,
+                    listing.Status,
+                    ToWorkerV2Version(listing)));
+        },
+        cancellationToken);
+});
+
+workerV2.MapGet("/schemas/products", (
+    HttpContext httpContext,
+    string? schemaId,
+    string? provider,
+    TransientFailureState transientFailureState) =>
+{
+    ApplyScenarioGuard(runtimeSettings, transientFailureState, "workerV2ProductSchemas");
+
+    var requestedProvider = string.IsNullOrWhiteSpace(provider)
+        ? runtimeSettings.Provider
+        : NormalizeWorkerV2ProviderFromRequest(provider);
+
+    var schemas = GetWorkerV2ProductSchemas(requestedProvider);
+    if (!string.IsNullOrWhiteSpace(schemaId))
+    {
+        schemas = schemas
+            .Where(x => string.Equals(x.SchemaId, schemaId.Trim(), StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+    }
+
+    return Results.Ok(new WorkerV2ProductSchemasResponse(httpContext.GetOrCreateRequestId(), schemas));
+});
+
 app.Run();
 
 static WorkerRuntimeSettings ResolveRuntimeSettings(IHostEnvironment hostEnvironment, TestWorkerOptions options)
@@ -559,6 +727,8 @@ static WorkerRuntimeSettings ResolveRuntimeSettings(IHostEnvironment hostEnviron
     {
         throw new InvalidOperationException($"Неизвестный TEST_WORKER_CAPABILITY_PROFILE: {capabilityProfile}.");
     }
+
+    var provider = NormalizeWorkerV2Provider(options.Provider);
 
     var allowedEnvironments = options.AllowedEnvironments.Length == 0
         ? ["local", "ci", "staging"]
@@ -585,6 +755,7 @@ static WorkerRuntimeSettings ResolveRuntimeSettings(IHostEnvironment hostEnviron
 
     return new WorkerRuntimeSettings(
         options.Enabled,
+        provider,
         scenario,
         capabilityProfile,
         options.FixtureSource,
@@ -882,12 +1053,322 @@ static (IReadOnlyCollection<T> Items, string? NextCursor) ApplyCursorPaging<T>(
     return (items, nextCursor);
 }
 
-static Listing ToListing(WorkerListingEntity entity) => new(entity.Id, entity.Title, entity.Status, entity.Price);
+static string NormalizeProductStatus(string? status, string fallback)
+{
+    var normalized = string.IsNullOrWhiteSpace(status) ? fallback : status.Trim();
+    if (string.IsNullOrWhiteSpace(normalized))
+    {
+        throw CreatePlatformError(StatusCodes.Status400BadRequest, "status не может быть пустым.");
+    }
 
-static Order ToOrder(WorkerOrderEntity entity) => new(entity.Id, entity.Status, entity.Total, entity.Currency);
+    return normalized;
+}
+
+static string NormalizeCurrency(string? currency)
+{
+    if (string.IsNullOrWhiteSpace(currency))
+    {
+        return "RUB";
+    }
+
+    var normalized = currency.Trim().ToUpperInvariant();
+    if (normalized.Length is < 3 or > 8)
+    {
+        throw CreatePlatformError(StatusCodes.Status400BadRequest, "currency должен быть длиной от 3 до 8 символов.");
+    }
+
+    return normalized;
+}
+
+static string ToWorkerV2Version(WorkerListingEntity listing) =>
+    listing.UpdatedAtUtc.ToUnixTimeMilliseconds().ToString();
+
+static void ValidateWorkerV2ExpectedVersion(string? expectedVersion, WorkerListingEntity listing)
+{
+    if (string.IsNullOrWhiteSpace(expectedVersion))
+    {
+        return;
+    }
+
+    var currentVersion = ToWorkerV2Version(listing);
+    if (!string.Equals(expectedVersion.Trim(), currentVersion, StringComparison.Ordinal))
+    {
+        throw CreateRuntimeConflict("Версия товара не совпадает. Требуется актуальная версия для изменения.");
+    }
+}
+
+static bool HasWorkerV2ProductChanges(WorkerV2ProductChanges changes) =>
+    changes.Title is not null
+    || changes.Description is not null
+    || changes.Price is not null
+    || changes.Status is not null
+    || changes.Quantity is not null
+    || changes.Media is not null
+    || changes.Attributes is not null;
+
+static void ValidateWorkerV2ProductCreateSchema(string provider, WorkerV2ProductCreateRequest request)
+{
+    var schemas = GetWorkerV2ProductSchemas(provider);
+    var schema = schemas.FirstOrDefault(x =>
+        string.Equals(x.SchemaId, request.SchemaId.Trim(), StringComparison.OrdinalIgnoreCase));
+
+    if (schema is null)
+    {
+        throw CreatePlatformError(
+            StatusCodes.Status400BadRequest,
+            $"Неизвестный schemaId `{request.SchemaId}` для provider `{provider}`.");
+    }
+
+    foreach (var requiredField in schema.Fields.Where(x => x.Required))
+    {
+        if (HasWorkerV2RequiredCreateField(request, requiredField.Key))
+        {
+            continue;
+        }
+
+        throw CreatePlatformError(
+            StatusCodes.Status400BadRequest,
+            $"Для schemaId `{schema.SchemaId}` обязательно поле `{requiredField.Key}`.");
+    }
+}
+
+static bool HasWorkerV2RequiredCreateField(WorkerV2ProductCreateRequest request, string fieldKey)
+{
+    return fieldKey switch
+    {
+        "schemaId" => !string.IsNullOrWhiteSpace(request.SchemaId),
+        "title" => !string.IsNullOrWhiteSpace(request.Title),
+        "description" => !string.IsNullOrWhiteSpace(request.Description),
+        "price.amount" => true,
+        "price.currency" => !string.IsNullOrWhiteSpace(request.Price.Currency),
+        "status" => !string.IsNullOrWhiteSpace(request.Status),
+        "quantity" => request.Quantity is not null,
+        "media" => request.Media is { Count: > 0 },
+        _ when fieldKey.StartsWith("attributes.", StringComparison.Ordinal) => HasWorkerV2RequiredAttribute(
+            request.Attributes,
+            fieldKey["attributes.".Length..]),
+        _ => false,
+    };
+}
+
+static bool HasWorkerV2RequiredAttribute(Dictionary<string, JsonElement>? attributes, string key)
+{
+    if (attributes is null || string.IsNullOrWhiteSpace(key))
+    {
+        return false;
+    }
+
+    if (!TryGetAttributeValue(attributes, key, out var value))
+    {
+        return false;
+    }
+
+    if (value.ValueKind == JsonValueKind.Null)
+    {
+        return false;
+    }
+
+    if (value.ValueKind == JsonValueKind.String)
+    {
+        return !string.IsNullOrWhiteSpace(value.GetString());
+    }
+
+    return true;
+}
+
+static bool TryGetAttributeValue(Dictionary<string, JsonElement> attributes, string key, out JsonElement value)
+{
+    if (attributes.TryGetValue(key, out value))
+    {
+        return true;
+    }
+
+    foreach (var candidate in attributes)
+    {
+        if (string.Equals(candidate.Key, key, StringComparison.OrdinalIgnoreCase))
+        {
+            value = candidate.Value;
+            return true;
+        }
+    }
+
+    value = default;
+    return false;
+}
+
+static WorkerV2Product ToWorkerV2Product(WorkerListingEntity listing, WorkerV2ProductState state)
+{
+    var media = state.Media
+        .Select(x => new WorkerV2MediaItem(x.Type, x.Url))
+        .ToArray();
+
+    var attributes = state.Attributes
+        .ToDictionary(x => x.Key, x => x.Value.Clone(), StringComparer.Ordinal);
+
+    return new WorkerV2Product(
+        listing.Id,
+        listing.Title,
+        state.Description,
+        new WorkerV2Money(listing.Price, state.Currency),
+        listing.Status,
+        state.Quantity,
+        media,
+        attributes,
+        ToWorkerV2Version(listing),
+        state.SchemaId);
+}
+
+static IReadOnlyDictionary<string, bool> ResolveWorkerV2FeatureMap(string provider) => provider switch
+{
+    WorkerV2ProviderAliases.GgSell => new Dictionary<string, bool>(StringComparer.Ordinal)
+    {
+        ["account.info"] = true,
+        ["conversations.list"] = false,
+        ["conversations.messages.list"] = false,
+        ["conversations.messages.send"] = false,
+        ["products.list"] = true,
+        ["products.create"] = false,
+        ["products.update"] = false,
+        ["products.delete"] = false,
+    },
+    _ => new Dictionary<string, bool>(StringComparer.Ordinal)
+    {
+        ["account.info"] = true,
+        ["conversations.list"] = true,
+        ["conversations.messages.list"] = true,
+        ["conversations.messages.send"] = true,
+        ["products.list"] = true,
+        ["products.create"] = true,
+        ["products.update"] = true,
+        ["products.delete"] = true,
+    },
+};
+
+static string NormalizeWorkerV2Provider(string? provider)
+{
+    var normalized = string.IsNullOrWhiteSpace(provider)
+        ? WorkerV2ProviderAliases.PlatiMarket
+        : provider.Trim().ToLowerInvariant();
+
+    return WorkerV2ProviderAliases.All.Contains(normalized, StringComparer.Ordinal)
+        ? normalized
+        : throw new InvalidOperationException(
+            $"Неизвестный TEST_WORKER_PROVIDER: {provider}. Допустимые значения: {string.Join(", ", WorkerV2ProviderAliases.All)}.");
+}
+
+static string NormalizeWorkerV2ProviderFromRequest(string provider)
+{
+    var normalized = provider.Trim().ToLowerInvariant();
+    if (WorkerV2ProviderAliases.All.Contains(normalized, StringComparer.Ordinal))
+    {
+        return normalized;
+    }
+
+    throw CreatePlatformError(
+        StatusCodes.Status400BadRequest,
+        $"Неизвестный provider. Допустимые значения: {string.Join(", ", WorkerV2ProviderAliases.All)}.");
+}
+
+static WorkerV2AccountDescriptor ResolveWorkerV2AccountDescriptor(string provider) => provider switch
+{
+    WorkerV2ProviderAliases.FunPay => new WorkerV2AccountDescriptor(
+        AccountId: "11111111-1111-1111-1111-111111111111",
+        Nickname: "ddcrm_funpay_demo",
+        DisplayName: "DDCRM FunPay Demo Account",
+        Balance: 850.00m),
+    WorkerV2ProviderAliases.Playerok => new WorkerV2AccountDescriptor(
+        AccountId: "11111111-1111-1111-1111-111111111111",
+        Nickname: "ddcrm_playerok_demo",
+        DisplayName: "DDCRM Playerok Demo Account",
+        Balance: 1120.00m),
+    WorkerV2ProviderAliases.GgSell => new WorkerV2AccountDescriptor(
+        AccountId: "11111111-1111-1111-1111-111111111111",
+        Nickname: "ddcrm_ggsell_demo",
+        DisplayName: "DDCRM GGSell Demo Account",
+        Balance: 540.00m),
+    _ => new WorkerV2AccountDescriptor(
+        AccountId: "11111111-1111-1111-1111-111111111111",
+        Nickname: "ddcrm_platimarket_demo",
+        DisplayName: "DDCRM PlatiMarket Demo Account",
+        Balance: 1000.00m),
+};
+
+static IReadOnlyCollection<WorkerV2ProductSchema> GetWorkerV2ProductSchemas(string provider)
+{
+    var common = new[]
+    {
+        new WorkerV2ProductSchema(
+            "digital_goods.v1",
+            provider,
+            [
+                new WorkerV2ProductSchemaField("title", "string", true),
+                new WorkerV2ProductSchemaField("price.amount", "number", true),
+                new WorkerV2ProductSchemaField("price.currency", "string", true),
+                new WorkerV2ProductSchemaField("quantity", "integer", false),
+                new WorkerV2ProductSchemaField("attributes.region", "string", false),
+            ]),
+    };
+
+    var providerSpecific = provider switch
+    {
+        WorkerV2ProviderAliases.FunPay => new[]
+        {
+            new WorkerV2ProductSchema(
+                "funpay.item.v1",
+                provider,
+                [
+                    new WorkerV2ProductSchemaField("title", "string", true),
+                    new WorkerV2ProductSchemaField("price.amount", "number", true),
+                    new WorkerV2ProductSchemaField("attributes.nodeId", "string", true),
+                    new WorkerV2ProductSchemaField("attributes.autoDelivery", "boolean", false),
+                ]),
+        },
+        WorkerV2ProviderAliases.Playerok => new[]
+        {
+            new WorkerV2ProductSchema(
+                "playerok.item.v1",
+                provider,
+                [
+                    new WorkerV2ProductSchemaField("title", "string", true),
+                    new WorkerV2ProductSchemaField("price.amount", "number", true),
+                    new WorkerV2ProductSchemaField("attributes.gameCategoryId", "string", true),
+                    new WorkerV2ProductSchemaField("attributes.obtainingTypeId", "string", false),
+                    new WorkerV2ProductSchemaField("media", "array", false),
+                ]),
+        },
+        WorkerV2ProviderAliases.GgSell => new[]
+        {
+            new WorkerV2ProductSchema(
+                "ggsell.item.v1",
+                provider,
+                [
+                    new WorkerV2ProductSchemaField("title", "string", true),
+                    new WorkerV2ProductSchemaField("price.amount", "number", true),
+                    new WorkerV2ProductSchemaField("attributes.categoryId", "string", true),
+                    new WorkerV2ProductSchemaField("attributes.paymentMethods", "array", false),
+                ]),
+        },
+        _ => new[]
+        {
+            new WorkerV2ProductSchema(
+                "platimarket.item.v1",
+                provider,
+                [
+                    new WorkerV2ProductSchemaField("title", "string", true),
+                    new WorkerV2ProductSchemaField("price.amount", "number", true),
+                    new WorkerV2ProductSchemaField("attributes.categoryId", "string", false),
+                    new WorkerV2ProductSchemaField("attributes.partnerData", "object", false),
+                    new WorkerV2ProductSchemaField("media", "array", false),
+                ]),
+        },
+    };
+
+    return common.Concat(providerSpecific).ToArray();
+}
 
 public sealed record WorkerRuntimeSettings(
     bool TestWorkerEnabled,
+    string Provider,
     string Scenario,
     string CapabilityProfile,
     string FixtureSource,
@@ -957,5 +1438,364 @@ internal static class WorkerExtensionActionKeys
 }
 
 internal sealed record ProxyConfigValue(string Host, int Port, string Login, string Password);
+
+internal static class WorkerV2ProviderAliases
+{
+    public const string FunPay = "funpay";
+    public const string Playerok = "playerok";
+    public const string GgSell = "ggsell";
+    public const string PlatiMarket = "platimarket";
+
+    public static readonly string[] All = [FunPay, Playerok, GgSell, PlatiMarket];
+}
+
+internal sealed class WorkerV2State
+{
+    private readonly object _sync = new();
+    private readonly Dictionary<string, WorkerV2ConversationThread> _conversations = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, WorkerV2ProductState> _products = new(StringComparer.Ordinal);
+
+    private WorkerV2State()
+    {
+    }
+
+    public static WorkerV2State CreateDefault()
+    {
+        var state = new WorkerV2State();
+
+        state._conversations["conv-100"] = new WorkerV2ConversationThread
+        {
+            ConversationId = "conv-100",
+            PeerId = "buyer-100",
+            PeerName = "buyer_funpay_demo",
+            UnreadCount = 1,
+            Messages =
+            [
+                new WorkerV2ConversationMessage(
+                    "msg-100-1",
+                    "in",
+                    "Здравствуйте, товар еще доступен?",
+                    [],
+                    DateTimeOffset.UtcNow.AddMinutes(-30)),
+                new WorkerV2ConversationMessage(
+                    "msg-100-2",
+                    "out",
+                    "Да, товар доступен.",
+                    [],
+                    DateTimeOffset.UtcNow.AddMinutes(-28)),
+            ],
+        };
+
+        state._conversations["conv-200"] = new WorkerV2ConversationThread
+        {
+            ConversationId = "conv-200",
+            PeerId = "buyer-200",
+            PeerName = "buyer_playerok_demo",
+            UnreadCount = 0,
+            Messages =
+            [
+                new WorkerV2ConversationMessage(
+                    "msg-200-1",
+                    "in",
+                    "Можно небольшую скидку?",
+                    [],
+                    DateTimeOffset.UtcNow.AddMinutes(-15)),
+            ],
+        };
+
+        return state;
+    }
+
+    public IReadOnlyCollection<WorkerV2ConversationSummary> GetConversationSummaries(bool onlyUnread)
+    {
+        lock (_sync)
+        {
+            return _conversations.Values
+                .Where(x => !onlyUnread || x.UnreadCount > 0)
+                .Select(x =>
+                {
+                    var last = x.Messages.Count == 0
+                        ? null
+                        : x.Messages.OrderBy(y => y.CreatedAt).Last();
+
+                    return new WorkerV2ConversationSummary(
+                        x.ConversationId,
+                        x.PeerId,
+                        x.PeerName,
+                        x.UnreadCount,
+                        last?.Text,
+                        last?.CreatedAt ?? DateTimeOffset.UtcNow);
+                })
+                .ToArray();
+        }
+    }
+
+    public IReadOnlyCollection<WorkerV2ConversationMessage> GetConversationMessages(string conversationId)
+    {
+        lock (_sync)
+        {
+            if (!_conversations.TryGetValue(conversationId, out var conversation))
+            {
+                throw new ApiErrorException(
+                    StatusCodes.Status404NotFound,
+                    WorkerErrorCodes.PlatformError,
+                    "Переписка не найдена.");
+            }
+
+            return conversation.Messages
+                .Select(CloneMessage)
+                .ToArray();
+        }
+    }
+
+    public WorkerV2ConversationMessage AddOutgoingMessage(
+        string conversationId,
+        string text,
+        IReadOnlyCollection<WorkerV2MessageAttachment> attachments)
+    {
+        lock (_sync)
+        {
+            if (!_conversations.TryGetValue(conversationId, out var conversation))
+            {
+                conversation = new WorkerV2ConversationThread
+                {
+                    ConversationId = conversationId,
+                    PeerId = "buyer-new",
+                    PeerName = "new_buyer",
+                    UnreadCount = 0,
+                    Messages = [],
+                };
+                _conversations[conversationId] = conversation;
+            }
+
+            var message = new WorkerV2ConversationMessage(
+                $"msg-{Guid.NewGuid():N}"[..20],
+                "out",
+                text,
+                attachments.Select(CloneAttachment).ToArray(),
+                DateTimeOffset.UtcNow);
+
+            conversation.Messages.Add(message);
+            return CloneMessage(message);
+        }
+    }
+
+    public WorkerV2ProductState GetOrCreateProductState(string productId)
+    {
+        lock (_sync)
+        {
+            if (!_products.TryGetValue(productId, out var state))
+            {
+                state = WorkerV2ProductState.CreateDefault();
+                _products[productId] = state;
+            }
+
+            return state.Clone();
+        }
+    }
+
+    public void SetProductState(string productId, WorkerV2ProductState state)
+    {
+        lock (_sync)
+        {
+            _products[productId] = state.Clone();
+        }
+    }
+
+    public void RemoveProductState(string productId)
+    {
+        lock (_sync)
+        {
+            _products.Remove(productId);
+        }
+    }
+
+    private static WorkerV2ConversationMessage CloneMessage(WorkerV2ConversationMessage source) =>
+        new(
+            source.MessageId,
+            source.Direction,
+            source.Text,
+            source.Attachments.Select(CloneAttachment).ToArray(),
+            source.CreatedAt);
+
+    private static WorkerV2MessageAttachment CloneAttachment(WorkerV2MessageAttachment source) =>
+        new(source.Type, source.Url);
+}
+
+internal sealed class WorkerV2ConversationThread
+{
+    public required string ConversationId { get; init; }
+    public required string PeerId { get; init; }
+    public required string PeerName { get; init; }
+    public required List<WorkerV2ConversationMessage> Messages { get; init; }
+    public int UnreadCount { get; set; }
+}
+
+public sealed record WorkerV2AccountInfo(
+    string Provider,
+    string AccountId,
+    string Nickname,
+    string Status,
+    IReadOnlyDictionary<string, object?> Profile,
+    IReadOnlyDictionary<string, object?> Raw);
+
+public sealed record WorkerV2AccountInfoResponse(string RequestId, WorkerV2AccountInfo Account);
+
+public sealed record WorkerV2CapabilitiesResponse(
+    string RequestId,
+    string Provider,
+    IReadOnlyDictionary<string, bool> Features,
+    IReadOnlyCollection<CapabilityItem>? Capabilities = null);
+
+public sealed record WorkerV2ConversationSummary(
+    string ConversationId,
+    string PeerId,
+    string PeerName,
+    int UnreadCount,
+    string? LastMessagePreview,
+    DateTimeOffset LastMessageAt);
+
+public sealed record WorkerV2ConversationsResponse(
+    string RequestId,
+    IReadOnlyCollection<WorkerV2ConversationSummary> Items,
+    string? NextCursor);
+
+public sealed record WorkerV2MessageAttachment(string Type, string? Url);
+
+public sealed record WorkerV2ConversationMessage(
+    string MessageId,
+    string Direction,
+    string Text,
+    IReadOnlyCollection<WorkerV2MessageAttachment> Attachments,
+    DateTimeOffset CreatedAt);
+
+public sealed record WorkerV2ConversationMessagesResponse(
+    string RequestId,
+    IReadOnlyCollection<WorkerV2ConversationMessage> Items,
+    string? NextCursor);
+
+public sealed record WorkerV2MessageSendRequest(
+    string Text,
+    IReadOnlyCollection<WorkerV2MessageAttachment>? Attachments);
+
+public sealed record WorkerV2MessageSendResponse(
+    string RequestId,
+    string MessageId,
+    string Status,
+    DateTimeOffset CreatedAt);
+
+public sealed record WorkerV2Money(decimal Amount, string Currency);
+
+public sealed record WorkerV2MediaItem(string Type, string Url);
+
+public sealed record WorkerV2Product(
+    string ProductId,
+    string Title,
+    string? Description,
+    WorkerV2Money Price,
+    string Status,
+    int Quantity,
+    IReadOnlyCollection<WorkerV2MediaItem> Media,
+    IReadOnlyDictionary<string, JsonElement> Attributes,
+    string Version,
+    string SchemaId);
+
+public sealed record WorkerV2ProductsResponse(
+    string RequestId,
+    IReadOnlyCollection<WorkerV2Product> Items,
+    string? NextCursor);
+
+public sealed record WorkerV2ProductCreateRequest(
+    string SchemaId,
+    string Title,
+    string? Description,
+    WorkerV2Money Price,
+    string? Status,
+    int? Quantity,
+    IReadOnlyCollection<WorkerV2MediaItem>? Media,
+    Dictionary<string, JsonElement>? Attributes);
+
+public sealed record WorkerV2ProductChanges(
+    string? Title,
+    string? Description,
+    WorkerV2Money? Price,
+    string? Status,
+    int? Quantity,
+    IReadOnlyCollection<WorkerV2MediaItem>? Media,
+    Dictionary<string, JsonElement>? Attributes);
+
+public sealed record WorkerV2ProductUpdateRequest(string? ExpectedVersion, WorkerV2ProductChanges Changes);
+
+public sealed record WorkerV2ProductDeleteRequest(string? Mode, string? Reason, string? ExpectedVersion);
+
+public sealed record WorkerV2ProductMutationResponse(
+    string RequestId,
+    string ProductId,
+    string Status,
+    string Version);
+
+public sealed record WorkerV2ProductSchemaField(string Key, string Type, bool Required);
+
+public sealed record WorkerV2ProductSchema(
+    string SchemaId,
+    string Provider,
+    IReadOnlyCollection<WorkerV2ProductSchemaField> Fields);
+
+public sealed record WorkerV2ProductSchemasResponse(string RequestId, IReadOnlyCollection<WorkerV2ProductSchema> Items);
+
+internal sealed record WorkerV2AccountDescriptor(
+    string AccountId,
+    string Nickname,
+    string DisplayName,
+    decimal Balance);
+
+public sealed class WorkerV2ProductState
+{
+    public string? Description { get; set; }
+    public string Currency { get; set; } = "RUB";
+    public int Quantity { get; set; } = 1;
+    public string SchemaId { get; set; } = "digital_goods.v1";
+    public IReadOnlyCollection<WorkerV2MediaItem> Media { get; set; } = [];
+    public Dictionary<string, JsonElement> Attributes { get; set; } = new(StringComparer.Ordinal);
+
+    public static WorkerV2ProductState CreateDefault() => new()
+    {
+        Description = null,
+        Currency = "RUB",
+        Quantity = 1,
+        SchemaId = "digital_goods.v1",
+        Media = [],
+        Attributes = new Dictionary<string, JsonElement>(StringComparer.Ordinal),
+    };
+
+    public static WorkerV2ProductState FromRequest(WorkerV2ProductCreateRequest request)
+    {
+        var currency = string.IsNullOrWhiteSpace(request.Price.Currency)
+            ? "RUB"
+            : request.Price.Currency.Trim().ToUpperInvariant();
+
+        return new WorkerV2ProductState
+        {
+            Description = request.Description?.Trim(),
+            Currency = currency,
+            Quantity = request.Quantity ?? 1,
+            SchemaId = request.SchemaId.Trim(),
+            Media = request.Media?.Select(x => new WorkerV2MediaItem(x.Type, x.Url)).ToArray() ?? [],
+            Attributes = request.Attributes?
+                .ToDictionary(x => x.Key, x => x.Value.Clone(), StringComparer.Ordinal)
+                ?? new Dictionary<string, JsonElement>(StringComparer.Ordinal),
+        };
+    }
+
+    public WorkerV2ProductState Clone() => new()
+    {
+        Description = Description,
+        Currency = Currency,
+        Quantity = Quantity,
+        SchemaId = SchemaId,
+        Media = Media.Select(x => new WorkerV2MediaItem(x.Type, x.Url)).ToArray(),
+        Attributes = Attributes.ToDictionary(x => x.Key, x => x.Value.Clone(), StringComparer.Ordinal),
+    };
+}
 
 public partial class Program;

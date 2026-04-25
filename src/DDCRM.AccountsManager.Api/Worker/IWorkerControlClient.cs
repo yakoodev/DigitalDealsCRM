@@ -9,5 +9,6 @@ public interface IWorkerControlClient
         Guid accountId,
         Dictionary<string, object?> proxyConfig,
         string idempotencyKey,
+        string? baseUrlTemplateOverride,
         CancellationToken cancellationToken);
 }

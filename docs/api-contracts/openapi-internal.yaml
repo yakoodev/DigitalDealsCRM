@@ -16,6 +16,7 @@ x-service-auth:
 tags:
   - name: routes
   - name: lifecycle
+  - name: worker-control
   - name: billing
   - name: entitlement
   - name: iam
@@ -99,6 +100,77 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/GenericObjectResponse'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /internal/v1/worker-servers:
+    get:
+      tags: [worker-control]
+      operationId: workerServersList
+      responses:
+        '200':
+          description: Worker server registry snapshot
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkerServerListResponse'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /internal/v1/worker-servers/{serverId}:
+    put:
+      tags: [worker-control]
+      operationId: workerServerUpsert
+      parameters:
+        - name: serverId
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 120
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WorkerServerUpsertRequest'
+      responses:
+        '200':
+          description: Worker server upserted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkerServerResponse'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /internal/v1/worker-servers/{serverId}/heartbeat:
+    post:
+      tags: [worker-control]
+      operationId: workerServerHeartbeat
+      parameters:
+        - name: serverId
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 120
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WorkerServerHeartbeatRequest'
+      responses:
+        '200':
+          description: Worker server heartbeat accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AckResponse'
         default:
           $ref: '#/components/responses/Error'
 
@@ -187,6 +259,28 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/AckResponse'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /internal/v1/lifecycle/rebalance:
+    post:
+      tags: [lifecycle]
+      operationId: lifecycleRebalance
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LifecycleRebalanceRequest'
+      responses:
+        '200':
+          description: Lifecycle rebalance completed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LifecycleRebalanceResponse'
         default:
           $ref: '#/components/responses/Error'
 
@@ -554,6 +648,144 @@ components:
           format: uuid
         targetServerId:
           type: string
+
+    LifecycleRebalanceRequest:
+      type: object
+      properties:
+        maxMoves:
+          type: integer
+          minimum: 1
+          maximum: 200
+
+    LifecycleRebalanceMove:
+      type: object
+      required: [accountId, fromServerId, toServerId, routeVersion]
+      properties:
+        accountId:
+          type: string
+          format: uuid
+        fromServerId:
+          type: string
+        toServerId:
+          type: string
+        routeVersion:
+          type: integer
+          minimum: 1
+
+    LifecycleRebalanceResponse:
+      allOf:
+        - $ref: '#/components/schemas/RequestMeta'
+        - type: object
+          required: [status, evaluated, moved, migrations]
+          properties:
+            status:
+              type: string
+              enum: [completed]
+            evaluated:
+              type: integer
+              minimum: 0
+            moved:
+              type: integer
+              minimum: 0
+            migrations:
+              type: array
+              items:
+                $ref: '#/components/schemas/LifecycleRebalanceMove'
+
+    WorkerServerMetadata:
+      type: object
+      additionalProperties: true
+
+    WorkerServer:
+      type: object
+      required:
+        - serverId
+        - baseUrlTemplate
+        - status
+        - health
+        - capacity
+        - currentLoad
+        - metadata
+      properties:
+        serverId:
+          type: string
+        baseUrlTemplate:
+          type: string
+        status:
+          type: string
+          enum: [active, draining, inactive]
+        health:
+          type: string
+          enum: [healthy, degraded, unhealthy]
+        capacity:
+          type: integer
+          minimum: 0
+        currentLoad:
+          type: integer
+          minimum: 0
+        lastHeartbeatAtUtc:
+          type: [string, 'null']
+          format: date-time
+        metadata:
+          $ref: '#/components/schemas/WorkerServerMetadata'
+
+    WorkerServerListResponse:
+      allOf:
+        - $ref: '#/components/schemas/RequestMeta'
+        - type: object
+          required: [items]
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/WorkerServer'
+
+    WorkerServerResponse:
+      allOf:
+        - $ref: '#/components/schemas/RequestMeta'
+        - type: object
+          required: [workerServer]
+          properties:
+            workerServer:
+              $ref: '#/components/schemas/WorkerServer'
+
+    WorkerServerUpsertRequest:
+      type: object
+      properties:
+        baseUrlTemplate:
+          type: string
+        status:
+          type: string
+          enum: [active, draining, inactive]
+        health:
+          type: string
+          enum: [healthy, degraded, unhealthy]
+        capacity:
+          type: integer
+          minimum: 0
+        currentLoad:
+          type: integer
+          minimum: 0
+        metadata:
+          $ref: '#/components/schemas/WorkerServerMetadata'
+
+    WorkerServerHeartbeatRequest:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [active, draining, inactive]
+        health:
+          type: string
+          enum: [healthy, degraded, unhealthy]
+        capacity:
+          type: integer
+          minimum: 0
+        currentLoad:
+          type: integer
+          minimum: 0
+        metadata:
+          $ref: '#/components/schemas/WorkerServerMetadata'
 
     GenericObjectRequest:
       $ref: './openapi-common.yaml#/components/schemas/GenericObjectRequest'

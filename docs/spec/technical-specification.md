@@ -44,12 +44,15 @@
 
 ### 5.2 Подключение аккаунтов площадок
 - один worker обслуживает ровно один аккаунт
+- Accounts Manager ведёт реестр worker server-ов (`status/health/capacity/currentLoad/heartbeat`) и использует его как control-plane для placement
 - создание/изменение аккаунта требует proxy-конфиг
 - при create/update/delete/migrate операции должны быть идемпотентны
+- `lifecycle/create` выбирает least-loaded healthy `active` server, `lifecycle/migrate` (без target) выбирает лучший доступный server, `lifecycle/rebalance` выполняет балансировку размещений между доступными server-ами
+- при пустом registry сохраняется backward-compatible fallback на `srv-default`
 - удаление аккаунта удаляет route и останавливает worker
 - политика доступа к proxy credentials (masked by default, reveal/update, активная сессия, аудит) определяется канонически в `docs/standards/access-control-matrix.md`
 - реализация каждого worker обязана соответствовать контракту `docs/api-contracts/openapi-worker.yaml`
-- типовые операции worker (account/listings/messages/orders) реализуются через ресурсные endpoint-ы
+- типовые операции worker (account/conversations/products) реализуются через ресурсные endpoint-ы
 - платформенно-специфичные операции worker допускаются только через extension endpoint `actions/{action}` с capability-флагами
 - правила формата и таксономии `action` определяются в `docs/standards/worker-action-conventions.md`
 

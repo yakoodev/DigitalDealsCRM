@@ -1,0 +1,22 @@
+{
+  "rules": [
+    {
+      "id": "CGE-WORKER-V1-REMOVAL-2026-04",
+      "scope": "worker",
+      "owner": "platform-team",
+      "reason": "Переход на worker API v2-only: удаление legacy /internal/v1/worker/* endpoint-ов после завершённого migration window.",
+      "expiresOn": "2026-07-31",
+      "removedOperations": [
+        "get:/internal/v1/worker/account",
+        "get:/internal/v1/worker/capabilities",
+        "get:/internal/v1/worker/health",
+        "patch:/internal/v1/worker/listings/{listingId}",
+        "post:/internal/v1/worker/actions/{action}",
+        "post:/internal/v1/worker/listings/search",
+        "post:/internal/v1/worker/messages/send",
+        "post:/internal/v1/worker/orders/{orderId}/actions/{action}",
+        "post:/internal/v1/worker/orders/search"
+      ]
+    }
+  ]
+}

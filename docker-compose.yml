@@ -120,7 +120,7 @@ services:
       ROUTE_REGISTRY_CLIENT_BASE_URL: http://route-registry-api:8080
       WORKER_CONTROL_CLIENT_ENABLED: "true"
       WORKER_CONTROL_CLIENT_BASE_URL_TEMPLATE: http://worker-api:8080
-      WORKER_CONTROL_CLIENT_PATH_PREFIX: /internal/v1/worker
+      WORKER_CONTROL_CLIENT_PATH_PREFIX: /internal/v2/worker
     ports:
       - "5137:8080"
 
@@ -167,7 +167,7 @@ services:
       IamClient__BaseUrl: http://iam-api:8080
       EntitlementClient__BaseUrl: http://entitlement-api:8080
       WorkerProxyClient__BaseUrlTemplate: http://worker-api:8080
-      WorkerProxyClient__PathPrefix: /internal/v1/worker
+      WorkerProxyClient__PathPrefix: /internal/v2/worker
       TEST_WORKER_EXT_ACTIONS_ENABLED: "true"
     ports:
       - "5068:8080"
@@ -190,6 +190,7 @@ services:
       TEST_WORKER_BLOCK_IN_PRODUCTION: "true"
       TEST_WORKER_SCENARIO: TW-SCN-HAPPY-PATH
       TEST_WORKER_CAPABILITY_PROFILE: TW-CAP-CORE-V1
+      TEST_WORKER_PROVIDER: platimarket
       TEST_WORKER_FIXTURE_SOURCE: ./fixtures/test-worker
       TEST_WORKER_FIXTURE_REVISION: main
       TEST_WORKER_EXT_ACTIONS_ENABLED: "true"
