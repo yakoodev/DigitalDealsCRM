@@ -11,6 +11,9 @@ const DEFAULT_JWT_AUDIENCE =
 const DEFAULT_JWT_SIGNING_KEY =
   process.env.NEXT_PUBLIC_EXTERNAL_API_JWT_SIGNING_KEY ??
   "replace-with-long-random-signing-key";
+const JWT_TIME_SKEW_SECONDS = 120;
+const DEMO_TOKEN_VALID_FROM_UNIX = 1704067200; // 2024-01-01T00:00:00Z
+const DEMO_TOKEN_VALID_TO_UNIX = 2524608000; // 2050-01-01T00:00:00Z
 
 export interface PlatformUserProfile {
   userId: string;
@@ -102,14 +105,14 @@ async function signHs256(unsignedPayload: string, signingKey: string) {
 
 async function createDemoToken(subject: string) {
   const header = { alg: "HS256", typ: "JWT" };
-  const now = Math.floor(Date.now() / 1000);
   const payload = {
     sub: subject,
     iss: DEFAULT_JWT_ISSUER,
     aud: DEFAULT_JWT_AUDIENCE,
-    iat: now,
-    nbf: now,
-    exp: now + 60 * 60 * 12,
+    // Используем стабильное окно валидности, чтобы demo JWT не зависел от локальных часов браузера.
+    iat: DEMO_TOKEN_VALID_FROM_UNIX,
+    nbf: DEMO_TOKEN_VALID_FROM_UNIX,
+    exp: DEMO_TOKEN_VALID_TO_UNIX,
   };
 
   const unsigned = `${encodeJsonBase64Url(header)}.${encodeJsonBase64Url(payload)}`;
@@ -166,6 +169,26 @@ function isRole(value: string): value is ProjectRole {
   return projectRoles.includes(value as ProjectRole);
 }
 
+function isTokenTimeWindowValid(token: string): boolean {
+  const payload = parseJwtPayload(token);
+  if (!payload) {
+    return true;
+  }
+
+  const now = Math.floor(Date.now() / 1000);
+  const exp = typeof payload.exp === "number" ? payload.exp : null;
+  if (exp !== null && exp < now - JWT_TIME_SKEW_SECONDS) {
+    return false;
+  }
+
+  const nbf = typeof payload.nbf === "number" ? payload.nbf : null;
+  if (nbf !== null && nbf > now + JWT_TIME_SKEW_SECONDS) {
+    return false;
+  }
+
+  return true;
+}
+
 export function authenticateManual(params: {
   token: string;
   baseUrl: string;
@@ -218,6 +241,7 @@ export function readStoredSession(): PlatformSession | null {
     if (
       !parsed ||
       typeof parsed.token !== "string" ||
+      !parsed.token.trim() ||
       typeof parsed.baseUrl !== "string" ||
       !parsed.profile ||
       typeof parsed.profile.userId !== "string" ||
@@ -225,6 +249,11 @@ export function readStoredSession(): PlatformSession | null {
       typeof parsed.profile.displayName !== "string" ||
       !isRole(parsed.profile.role)
     ) {
+      return null;
+    }
+
+    if (!isTokenTimeWindowValid(parsed.token)) {
+      localStorage.removeItem(SESSION_STORAGE_KEY);
       return null;
     }
 

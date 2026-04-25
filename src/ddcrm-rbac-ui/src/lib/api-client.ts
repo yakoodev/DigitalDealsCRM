@@ -1,6 +1,7 @@
 import {
   type Account,
   type AccountCreateRequest,
+  type AccountType,
   type ErrorResponse,
   type GenericObjectRequest,
   type GenericObjectResponseData,
@@ -16,6 +17,7 @@ import {
   createProject,
   getAccountProxyCredentialsMasked,
   listAccounts,
+  listProjectAccountTypes,
   listProjects,
   proxyAccountApiAction,
   purchaseAddon,
@@ -29,6 +31,8 @@ export interface ApiSession {
   token: string;
   baseUrl: string;
 }
+
+export type ProjectAccountType = AccountType;
 
 interface ProxyCredentialsUpdateInput {
   reason: string;
@@ -44,6 +48,19 @@ type ApiResponseEnvelope<TSuccess> = {
   status: number;
   headers: Headers;
 };
+
+function resolveRequestId(headers: Headers, fallback?: string) {
+  const headerValue = headers.get("x-request-id")?.trim();
+  if (headerValue) {
+    return headerValue;
+  }
+
+  if (fallback && fallback.trim()) {
+    return fallback.trim();
+  }
+
+  return "n/a";
+}
 
 function trimTrailingSlash(value: string) {
   return value.endsWith("/") ? value.slice(0, -1) : value;
@@ -73,12 +90,13 @@ function buildRequestInit(
   session: ApiSession,
   includeIdempotencyKey: boolean,
 ): RequestInit {
-  const headers = new Headers();
-  headers.set("Authorization", `Bearer ${session.token}`);
-  headers.set("Accept", "application/json");
+  const headers: Record<string, string> = {
+    Authorization: `Bearer ${session.token}`,
+    Accept: "application/json",
+  };
 
   if (includeIdempotencyKey) {
-    headers.set("Idempotency-Key", createIdempotencyKey());
+    headers["Idempotency-Key"] = createIdempotencyKey();
   }
 
   return { headers };
@@ -90,9 +108,37 @@ function unwrapOrThrow<TSuccess>(response: ApiResponseEnvelope<TSuccess>): TSucc
   }
 
   const errorPayload = response.data as ErrorResponse;
+  const requestId = resolveRequestId(response.headers, errorPayload?.requestId);
+  const details =
+    errorPayload && typeof errorPayload.details === "object" && errorPayload.details
+      ? (errorPayload.details as Record<string, unknown>)
+      : null;
+
+  if (
+    response.status === 401 &&
+    (!errorPayload || typeof errorPayload.message !== "string" || !errorPayload.message)
+  ) {
+    throw new Error(
+      `UNAUTHORIZED: Сессия истекла или JWT невалиден. Выполните вход заново. (requestId: ${requestId})`,
+    );
+  }
+
+  if (response.status === 401 && details) {
+    if (details.hasBearerHeader === false) {
+      throw new Error(
+        `UNAUTHORIZED: Authorization Bearer заголовок не был отправлен браузером. Проверьте расширения/блокировщики и повторите вход. (requestId: ${requestId})`,
+      );
+    }
+
+    if (typeof details.authFailure === "string" && details.authFailure) {
+      throw new Error(
+        `UNAUTHORIZED: JWT отклонён (${details.authFailure}). Перелогиньтесь через Demo вход. (requestId: ${requestId})`,
+      );
+    }
+  }
+
   const errorCode = errorPayload?.errorCode ?? `HTTP_${response.status}`;
   const message = errorPayload?.message ?? "Неизвестная ошибка API.";
-  const requestId = errorPayload?.requestId ?? "n/a";
 
   throw new Error(`${errorCode}: ${message} (requestId: ${requestId})`);
 }
@@ -171,6 +217,19 @@ export async function listAccountsRequest(
   projectId: string,
 ): Promise<Account[]> {
   const response = await listAccounts(
+    projectId,
+    buildRequestInit(session, false),
+    createBaseUrlFetcher(session.baseUrl),
+  );
+
+  return unwrapOrThrow(response).items;
+}
+
+export async function listProjectAccountTypesRequest(
+  session: ApiSession,
+  projectId: string,
+): Promise<ProjectAccountType[]> {
+  const response = await listProjectAccountTypes(
     projectId,
     buildRequestInit(session, false),
     createBaseUrlFetcher(session.baseUrl),

@@ -9,6 +9,31 @@ public sealed class AccountsManagerApiIntegrationTests
 {
     [Fact]
     [Trait("Category", "Integration")]
+    public async Task AccountTypesList_ReturnsDefaultTestWorkerCatalog()
+    {
+        using var factory = new AccountsManagerApiFactory();
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add("X-Service-Token", "internal-token-a");
+
+        var response = await client.GetAsync("/internal/v1/account-types");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var items = json.RootElement.GetProperty("items");
+        Assert.Single(items.EnumerateArray());
+
+        var first = items[0];
+        Assert.Equal("test-worker.funpay", first.GetProperty("accountTypeId").GetString());
+        Assert.Equal("funpay", first.GetProperty("platform").GetString());
+        Assert.Equal("test-worker", first.GetProperty("workerProfileId").GetString());
+        Assert.True(first.GetProperty("enabled").GetBoolean());
+
+        var formFields = first.GetProperty("formFields");
+        Assert.True(formFields.GetArrayLength() >= 5);
+    }
+
+    [Fact]
+    [Trait("Category", "Integration")]
     public async Task WorkerServers_RegisterHeartbeatAndList_Works()
     {
         using var factory = new AccountsManagerApiFactory();
@@ -492,6 +517,29 @@ public sealed class AccountsManagerApiIntegrationTests
         client.DefaultRequestHeaders.Add("X-Service-Token", "worker-token-a");
 
         var response = await client.GetAsync("/internal/v1/worker-servers");
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    [Trait("Category", "Security")]
+    public async Task AccountTypesList_WithoutServiceToken_ReturnsUnauthorized()
+    {
+        using var factory = new AccountsManagerApiFactory();
+        using var client = factory.CreateClient();
+
+        var response = await client.GetAsync("/internal/v1/account-types");
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
+    [Trait("Category", "Security")]
+    public async Task AccountTypesList_WithWorkerToken_ReturnsForbidden()
+    {
+        using var factory = new AccountsManagerApiFactory();
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add("X-Service-Token", "worker-token-a");
+
+        var response = await client.GetAsync("/internal/v1/account-types");
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 

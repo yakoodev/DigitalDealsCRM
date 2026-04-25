@@ -213,6 +213,24 @@ paths:
         default:
           $ref: '#/components/responses/Error'
 
+  /v1/projects/{projectId}/account-types:
+    get:
+      tags: [accounts]
+      operationId: listProjectAccountTypes
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+      responses:
+        '200':
+          description: Доступные типы аккаунтов для создания в проекте
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountTypeListResponse'
+        default:
+          $ref: '#/components/responses/Error'
+
   /v1/projects/{projectId}/accounts/{accountId}:
     patch:
       tags: [accounts]
@@ -525,12 +543,64 @@ components:
       type: object
       required: [platform, displayName, proxyConfig]
       properties:
+        accountTypeId:
+          type: string
         platform:
           type: string
         displayName:
           type: string
         proxyConfig:
           $ref: '#/components/schemas/ProxyConfig'
+
+    AccountTypeField:
+      type: object
+      required: [key, label, inputType, required, secret]
+      properties:
+        key:
+          type: string
+        label:
+          type: string
+        inputType:
+          type: string
+          enum: [text, number, password]
+        required:
+          type: boolean
+        secret:
+          type: boolean
+        placeholder:
+          type: string
+        defaultValue:
+          type: string
+
+    AccountType:
+      type: object
+      required:
+        - accountTypeId
+        - platform
+        - displayName
+        - workerProfileId
+        - enabled
+        - sortOrder
+        - formFields
+      properties:
+        accountTypeId:
+          type: string
+        platform:
+          type: string
+        displayName:
+          type: string
+        description:
+          type: string
+        workerProfileId:
+          type: string
+        enabled:
+          type: boolean
+        sortOrder:
+          type: integer
+        formFields:
+          type: array
+          items:
+            $ref: '#/components/schemas/AccountTypeField'
 
     Account:
       type: object
@@ -574,6 +644,17 @@ components:
               type: array
               items:
                 $ref: '#/components/schemas/Account'
+
+    AccountTypeListResponse:
+      allOf:
+        - $ref: '#/components/schemas/RequestMeta'
+        - type: object
+          required: [items]
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/AccountType'
 
     RoleChangeRequest:
       type: object

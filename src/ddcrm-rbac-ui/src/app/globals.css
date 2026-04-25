@@ -510,6 +510,13 @@ a {
   margin: 0;
 }
 
+.panel-title-row {
+  align-items: center;
+  display: flex;
+  gap: 0.6rem;
+  justify-content: space-between;
+}
+
 .inline-filters {
   display: grid;
   gap: 0.62rem;
@@ -521,6 +528,50 @@ a {
   flex-wrap: wrap;
   gap: 0.46rem;
   justify-content: flex-end;
+}
+
+.panel-actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.58rem;
+}
+
+.type-tabs {
+  display: grid;
+  gap: 0.58rem;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.type-tab {
+  background: rgba(255, 255, 255, 0.84);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  padding: 0.72rem;
+  text-align: left;
+  transition: border-color 140ms ease, box-shadow 140ms ease, transform 140ms ease;
+}
+
+.type-tab:hover {
+  border-color: #99aac7;
+  transform: translateY(-1px);
+}
+
+.type-tab strong {
+  font-size: 0.94rem;
+}
+
+.type-tab small {
+  color: var(--muted);
+}
+
+.type-tab.is-active {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(205, 106, 9, 0.18);
 }
 
 .route-hint {

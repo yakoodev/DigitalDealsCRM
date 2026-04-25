@@ -2,7 +2,7 @@
 
 import {
   useMutation,
-  useQuery,
+  useQueries,
   useQueryClient,
 } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
@@ -19,6 +19,11 @@ import {
 interface ProjectProductsPanelProps {
   apiSession: ApiSession;
   projectId: string;
+}
+
+interface ProductRowWithAccount {
+  accountId: string;
+  row: Record<string, unknown>;
 }
 
 function readFirstNumber(row: Record<string, unknown>, keys: readonly string[]) {
@@ -44,13 +49,17 @@ export function ProjectProductsPanel({
   projectId,
 }: ProjectProductsPanelProps) {
   const queryClient = useQueryClient();
+  const [accountFilterId, setAccountFilterId] = useState("all");
   const [productSearch, setProductSearch] = useState("");
   const [newProductTitle, setNewProductTitle] = useState("Новый товар");
   const [newProductPrice, setNewProductPrice] = useState("100");
+  const [editProductAccountId, setEditProductAccountId] = useState("");
   const [editProductId, setEditProductId] = useState("");
   const [editProductTitle, setEditProductTitle] = useState("");
   const [editProductPrice, setEditProductPrice] = useState("");
-  const [status, setStatus] = useState("Товары загружаются автоматически.");
+  const [status, setStatus] = useState(
+    "Товары загружаются по всем аккаунтам проекта. При необходимости включите фильтр аккаунта.",
+  );
 
   const {
     accounts,
@@ -60,26 +69,54 @@ export function ProjectProductsPanel({
     setSelectedAccountId,
   } = useProjectAccounts(apiSession, projectId);
 
-  const productsQueryKey = useMemo(
-    () =>
-      [
+  const accountNameById = useMemo(() => {
+    return new Map(accounts.map((account) => [account.id, account.displayName]));
+  }, [accounts]);
+
+  const effectiveFilterId = useMemo(() => {
+    if (accountFilterId === "all") {
+      return "all";
+    }
+
+    return accounts.some((account) => account.id === accountFilterId)
+      ? accountFilterId
+      : "all";
+  }, [accountFilterId, accounts]);
+
+  const scopedAccountIds = useMemo(() => {
+    if (effectiveFilterId !== "all") {
+      return [effectiveFilterId];
+    }
+
+    return accounts.map((account) => account.id);
+  }, [accounts, effectiveFilterId]);
+
+  const productsQueries = useQueries({
+    queries: scopedAccountIds.map((accountId) => ({
+      queryKey: [
         "products.list",
         apiSession.baseUrl,
         apiSession.token,
         projectId,
-        selectedAccountId,
+        accountId,
       ] as const,
-    [apiSession.baseUrl, apiSession.token, projectId, selectedAccountId],
-  );
-
-  const productsQuery = useQuery({
-    queryKey: productsQueryKey,
-    enabled: Boolean(selectedAccountId),
-    queryFn: () =>
-      runAccountActionRequest(apiSession, selectedAccountId, "products.list", {
-        limit: 100,
-      }),
+      queryFn: () =>
+        runAccountActionRequest(apiSession, accountId, "products.list", {
+          limit: 100,
+        }),
+      enabled: Boolean(accountId),
+      refetchInterval: 30_000,
+      staleTime: 10_000,
+    })),
   });
+
+  const targetAccountId = useMemo(() => {
+    if (effectiveFilterId !== "all") {
+      return effectiveFilterId;
+    }
+
+    return selectedAccountId;
+  }, [effectiveFilterId, selectedAccountId]);
 
   const createProductMutation = useMutation({
     mutationFn: () => {
@@ -92,13 +129,28 @@ export function ProjectProductsPanel({
         throw new Error("Название товара обязательно.");
       }
 
-      return runAccountActionRequest(apiSession, selectedAccountId, "products.create", {
+      if (!targetAccountId) {
+        throw new Error("Выберите аккаунт для операции добавления.");
+      }
+
+      return runAccountActionRequest(apiSession, targetAccountId, "products.create", {
         title: newProductTitle.trim(),
         price: parsedPrice,
       });
     },
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: productsQueryKey });
+      if (targetAccountId) {
+        await queryClient.invalidateQueries({
+          queryKey: [
+            "products.list",
+            apiSession.baseUrl,
+            apiSession.token,
+            projectId,
+            targetAccountId,
+          ],
+        });
+      }
+
       setStatus("Товар добавлен.");
     },
     onError: (error) => {
@@ -110,6 +162,11 @@ export function ProjectProductsPanel({
     mutationFn: () => {
       if (!editProductId.trim()) {
         throw new Error("Выберите товар для обновления.");
+      }
+
+      const accountId = editProductAccountId.trim() || targetAccountId;
+      if (!accountId) {
+        throw new Error("Не удалось определить аккаунт для обновления товара.");
       }
 
       const payload: Record<string, unknown> = {
@@ -129,10 +186,22 @@ export function ProjectProductsPanel({
         payload.price = parsedPrice;
       }
 
-      return runAccountActionRequest(apiSession, selectedAccountId, "products.update", payload);
+      return runAccountActionRequest(apiSession, accountId, "products.update", payload);
     },
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: productsQueryKey });
+      const accountId = editProductAccountId.trim() || targetAccountId;
+      if (accountId) {
+        await queryClient.invalidateQueries({
+          queryKey: [
+            "products.list",
+            apiSession.baseUrl,
+            apiSession.token,
+            projectId,
+            accountId,
+          ],
+        });
+      }
+
       setStatus("Товар обновлён.");
     },
     onError: (error) => {
@@ -141,12 +210,21 @@ export function ProjectProductsPanel({
   });
 
   const deleteProductMutation = useMutation({
-    mutationFn: (productId: string) =>
-      runAccountActionRequest(apiSession, selectedAccountId, "products.delete", {
-        productId,
+    mutationFn: (variables: { accountId: string; productId: string }) =>
+      runAccountActionRequest(apiSession, variables.accountId, "products.delete", {
+        productId: variables.productId,
       }),
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: productsQueryKey });
+    onSuccess: async (_result, variables) => {
+      await queryClient.invalidateQueries({
+        queryKey: [
+          "products.list",
+          apiSession.baseUrl,
+          apiSession.token,
+          projectId,
+          variables.accountId,
+        ],
+      });
+
       setStatus("Товар удалён.");
     },
     onError: (error) => {
@@ -154,27 +232,38 @@ export function ProjectProductsPanel({
     },
   });
 
-  const productRows = extractObjectRows(productsQuery.data ?? null, [
-    "items",
-    "products",
-    "listings",
-  ]);
+  const aggregatedRows = useMemo<ProductRowWithAccount[]>(() => {
+    return scopedAccountIds.flatMap((accountId, index) => {
+      const query = productsQueries[index];
+      const rows = extractObjectRows(query?.data ?? null, [
+        "items",
+        "products",
+        "listings",
+      ]);
+
+      return rows.map((row) => ({
+        accountId,
+        row,
+      }));
+    });
+  }, [productsQueries, scopedAccountIds]);
 
   const filteredRows = useMemo(() => {
     const query = productSearch.trim().toLowerCase();
     if (!query) {
-      return productRows;
+      return aggregatedRows;
     }
 
-    return productRows.filter((row) => {
+    return aggregatedRows.filter(({ accountId, row }) => {
       const id = readFirstString(row, ["productId", "id"]).toLowerCase();
       const title = readFirstString(row, ["title", "name", "displayName"]).toLowerCase();
-      return id.includes(query) || title.includes(query);
+      const accountName = (accountNameById.get(accountId) ?? "").toLowerCase();
+      return id.includes(query) || title.includes(query) || accountName.includes(query);
     });
-  }, [productRows, productSearch]);
+  }, [accountNameById, aggregatedRows, productSearch]);
 
   const pricedItems = filteredRows
-    .map((row) => readFirstNumber(row, ["price", "amount", "cost"]))
+    .map(({ row }) => readFirstNumber(row, ["price", "amount", "cost"]))
     .filter((value): value is number => typeof value === "number");
 
   const averagePrice =
@@ -182,13 +271,21 @@ export function ProjectProductsPanel({
       ? null
       : pricedItems.reduce((sum, value) => sum + value, 0) / pricedItems.length;
 
+  const anyPending = productsQueries.some((query) => query.isPending);
+  const anyFetching = productsQueries.some((query) => query.isFetching);
+  const firstError = productsQueries.find((query) => query.error)?.error;
+
+  const refreshAllProducts = async () => {
+    await Promise.all(productsQueries.map((query) => query.refetch()));
+  };
+
   return (
     <div className="page-stack" data-testid="project-products-panel">
       <header className="page-section-header">
         <h2>Товары</h2>
         <p>
-          Список товаров загружается автоматически при открытии вкладки и при смене
-          аккаунта.
+          Данные собираются со всех аккаунтов проекта (всех доступных worker route), с
+          возможностью фильтра по конкретному аккаунту.
         </p>
       </header>
 
@@ -196,7 +293,7 @@ export function ProjectProductsPanel({
         <article className="summary-card">
           <p>Найдено товаров</p>
           <strong>{filteredRows.length}</strong>
-          <small>По текущему фильтру и аккаунту</small>
+          <small>По текущему фильтру и scope аккаунтов</small>
         </article>
         <article className="summary-card">
           <p>Средняя цена</p>
@@ -204,9 +301,13 @@ export function ProjectProductsPanel({
           <small>Рассчитано по доступным значениям цены</small>
         </article>
         <article className="summary-card">
-          <p>Автосинхронизация</p>
-          <strong>Enabled</strong>
-          <small>Список обновляется при смене аккаунта</small>
+          <p>Аккаунтов в выборке</p>
+          <strong>{scopedAccountIds.length}</strong>
+          <small>
+            {effectiveFilterId === "all"
+              ? "Отображаем все аккаунты"
+              : "Выбран конкретный аккаунт"}
+          </small>
         </article>
       </section>
 
@@ -219,51 +320,73 @@ export function ProjectProductsPanel({
           isLoading={accountsLoading}
         />
         <label className="field">
+          <span>Источник данных</span>
+          <select
+            className="input"
+            value={effectiveFilterId}
+            onChange={(event) => setAccountFilterId(event.target.value)}
+          >
+            <option value="all">Все аккаунты проекта</option>
+            {accounts.map((account) => (
+              <option key={account.id} value={account.id}>
+                {account.displayName} · {account.platform}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="field">
           <span>Поиск по товарам</span>
           <input
             className="input"
             value={productSearch}
             onChange={(event) => setProductSearch(event.target.value)}
-            placeholder="ID или название"
+            placeholder="ID, название, аккаунт"
           />
         </label>
       </div>
 
-      {!selectedAccountId ? (
-        <p className="route-hint">Выберите аккаунт, чтобы увидеть товары.</p>
-      ) : null}
-
-      {selectedAccountId && productsQuery.isPending ? (
-        <p className="route-hint">Загружаем товары...</p>
-      ) : null}
-
-      {selectedAccountId && productsQuery.error ? (
+      {scopedAccountIds.length === 0 ? (
+        <p className="route-hint">Добавьте аккаунт в проект, чтобы загрузить товары.</p>
+      ) : anyPending ? (
+        <p className="route-hint">Загружаем товары по аккаунтам...</p>
+      ) : firstError ? (
         <p className="route-error">
-          {productsQuery.error instanceof Error
-            ? productsQuery.error.message
-            : "Не удалось загрузить товары."}
+          {firstError instanceof Error
+            ? firstError.message
+            : "Не удалось загрузить товары по одному из аккаунтов."}
         </p>
-      ) : null}
-
-      {selectedAccountId && !productsQuery.isPending && !productsQuery.error ? (
+      ) : (
         <div className="split-grid">
           <section className="panel-card">
-            <h3>Список товаров</h3>
+            <div className="panel-title-row">
+              <h3>Список товаров</h3>
+              <button
+                type="button"
+                className="button button-ghost"
+                onClick={refreshAllProducts}
+                disabled={anyFetching || scopedAccountIds.length === 0}
+              >
+                Обновить
+              </button>
+            </div>
+            {anyFetching ? <p className="route-hint">Синхронизация товаров...</p> : null}
             {filteredRows.length === 0 ? (
-              <p className="route-hint">Товары не найдены для выбранного аккаунта.</p>
+              <p className="route-hint">Товары не найдены для выбранной выборки аккаунтов.</p>
             ) : (
               <ul className="entity-list">
-                {filteredRows.map((row, index) => {
+                {filteredRows.map(({ accountId, row }, index) => {
                   const productId = readFirstString(row, ["productId", "id"]);
                   const title = readFirstString(row, ["title", "name", "displayName"]);
                   const price = toReadableValue(row.price ?? row.amount ?? row.cost ?? "");
+                  const accountName = accountNameById.get(accountId) ?? accountId;
 
                   return (
-                    <li key={productId || `row-${index}`} className="entity-list-item">
+                    <li key={`${accountId}:${productId || index}`} className="entity-list-item">
                       <div>
                         <strong>{title || "Без названия"}</strong>
                         <p>ID: {productId || "n/a"}</p>
                         <p>Цена: {price || "n/a"}</p>
+                        <small>Аккаунт: {accountName}</small>
                       </div>
                       <div className="inline-actions">
                         <button
@@ -271,10 +394,13 @@ export function ProjectProductsPanel({
                           className="button button-ghost"
                           disabled={!productId}
                           onClick={() => {
+                            setEditProductAccountId(accountId);
                             setEditProductId(productId || "");
                             setEditProductTitle(title || "");
                             setEditProductPrice(price || "");
-                            setStatus("Товар загружен в форму редактирования.");
+                            setStatus(
+                              `Товар загружен в форму редактирования (аккаунт: ${accountName}).`,
+                            );
                           }}
                         >
                           Редактировать
@@ -285,7 +411,10 @@ export function ProjectProductsPanel({
                           disabled={!productId || deleteProductMutation.isPending}
                           onClick={() => {
                             if (productId) {
-                              deleteProductMutation.mutate(productId);
+                              deleteProductMutation.mutate({
+                                accountId,
+                                productId,
+                              });
                             }
                           }}
                         >
@@ -302,7 +431,10 @@ export function ProjectProductsPanel({
           <section className="panel-card page-stack">
             <div>
               <h3>Добавить товар</h3>
-              <p className="route-hint">Создаёт новый товар через `products.create`.</p>
+              <p className="route-hint">
+                Создаёт новый товар через `products.create` в аккаунте:
+                <strong> {accountNameById.get(targetAccountId) ?? "не выбран"}</strong>.
+              </p>
             </div>
             <div className="stacked-block">
               <label className="field">
@@ -326,7 +458,7 @@ export function ProjectProductsPanel({
               <button
                 type="button"
                 className="button button-primary"
-                disabled={createProductMutation.isPending || !selectedAccountId}
+                disabled={createProductMutation.isPending || !targetAccountId}
                 onClick={() => createProductMutation.mutate()}
               >
                 Добавить товар
@@ -336,6 +468,14 @@ export function ProjectProductsPanel({
             <div className="panel-card panel-soft">
               <h3>Редактор товара</h3>
               <div className="stacked-block">
+                <label className="field">
+                  <span>Аккаунт товара</span>
+                  <input
+                    className="input"
+                    value={accountNameById.get(editProductAccountId) ?? editProductAccountId}
+                    readOnly
+                  />
+                </label>
                 <label className="field">
                   <span>Product ID</span>
                   <input
@@ -366,7 +506,7 @@ export function ProjectProductsPanel({
                 <button
                   type="button"
                   className="button button-primary"
-                  disabled={updateProductMutation.isPending || !selectedAccountId}
+                  disabled={updateProductMutation.isPending || !targetAccountId}
                   onClick={() => updateProductMutation.mutate()}
                 >
                   Обновить товар
@@ -377,7 +517,7 @@ export function ProjectProductsPanel({
             <p className="route-hint">{status}</p>
           </section>
         </div>
-      ) : null}
+      )}
     </div>
   );
 }

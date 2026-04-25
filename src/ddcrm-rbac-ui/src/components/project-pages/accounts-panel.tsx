@@ -1,11 +1,13 @@
 "use client";
 
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
+import { useQueries } from "@tanstack/react-query";
+import Link from "next/link";
+import { useMemo } from "react";
 import { AccountSelector } from "@/components/account-selector";
 import type { ApiSession } from "@/lib/api-client";
-import { createAccountRequest } from "@/lib/api-client";
+import { runAccountActionRequest } from "@/lib/api-client";
 import { useProjectAccounts } from "@/hooks/use-project-accounts";
+import { toReadableValue } from "@/lib/worker-result";
 
 interface ProjectAccountsPanelProps {
   apiSession: ApiSession;
@@ -16,14 +18,7 @@ export function ProjectAccountsPanel({
   apiSession,
   projectId,
 }: ProjectAccountsPanelProps) {
-  const queryClient = useQueryClient();
-  const [platform, setPlatform] = useState("funpay");
-  const [displayName, setDisplayName] = useState("Новый marketplace аккаунт");
-  const [proxyHost, setProxyHost] = useState("");
-  const [proxyPort, setProxyPort] = useState("1508");
-  const [proxyLogin, setProxyLogin] = useState("");
-  const [proxyPassword, setProxyPassword] = useState("");
-  const [status, setStatus] = useState("Загрузите или создайте аккаунт проекта.");
+  const status = "Загрузите или создайте аккаунт проекта.";
 
   const {
     accounts,
@@ -31,49 +26,67 @@ export function ProjectAccountsPanel({
     selectedAccount,
     isLoading,
     error,
-    queryKey,
     setSelectedAccountId,
   } = useProjectAccounts(apiSession, projectId);
 
-  const createAccountMutation = useMutation({
-    mutationFn: async () => {
-      const parsedPort = Number(proxyPort);
-      if (!Number.isInteger(parsedPort) || parsedPort < 1 || parsedPort > 65535) {
-        throw new Error("Proxy port должен быть целым числом от 1 до 65535.");
-      }
-
-      if (!platform.trim() || !displayName.trim()) {
-        throw new Error("Platform и Display Name обязательны.");
-      }
-
-      if (!proxyHost.trim() || !proxyLogin.trim() || !proxyPassword.trim()) {
-        throw new Error("Заполните все поля proxy.");
-      }
-
-      return createAccountRequest(apiSession, projectId, {
-        platform: platform.trim(),
-        displayName: displayName.trim(),
-        proxyConfig: {
-          host: proxyHost.trim(),
-          port: parsedPort,
-          login: proxyLogin.trim(),
-          password: proxyPassword,
-        },
-      });
-    },
-    onSuccess: async (account) => {
-      await queryClient.invalidateQueries({ queryKey });
-      setSelectedAccountId(account.id);
-      setStatus("Аккаунт создан и добавлен в проект.");
-    },
-    onError: (mutationError) => {
-      setStatus(
-        mutationError instanceof Error
-          ? mutationError.message
-          : "Не удалось создать аккаунт.",
-      );
-    },
+  const accountInfoQueries = useQueries({
+    queries: accounts.map((account) => ({
+      queryKey: [
+        "account.info",
+        apiSession.baseUrl,
+        apiSession.token,
+        projectId,
+        account.id,
+      ] as const,
+      queryFn: () =>
+        runAccountActionRequest(apiSession, account.id, "account.info", {}),
+      enabled: Boolean(account.id),
+      refetchInterval: 30_000,
+      staleTime: 10_000,
+    })),
   });
+
+  const accountInfoById = useMemo(() => {
+    const map = new Map<string, Record<string, unknown>>();
+    for (let index = 0; index < accounts.length; index += 1) {
+      const account = accounts[index];
+      const query = accountInfoQueries[index];
+      if (query?.data && typeof query.data === "object") {
+        map.set(account.id, query.data as Record<string, unknown>);
+      }
+    }
+
+    return map;
+  }, [accountInfoQueries, accounts]);
+
+  const accountInfoErrorById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (let index = 0; index < accounts.length; index += 1) {
+      const account = accounts[index];
+      const query = accountInfoQueries[index];
+      const message =
+        query?.error instanceof Error
+          ? query.error.message
+          : query?.error
+            ? "Не удалось загрузить account.info."
+            : null;
+      if (message) {
+        map.set(account.id, message);
+      }
+    }
+
+    return map;
+  }, [accountInfoQueries, accounts]);
+
+  const selectedAccountInfo = selectedAccountId
+    ? accountInfoById.get(selectedAccountId) ?? null
+    : null;
+  const selectedAccountInfoError = selectedAccountId
+    ? accountInfoErrorById.get(selectedAccountId) ?? null
+    : null;
+
+  const anyAccountInfoFetching = accountInfoQueries.some((query) => query.isFetching);
+  const anyAccountInfoPending = accountInfoQueries.some((query) => query.isPending);
 
   const activeAccountsCount = accounts.filter(
     (account) => account.businessStatus === "active",
@@ -90,6 +103,10 @@ export function ProjectAccountsPanel({
       .sort((left, right) => right[1] - left[1])
       .slice(0, 4);
   }, [accounts]);
+
+  const refreshAccountInfo = async () => {
+    await Promise.all(accountInfoQueries.map((query) => query.refetch()));
+  };
 
   return (
     <div className="page-stack" data-testid="project-accounts-panel">
@@ -129,7 +146,9 @@ export function ProjectAccountsPanel({
           {error ? <p className="route-error">{error.message}</p> : null}
           {isLoading ? <p className="route-hint">Загружаем аккаунты...</p> : null}
           {!isLoading && accounts.length === 0 ? (
-            <p className="route-hint">Аккаунтов пока нет. Добавьте первый аккаунт справа.</p>
+            <p className="route-hint">
+              Аккаунтов пока нет. Откройте отдельную страницу «Добавить аккаунт».
+            </p>
           ) : null}
 
           <AccountSelector
@@ -160,6 +179,90 @@ export function ProjectAccountsPanel({
             </dl>
           ) : null}
 
+          {selectedAccountId ? (
+            <section className="panel-card panel-soft">
+              <div className="panel-title-row">
+                <h3>Состояние выбранного worker account</h3>
+                <button
+                  type="button"
+                  className="button button-ghost"
+                  onClick={refreshAccountInfo}
+                  disabled={anyAccountInfoFetching}
+                >
+                  Обновить
+                </button>
+              </div>
+              {anyAccountInfoPending ? (
+                <p className="route-hint">Проверяем account.info...</p>
+              ) : selectedAccountInfoError ? (
+                <p className="route-error">{selectedAccountInfoError}</p>
+              ) : !selectedAccountInfo ? (
+                <p className="route-error">Не удалось получить account.info.</p>
+              ) : (
+                <dl className="kv-list">
+                  {Object.entries(selectedAccountInfo).map(([key, value]) => (
+                    <div key={key}>
+                      <dt>{key}</dt>
+                      <dd>{toReadableValue(value) || "n/a"}</dd>
+                    </div>
+                  ))}
+                </dl>
+              )}
+            </section>
+          ) : null}
+
+          {!isLoading && accounts.length > 0 ? (
+            <section className="panel-card panel-soft">
+              <div className="panel-title-row">
+                <h3>Состояние всех worker account</h3>
+                <button
+                  type="button"
+                  className="button button-ghost"
+                  onClick={refreshAccountInfo}
+                  disabled={anyAccountInfoFetching}
+                >
+                  Обновить
+                </button>
+              </div>
+              <ul className="entity-list compact-list">
+                {accounts.map((account) => {
+                  const accountInfo = accountInfoById.get(account.id);
+                  const accountInfoError = accountInfoErrorById.get(account.id);
+                  const infoStatus = toReadableValue(
+                    accountInfo?.status ?? account.businessStatus,
+                  ) || "n/a";
+                  const workerInstanceId = toReadableValue(
+                    (accountInfo?.raw as Record<string, unknown> | undefined)
+                      ?.workerInstanceId,
+                  );
+
+                  return (
+                    <li key={`worker-info-${account.id}`} className="entity-list-item">
+                      <div>
+                        <strong>{account.displayName}</strong>
+                        <p>{account.platform}</p>
+                        <small>Status: {infoStatus}</small>
+                        <small>
+                          Worker: {workerInstanceId || "ожидаем account.info"}
+                        </small>
+                        {accountInfoError ? (
+                          <small className="route-error">{accountInfoError}</small>
+                        ) : null}
+                      </div>
+                      <button
+                        type="button"
+                        className="button button-ghost"
+                        onClick={() => setSelectedAccountId(account.id)}
+                      >
+                        Открыть
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            </section>
+          ) : null}
+
           {!isLoading && accounts.length > 0 ? (
             <ul className="entity-list compact-list">
               {accounts.map((account) => (
@@ -180,66 +283,20 @@ export function ProjectAccountsPanel({
         </section>
 
         <section className="panel-card">
-          <h3>Добавить аккаунт</h3>
-          <div className="stacked-block">
-            <label className="field">
-              <span>Platform</span>
-              <input
-                className="input"
-                value={platform}
-                onChange={(event) => setPlatform(event.target.value)}
-                placeholder="funpay/playerok/ggsell/platimarket"
-              />
-            </label>
-
-            <label className="field">
-              <span>Display Name</span>
-              <input
-                className="input"
-                value={displayName}
-                onChange={(event) => setDisplayName(event.target.value)}
-                placeholder="Название аккаунта"
-              />
-            </label>
-
-            <div className="grid-4">
-              <input
-                className="input"
-                value={proxyHost}
-                onChange={(event) => setProxyHost(event.target.value)}
-                placeholder="proxy host"
-              />
-              <input
-                className="input"
-                value={proxyPort}
-                onChange={(event) => setProxyPort(event.target.value)}
-                placeholder="port"
-              />
-              <input
-                className="input"
-                value={proxyLogin}
-                onChange={(event) => setProxyLogin(event.target.value)}
-                placeholder="login"
-              />
-              <input
-                className="input"
-                type="password"
-                value={proxyPassword}
-                onChange={(event) => setProxyPassword(event.target.value)}
-                placeholder="password"
-              />
-            </div>
-
-            <button
-              type="button"
+          <h3>Добавление аккаунта</h3>
+          <p className="route-hint">
+            Создание вынесено в отдельный route: сначала выбираем тип аккаунта из
+            каталога Accounts Manager, затем заполняем форму.
+          </p>
+          <div className="panel-actions">
+            <Link
+              href={`/projects/${projectId}/accounts/new`}
               className="button button-primary"
-              disabled={createAccountMutation.isPending}
-              onClick={() => createAccountMutation.mutate()}
             >
               Добавить аккаунт
-            </button>
-            <p className="route-hint">{status}</p>
+            </Link>
           </div>
+          <p className="route-hint">{status}</p>
         </section>
       </div>
     </div>

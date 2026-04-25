@@ -90,6 +90,75 @@ builder.Services
             ValidateLifetime = true,
             ClockSkew = TimeSpan.FromSeconds(30),
         };
+
+        options.Events = new JwtBearerEvents
+        {
+            OnAuthenticationFailed = context =>
+            {
+                context.HttpContext.Items["jwt-auth-failure"] = context.Exception.GetType().Name;
+                return Task.CompletedTask;
+            },
+            OnChallenge = async context =>
+            {
+                context.HandleResponse();
+
+                if (context.Response.HasStarted)
+                {
+                    return;
+                }
+
+                context.Response.Clear();
+                context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+                context.Response.ContentType = "application/json";
+
+                var requestId = context.HttpContext.GetOrCreateRequestId();
+                var hasBearerHeader = context.Request.Headers.TryGetValue(
+                    "Authorization",
+                    out var authHeader)
+                    && authHeader.ToString().StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase);
+                var authFailure = context.HttpContext.Items.TryGetValue("jwt-auth-failure", out var failure)
+                    ? failure?.ToString()
+                    : null;
+                var message = hasBearerHeader
+                    ? "Требуется валидный bearer JWT."
+                    : "Отсутствует bearer JWT в заголовке Authorization.";
+                var details = new Dictionary<string, object?>(StringComparer.Ordinal)
+                {
+                    ["hasBearerHeader"] = hasBearerHeader,
+                };
+                if (!string.IsNullOrWhiteSpace(authFailure))
+                {
+                    details["authFailure"] = authFailure;
+                }
+
+                var payload = new ErrorResponse(
+                    ApiErrorCodes.Unauthorized,
+                    message,
+                    requestId,
+                    details);
+
+                await context.Response.WriteAsJsonAsync(payload);
+            },
+            OnForbidden = async context =>
+            {
+                if (context.Response.HasStarted)
+                {
+                    return;
+                }
+
+                context.Response.Clear();
+                context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                context.Response.ContentType = "application/json";
+
+                var requestId = context.HttpContext.GetOrCreateRequestId();
+                var payload = new ErrorResponse(
+                    ApiErrorCodes.Forbidden,
+                    "Недостаточно прав для выполнения операции.",
+                    requestId);
+
+                await context.Response.WriteAsJsonAsync(payload);
+            },
+        };
     });
 
 builder.Services.AddAuthorization();
@@ -496,6 +565,27 @@ external.MapDelete("/projects/{projectId:guid}/members/{userId:guid}", async (
         cancellationToken);
 });
 
+external.MapGet("/projects/{projectId:guid}/account-types", async (
+    HttpContext httpContext,
+    Guid projectId,
+    CoreDbContext dbContext,
+    IAccountsManagerClient accountsManagerClient,
+    CancellationToken cancellationToken) =>
+{
+    var actorId = GetCurrentUserId(httpContext);
+    await EnsurePermissionAsync(dbContext, projectId, actorId, ProjectPermissions.ProjectAccountsLifecycleManage, cancellationToken);
+
+    var accountTypes = await accountsManagerClient.ListAccountTypesAsync(cancellationToken);
+    var items = accountTypes
+        .Where(x => x.Enabled)
+        .OrderBy(x => x.SortOrder)
+        .ThenBy(x => x.DisplayName)
+        .Select(ToAccountTypeDto)
+        .ToList();
+
+    return Results.Ok(new AccountTypeListResponse(httpContext.GetOrCreateRequestId(), items));
+});
+
 external.MapGet("/projects/{projectId:guid}/accounts", async (
     HttpContext httpContext,
     Guid projectId,
@@ -537,8 +627,36 @@ external.MapPost("/projects/{projectId:guid}/accounts", async (
     await EnsurePermissionAsync(dbContext, projectId, actorId, ProjectPermissions.ProjectAccountsLifecycleManage, cancellationToken);
 
     var platform = ReadString(request, "platform");
+    var accountTypeId = TryReadString(request, "accountTypeId");
     var displayName = ReadString(request, "displayName");
     var proxyConfig = ReadProxyConfig(request, "proxyConfig", required: true)!;
+
+    if (accountTypeId is not null)
+    {
+        var accountTypes = await accountsManagerClient.ListAccountTypesAsync(cancellationToken);
+        var accountType = accountTypes.SingleOrDefault(x =>
+            x.Enabled
+            && string.Equals(x.AccountTypeId, accountTypeId, StringComparison.OrdinalIgnoreCase));
+
+        if (accountType is null)
+        {
+            throw new ApiErrorException(
+                StatusCodes.Status400BadRequest,
+                ApiErrorCodes.ValidationError,
+                "Указанный accountTypeId недоступен для создания аккаунта.");
+        }
+
+        if (!string.Equals(platform, accountType.Platform, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new ApiErrorException(
+                StatusCodes.Status400BadRequest,
+                ApiErrorCodes.ValidationError,
+                "platform должен соответствовать выбранному accountTypeId.");
+        }
+
+        platform = accountType.Platform;
+    }
+
     var accountId = CreateDeterministicGuid($"core:createAccount:{projectId}:{idempotencyKey}");
 
     return await idempotency.ExecuteAsync(
@@ -1219,6 +1337,28 @@ static AccountDto ToAccountDto(AccountEntity account)
         account.ProxyLoginMasked);
 }
 
+static AccountTypeDto ToAccountTypeDto(AccountsManagerAccountTypeDefinition definition)
+{
+    return new AccountTypeDto(
+        definition.AccountTypeId,
+        definition.Platform,
+        definition.DisplayName,
+        definition.Description,
+        definition.WorkerProfileId,
+        definition.Enabled,
+        definition.SortOrder,
+        definition.FormFields
+            .Select(field => new AccountTypeFieldDto(
+                field.Key,
+                field.Label,
+                field.InputType,
+                field.Required,
+                field.Secret,
+                field.Placeholder,
+                field.DefaultValue))
+            .ToList());
+}
+
 static Guid CreateDeterministicGuid(string input)
 {
     var hash = MD5.HashData(Encoding.UTF8.GetBytes(input));
@@ -1266,6 +1406,27 @@ public sealed record AccountDto(
 public sealed record AccountListResponse(string RequestId, IReadOnlyCollection<AccountDto> Items);
 
 public sealed record AccountResponse(string RequestId, AccountDto Account);
+
+public sealed record AccountTypeFieldDto(
+    string Key,
+    string Label,
+    string InputType,
+    bool Required,
+    bool Secret,
+    string? Placeholder,
+    string? DefaultValue);
+
+public sealed record AccountTypeDto(
+    string AccountTypeId,
+    string Platform,
+    string DisplayName,
+    string? Description,
+    string WorkerProfileId,
+    bool Enabled,
+    int SortOrder,
+    IReadOnlyCollection<AccountTypeFieldDto> FormFields);
+
+public sealed record AccountTypeListResponse(string RequestId, IReadOnlyCollection<AccountTypeDto> Items);
 
 public sealed record ProxyCredentialsMaskedDto(bool Configured, string? HostMasked, string? LoginMasked);
 

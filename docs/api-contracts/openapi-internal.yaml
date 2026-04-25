@@ -117,6 +117,20 @@ paths:
         default:
           $ref: '#/components/responses/Error'
 
+  /internal/v1/account-types:
+    get:
+      tags: [worker-control]
+      operationId: accountTypesList
+      responses:
+        '200':
+          description: Доступные типы аккаунтов для onboarding в проект
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountTypeListResponse'
+        default:
+          $ref: '#/components/responses/Error'
+
   /internal/v1/worker-servers/{serverId}:
     put:
       tags: [worker-control]
@@ -691,6 +705,67 @@ components:
               type: array
               items:
                 $ref: '#/components/schemas/LifecycleRebalanceMove'
+
+    AccountTypeField:
+      type: object
+      required: [key, label, inputType, required, secret]
+      properties:
+        key:
+          type: string
+        label:
+          type: string
+        inputType:
+          type: string
+          enum: [text, number, password]
+        required:
+          type: boolean
+        secret:
+          type: boolean
+        placeholder:
+          type: string
+        defaultValue:
+          type: string
+
+    AccountType:
+      type: object
+      required:
+        - accountTypeId
+        - platform
+        - displayName
+        - workerProfileId
+        - enabled
+        - sortOrder
+        - formFields
+      properties:
+        accountTypeId:
+          type: string
+        platform:
+          type: string
+        displayName:
+          type: string
+        description:
+          type: string
+        workerProfileId:
+          type: string
+        enabled:
+          type: boolean
+        sortOrder:
+          type: integer
+        formFields:
+          type: array
+          items:
+            $ref: '#/components/schemas/AccountTypeField'
+
+    AccountTypeListResponse:
+      allOf:
+        - $ref: '#/components/schemas/RequestMeta'
+        - type: object
+          required: [items]
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/AccountType'
 
     WorkerServerMetadata:
       type: object

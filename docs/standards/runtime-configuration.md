@@ -22,6 +22,7 @@
 - `WORKER_CONTROL_CLIENT_*` — переменные internal worker-control client-а (service-to-service вызовы internal -> worker);
 - `TEST_WORKER_*` — переменные управления тестовым воркером по `docs/standards/test-worker-governance.md`;
 - `TEST_WORKER_PROVIDER` — выбор provider-профиля симулятора (`funpay/playerok/ggsell/platimarket`);
+- `TEST_WORKER_INSTANCE_ID` — метка инстанса симулятора для диагностики и агрегации данных multi-worker в UI;
 - булевы значения задаются как `true/false` (lowercase);
 - списки значений задаются comma-separated строкой без пробелов.
 

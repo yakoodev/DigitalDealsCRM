@@ -19,10 +19,10 @@
    - `Ручной JWT`: вход с вашим bearer-токеном и UI-ролью для role-aware guard.
 4. После входа доступен route-driven project flow:
    - `/projects` — отдельная страница списка проектов + `Создать проект`;
-   - `/projects/[projectId]/accounts` — список аккаунтов проекта и форма `Добавить аккаунт`;
-   - `/projects/[projectId]/products` — авто-загрузка `products.list` при открытии вкладки и при смене аккаунта;
-   - `/projects/[projectId]/messages` — авто-загрузка `conversations.list`, история чата грузится только после выбора переписки; отправка сообщения выполняет invalidate списка переписок и выбранного чата;
-   - `/projects/[projectId]/schemas` — авто-загрузка `products.schemas.list`;
+  - `/projects/[projectId]/accounts` — список аккаунтов проекта, live `account.info` для выбранного аккаунта и сводный статус всех worker-account в проекте;
+  - `/projects/[projectId]/products` — агрегирует `products.list` по всем аккаунтам проекта (всем worker-route) с фильтром по аккаунту и ручным refresh;
+  - `/projects/[projectId]/messages` — агрегирует `conversations.list` по всем аккаунтам; история чата остаётся lazy-load после выбора переписки и грузится из account-specific worker-route;
+  - `/projects/[projectId]/schemas` — агрегирует `products.schemas.list` по всем аккаунтам с фильтром и unified просмотром schema payload;
    - выбранный аккаунт сохраняется отдельно по `projectId`, чтобы не терять контекст между вкладками.
 
 ## Env для demo-авторизации

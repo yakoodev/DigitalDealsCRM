@@ -79,6 +79,75 @@ builder.Services
             ValidateLifetime = true,
             ClockSkew = TimeSpan.FromSeconds(30),
         };
+
+        options.Events = new JwtBearerEvents
+        {
+            OnAuthenticationFailed = context =>
+            {
+                context.HttpContext.Items["jwt-auth-failure"] = context.Exception.GetType().Name;
+                return Task.CompletedTask;
+            },
+            OnChallenge = async context =>
+            {
+                context.HandleResponse();
+
+                if (context.Response.HasStarted)
+                {
+                    return;
+                }
+
+                context.Response.Clear();
+                context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+                context.Response.ContentType = "application/json";
+
+                var requestId = context.HttpContext.GetOrCreateRequestId();
+                var hasBearerHeader = context.Request.Headers.TryGetValue(
+                    "Authorization",
+                    out var authHeader)
+                    && authHeader.ToString().StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase);
+                var authFailure = context.HttpContext.Items.TryGetValue("jwt-auth-failure", out var failure)
+                    ? failure?.ToString()
+                    : null;
+                var message = hasBearerHeader
+                    ? "Требуется валидный bearer JWT."
+                    : "Отсутствует bearer JWT в заголовке Authorization.";
+                var details = new Dictionary<string, object?>(StringComparer.Ordinal)
+                {
+                    ["hasBearerHeader"] = hasBearerHeader,
+                };
+                if (!string.IsNullOrWhiteSpace(authFailure))
+                {
+                    details["authFailure"] = authFailure;
+                }
+
+                var payload = new ErrorResponse(
+                    ApiErrorCodes.Unauthorized,
+                    message,
+                    requestId,
+                    details);
+
+                await context.Response.WriteAsJsonAsync(payload);
+            },
+            OnForbidden = async context =>
+            {
+                if (context.Response.HasStarted)
+                {
+                    return;
+                }
+
+                context.Response.Clear();
+                context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                context.Response.ContentType = "application/json";
+
+                var requestId = context.HttpContext.GetOrCreateRequestId();
+                var payload = new ErrorResponse(
+                    ApiErrorCodes.Forbidden,
+                    "Недостаточно прав для выполнения операции.",
+                    requestId);
+
+                await context.Response.WriteAsJsonAsync(payload);
+            },
+        };
     });
 
 builder.Services.AddAuthorization();

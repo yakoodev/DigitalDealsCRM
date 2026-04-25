@@ -11,6 +11,7 @@
 - загружен env-профиль `.env.test-worker.example` с валидными значениями;
 - `TEST_WORKER_ENABLED=true` и `TEST_WORKER_SCENARIO` установлен в требуемый `TW-SCN-*`;
 - `TEST_WORKER_PROVIDER` установлен в целевой provider (`funpay/playerok/ggsell/platimarket`);
+- для multi-worker прогона задан уникальный `TEST_WORKER_INSTANCE_ID` на каждый инстанс симулятора;
 - `TEST_WORKER_BLOCK_IN_PRODUCTION=true`.
 
 ## 2. Проверка профиля возможностей

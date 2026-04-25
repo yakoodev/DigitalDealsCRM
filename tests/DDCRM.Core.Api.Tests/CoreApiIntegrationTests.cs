@@ -130,6 +130,28 @@ public sealed class CoreApiIntegrationTests(CoreApiFactory factory) : IClassFixt
 
     [Fact]
     [Trait("Category", "Integration")]
+    public async Task ListProjectAccountTypes_ReturnsAccountsManagerCatalog()
+    {
+        using var client = CreateAuthorizedClient(Guid.NewGuid());
+        var projectId = await CreateProjectAsync(client, "AccountTypes-A");
+
+        var response = await client.GetAsync($"/v1/projects/{projectId}/account-types");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var items = json.RootElement.GetProperty("items");
+        Assert.Single(items.EnumerateArray());
+
+        var first = items[0];
+        Assert.Equal("test-worker.funpay", first.GetProperty("accountTypeId").GetString());
+        Assert.Equal("funpay", first.GetProperty("platform").GetString());
+        Assert.Equal("test-worker", first.GetProperty("workerProfileId").GetString());
+        Assert.True(first.GetProperty("enabled").GetBoolean());
+        Assert.True(first.GetProperty("formFields").GetArrayLength() >= 5);
+    }
+
+    [Fact]
+    [Trait("Category", "Integration")]
     public async Task UpdateAndDeleteAccount_WorksWithIdempotency()
     {
         factory.AccountsManagerClient.Reset();

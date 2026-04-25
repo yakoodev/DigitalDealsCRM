@@ -69,9 +69,40 @@ export interface ProxyConfig {
 }
 
 export interface AccountCreateRequest {
+  accountTypeId?: string;
   platform: string;
   displayName: string;
   proxyConfig: ProxyConfig;
+}
+
+export type AccountTypeFieldInputType = typeof AccountTypeFieldInputType[keyof typeof AccountTypeFieldInputType];
+
+
+export const AccountTypeFieldInputType = {
+  text: 'text',
+  number: 'number',
+  password: 'password',
+} as const;
+
+export interface AccountTypeField {
+  key: string;
+  label: string;
+  inputType: AccountTypeFieldInputType;
+  required: boolean;
+  secret: boolean;
+  placeholder?: string;
+  defaultValue?: string;
+}
+
+export interface AccountType {
+  accountTypeId: string;
+  platform: string;
+  displayName: string;
+  description?: string;
+  workerProfileId: string;
+  enabled: boolean;
+  sortOrder: number;
+  formFields: AccountTypeField[];
 }
 
 export interface Account {
@@ -91,6 +122,10 @@ export type AccountResponse = RequestMeta & {
 
 export type AccountListResponse = RequestMeta & {
   items: Account[];
+};
+
+export type AccountTypeListResponse = RequestMeta & {
+  items: AccountType[];
 };
 
 export type RoleChangeRequestRole = typeof RoleChangeRequestRole[keyof typeof RoleChangeRequestRole];
@@ -615,6 +650,53 @@ export const createAccount = async (projectId: string,
 
   const data: createAccountResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as createAccountResponse
+}
+
+
+
+export type listProjectAccountTypesResponse200 = {
+  data: AccountTypeListResponse
+  status: 200
+}
+
+export type listProjectAccountTypesResponseDefault = {
+  data: ErrorResponse
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type listProjectAccountTypesResponseSuccess = (listProjectAccountTypesResponse200) & {
+  headers: Headers;
+};
+export type listProjectAccountTypesResponseError = (listProjectAccountTypesResponseDefault) & {
+  headers: Headers;
+};
+
+export type listProjectAccountTypesResponse = (listProjectAccountTypesResponseSuccess | listProjectAccountTypesResponseError)
+
+export const getListProjectAccountTypesUrl = (projectId: string,) => {
+
+
+
+
+  return `/v1/projects/${projectId}/account-types`
+}
+
+export const listProjectAccountTypes = async (projectId: string, options?: RequestInit, fetchFn?: typeof globalThis.fetch): Promise<listProjectAccountTypesResponse> => {
+
+  const res = await (fetchFn ?? fetch)(getListProjectAccountTypesUrl(projectId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: listProjectAccountTypesResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listProjectAccountTypesResponse
 }
 
 

@@ -75,6 +75,8 @@ using (var scope = app.Services.CreateScope())
     {
         db.Database.EnsureCreated();
     }
+
+    await EnsureDefaultAccountTypesAsync(db);
 }
 
 app.UseDdcrmCommonPipeline();
@@ -101,6 +103,23 @@ workerServers.MapGet(string.Empty, async (
     var items = entities.Select(ToWorkerServerDto).ToList();
 
     return Results.Ok(new WorkerServerListResponse(httpContext.GetOrCreateRequestId(), items));
+});
+
+app.MapGet("/internal/v1/account-types", async (
+    HttpContext httpContext,
+    AccountsManagerDbContext dbContext,
+    CancellationToken cancellationToken) =>
+{
+    var entities = await dbContext.AccountTypes
+        .AsNoTracking()
+        .Where(x => x.Enabled)
+        .OrderBy(x => x.SortOrder)
+        .ThenBy(x => x.DisplayName)
+        .ToListAsync(cancellationToken);
+
+    var items = entities.Select(ToAccountTypeDto).ToList();
+
+    return Results.Ok(new AccountTypeListResponse(httpContext.GetOrCreateRequestId(), items));
 });
 
 workerServers.MapPut("/{serverId}", async (
@@ -555,6 +574,82 @@ lifecycle.MapPost("/rebalance", async (
 
 app.Run();
 
+static async Task EnsureDefaultAccountTypesAsync(AccountsManagerDbContext dbContext)
+{
+    if (await dbContext.AccountTypes.AnyAsync())
+    {
+        return;
+    }
+
+    var now = DateTimeOffset.UtcNow;
+    dbContext.AccountTypes.AddRange(
+        CreateDefaultAccountTypes(now));
+    await dbContext.SaveChangesAsync();
+}
+
+static IReadOnlyList<AccountTypeEntity> CreateDefaultAccountTypes(DateTimeOffset now)
+{
+    var fields = new List<AccountTypeFieldDto>
+    {
+        new(
+            "displayName",
+            "Название аккаунта",
+            "text",
+            true,
+            false,
+            "Например, FunPay Test Account",
+            "FunPay Test Account"),
+        new(
+            "proxyHost",
+            "Proxy host",
+            "text",
+            true,
+            false,
+            "45.88.208.237",
+            null),
+        new(
+            "proxyPort",
+            "Proxy port",
+            "number",
+            true,
+            false,
+            "1508",
+            "1508"),
+        new(
+            "proxyLogin",
+            "Proxy login",
+            "text",
+            true,
+            false,
+            "user305829",
+            null),
+        new(
+            "proxyPassword",
+            "Proxy password",
+            "password",
+            true,
+            true,
+            "Введите пароль",
+            null),
+    };
+
+    return
+    [
+        new AccountTypeEntity
+        {
+            AccountTypeId = "test-worker.funpay",
+            Platform = "funpay",
+            DisplayName = "Тестовый worker: FunPay",
+            Description = "Единственный доступный тип аккаунта на текущем этапе.",
+            WorkerProfileId = "test-worker",
+            Enabled = true,
+            SortOrder = 10,
+            FormFieldsJson = JsonSerializer.Serialize(fields),
+            UpdatedAtUtc = now,
+        },
+    ];
+}
+
 static LifecycleAuditEntity CreateAudit(WorkerPlacementEntity placement, string operation, string actor, string notes)
 {
     return new LifecycleAuditEntity
@@ -570,6 +665,36 @@ static LifecycleAuditEntity CreateAudit(WorkerPlacementEntity placement, string 
 }
 
 static string BuildRouteKey(Guid accountId) => $"rk.{accountId:N}";
+
+static AccountTypeDto ToAccountTypeDto(AccountTypeEntity entity)
+{
+    return new AccountTypeDto(
+        entity.AccountTypeId,
+        entity.Platform,
+        entity.DisplayName,
+        entity.Description,
+        entity.WorkerProfileId,
+        entity.Enabled,
+        entity.SortOrder,
+        DeserializeFormFields(entity.FormFieldsJson));
+}
+
+static IReadOnlyList<AccountTypeFieldDto> DeserializeFormFields(string? json)
+{
+    if (string.IsNullOrWhiteSpace(json))
+    {
+        return [];
+    }
+
+    try
+    {
+        return JsonSerializer.Deserialize<List<AccountTypeFieldDto>>(json) ?? [];
+    }
+    catch
+    {
+        return [];
+    }
+}
 
 static WorkerServerSelection ResolveCreateTargetServer(IReadOnlyCollection<WorkerServerEntity> availableServers)
 {
@@ -926,6 +1051,27 @@ public sealed record LifecycleRebalanceResponse(
     int Evaluated,
     int Moved,
     IReadOnlyList<LifecycleRebalanceMove> Migrations);
+
+public sealed record AccountTypeFieldDto(
+    string Key,
+    string Label,
+    string InputType,
+    bool Required,
+    bool Secret,
+    string? Placeholder,
+    string? DefaultValue);
+
+public sealed record AccountTypeDto(
+    string AccountTypeId,
+    string Platform,
+    string DisplayName,
+    string? Description,
+    string WorkerProfileId,
+    bool Enabled,
+    int SortOrder,
+    IReadOnlyList<AccountTypeFieldDto> FormFields);
+
+public sealed record AccountTypeListResponse(string RequestId, IReadOnlyList<AccountTypeDto> Items);
 
 public sealed record WorkerServerUpsertRequest(
     string? BaseUrlTemplate,

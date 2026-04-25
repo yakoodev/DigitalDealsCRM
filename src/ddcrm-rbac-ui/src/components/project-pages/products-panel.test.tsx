@@ -73,8 +73,8 @@ describe("ProjectProductsPanel", () => {
     });
   });
 
-  it("автоматически загружает products.list при открытии и при смене аккаунта", async () => {
-    const view = renderPanel();
+  it("автоматически загружает products.list по всем аккаунтам проекта", async () => {
+    renderPanel();
 
     await waitFor(() => {
       expect(runAccountActionRequest).toHaveBeenCalledWith(
@@ -84,22 +84,6 @@ describe("ProjectProductsPanel", () => {
         { limit: 100 },
       );
     });
-
-    accountState.selectedAccountId = "acc-2";
-    view.rerender(
-      <QueryClientProvider
-        client={
-          new QueryClient({
-            defaultOptions: { queries: { retry: false } },
-          })
-        }
-      >
-        <ProjectProductsPanel
-          apiSession={{ baseUrl: "http://localhost:5073", token: "token" }}
-          projectId="project-1"
-        />
-      </QueryClientProvider>,
-    );
 
     await waitFor(() => {
       expect(runAccountActionRequest).toHaveBeenCalledWith(

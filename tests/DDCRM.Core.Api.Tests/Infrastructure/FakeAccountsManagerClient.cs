@@ -10,6 +10,30 @@ public sealed class FakeAccountsManagerClient : IAccountsManagerClient
 
     public List<DeleteLifecycleCall> DeleteCalls { get; } = [];
 
+    public List<AccountsManagerAccountTypeDefinition> AccountTypes { get; } =
+    [
+        new(
+            "test-worker.funpay",
+            "funpay",
+            "Тестовый worker: FunPay",
+            "Единственный доступный тип аккаунта на текущем этапе.",
+            "test-worker",
+            true,
+            10,
+            [
+                new("displayName", "Название аккаунта", "text", true, false, "Например, FunPay Test Account", "FunPay Test Account"),
+                new("proxyHost", "Proxy host", "text", true, false, "45.88.208.237", null),
+                new("proxyPort", "Proxy port", "number", true, false, "1508", "1508"),
+                new("proxyLogin", "Proxy login", "text", true, false, "user305829", null),
+                new("proxyPassword", "Proxy password", "password", true, true, "Введите пароль", null),
+            ]),
+    ];
+
+    public Task<IReadOnlyList<AccountsManagerAccountTypeDefinition>> ListAccountTypesAsync(CancellationToken cancellationToken)
+    {
+        return Task.FromResult<IReadOnlyList<AccountsManagerAccountTypeDefinition>>(AccountTypes.ToList());
+    }
+
     public Task CreateLifecycleAsync(
         Guid projectId,
         Guid accountId,

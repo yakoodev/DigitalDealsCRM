@@ -1,6 +1,6 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { useQueries } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { AccountSelector } from "@/components/account-selector";
 import { useProjectAccounts } from "@/hooks/use-project-accounts";
@@ -17,12 +17,18 @@ interface ProjectSchemasPanelProps {
   projectId: string;
 }
 
+interface SchemaWithAccount {
+  accountId: string;
+  row: Record<string, unknown>;
+}
+
 export function ProjectSchemasPanel({
   apiSession,
   projectId,
 }: ProjectSchemasPanelProps) {
+  const [accountFilterId, setAccountFilterId] = useState("all");
   const [schemaSearch, setSchemaSearch] = useState("");
-  const [selectedSchemaId, setSelectedSchemaId] = useState("");
+  const [selectedSchemaKey, setSelectedSchemaKey] = useState("");
 
   const {
     accounts,
@@ -32,29 +38,59 @@ export function ProjectSchemasPanel({
     setSelectedAccountId,
   } = useProjectAccounts(apiSession, projectId);
 
-  const schemasQueryKey = useMemo(
-    () =>
-      [
+  const accountNameById = useMemo(() => {
+    return new Map(accounts.map((account) => [account.id, account.displayName]));
+  }, [accounts]);
+
+  const effectiveFilterId = useMemo(() => {
+    if (accountFilterId === "all") {
+      return "all";
+    }
+
+    return accounts.some((account) => account.id === accountFilterId)
+      ? accountFilterId
+      : "all";
+  }, [accountFilterId, accounts]);
+
+  const scopedAccountIds = useMemo(() => {
+    if (effectiveFilterId !== "all") {
+      return [effectiveFilterId];
+    }
+
+    return accounts.map((account) => account.id);
+  }, [accounts, effectiveFilterId]);
+
+  const schemasQueries = useQueries({
+    queries: scopedAccountIds.map((accountId) => ({
+      queryKey: [
         "products.schemas.list",
         apiSession.baseUrl,
         apiSession.token,
         projectId,
-        selectedAccountId,
+        accountId,
       ] as const,
-    [apiSession.baseUrl, apiSession.token, projectId, selectedAccountId],
-  );
-
-  const schemasQuery = useQuery({
-    queryKey: schemasQueryKey,
-    enabled: Boolean(selectedAccountId),
-    queryFn: () =>
-      runAccountActionRequest(apiSession, selectedAccountId, "products.schemas.list", {}),
+      queryFn: () =>
+        runAccountActionRequest(apiSession, accountId, "products.schemas.list", {}),
+      enabled: Boolean(accountId),
+      refetchInterval: 60_000,
+      staleTime: 15_000,
+    })),
   });
 
-  const schemaRows = extractObjectRows(schemasQuery.data ?? null, [
-    "items",
-    "schemas",
-  ]);
+  const schemaRows = useMemo<SchemaWithAccount[]>(() => {
+    return scopedAccountIds.flatMap((accountId, index) => {
+      const query = schemasQueries[index];
+      const rows = extractObjectRows(query?.data ?? null, [
+        "items",
+        "schemas",
+      ]);
+
+      return rows.map((row) => ({
+        accountId,
+        row,
+      }));
+    });
+  }, [schemasQueries, scopedAccountIds]);
 
   const filteredSchemas = useMemo(() => {
     const query = schemaSearch.trim().toLowerCase();
@@ -62,40 +98,49 @@ export function ProjectSchemasPanel({
       return schemaRows;
     }
 
-    return schemaRows.filter((schema) => {
-      const id = readFirstString(schema, ["schemaId", "id"]).toLowerCase();
-      const title = readFirstString(schema, ["title", "name"]).toLowerCase();
-      const provider = toReadableValue(schema.provider ?? schema.platform ?? "").toLowerCase();
-      return id.includes(query) || title.includes(query) || provider.includes(query);
-    });
-  }, [schemaRows, schemaSearch]);
+    return schemaRows.filter(({ accountId, row }) => {
+      const id = readFirstString(row, ["schemaId", "id"]).toLowerCase();
+      const title = readFirstString(row, ["title", "name"]).toLowerCase();
+      const provider = toReadableValue(row.provider ?? row.platform ?? "").toLowerCase();
+      const accountName = (accountNameById.get(accountId) ?? "").toLowerCase();
 
-  const effectiveSelectedSchemaId = useMemo(() => {
-    const hasSelection = filteredSchemas.some((schema) => {
-      const candidateId = readFirstString(schema, ["schemaId", "id"]);
-      return candidateId === selectedSchemaId;
+      return (
+        id.includes(query)
+        || title.includes(query)
+        || provider.includes(query)
+        || accountName.includes(query)
+      );
+    });
+  }, [accountNameById, schemaRows, schemaSearch]);
+
+  const effectiveSelectedSchemaKey = useMemo(() => {
+    const hasSelection = filteredSchemas.some(({ accountId, row }) => {
+      const schemaId = readFirstString(row, ["schemaId", "id"]);
+      return `${accountId}:${schemaId}` === selectedSchemaKey;
     });
 
     if (hasSelection) {
-      return selectedSchemaId;
+      return selectedSchemaKey;
     }
 
     if (filteredSchemas.length === 0) {
       return "";
     }
 
-    return readFirstString(filteredSchemas[0], ["schemaId", "id"]);
-  }, [filteredSchemas, selectedSchemaId]);
+    const first = filteredSchemas[0];
+    return `${first.accountId}:${readFirstString(first.row, ["schemaId", "id"])}`;
+  }, [filteredSchemas, selectedSchemaKey]);
 
   const selectedSchema =
-    filteredSchemas.find(
-      (schema) => readFirstString(schema, ["schemaId", "id"]) === effectiveSelectedSchemaId,
-    ) ?? null;
+    filteredSchemas.find(({ accountId, row }) => {
+      const schemaId = readFirstString(row, ["schemaId", "id"]);
+      return `${accountId}:${schemaId}` === effectiveSelectedSchemaKey;
+    }) ?? null;
 
   const providerCount = useMemo(() => {
     const providers = new Set<string>();
-    for (const schema of filteredSchemas) {
-      const provider = toReadableValue(schema.provider ?? schema.platform ?? "");
+    for (const { row } of filteredSchemas) {
+      const provider = toReadableValue(row.provider ?? row.platform ?? "");
       if (provider) {
         providers.add(provider);
       }
@@ -104,18 +149,29 @@ export function ProjectSchemasPanel({
     return providers.size;
   }, [filteredSchemas]);
 
+  const anyPending = schemasQueries.some((query) => query.isPending);
+  const anyFetching = schemasQueries.some((query) => query.isFetching);
+  const firstError = schemasQueries.find((query) => query.error)?.error;
+
+  const refreshSchemas = async () => {
+    await Promise.all(schemasQueries.map((query) => query.refetch()));
+  };
+
   return (
     <div className="page-stack" data-testid="project-schemas-panel">
       <header className="page-section-header">
         <h2>Схемы товаров</h2>
-        <p>Схемы загружаются автоматически при открытии вкладки и при смене аккаунта.</p>
+        <p>
+          Каталог схем собирается по всем аккаунтам проекта, чтобы видеть различия между
+          воркерами и площадками в одном месте.
+        </p>
       </header>
 
       <section className="summary-grid">
         <article className="summary-card">
           <p>Схем в каталоге</p>
           <strong>{filteredSchemas.length}</strong>
-          <small>По текущему аккаунту и фильтру</small>
+          <small>По текущему scope и фильтру</small>
         </article>
         <article className="summary-card">
           <p>Провайдеры</p>
@@ -123,9 +179,13 @@ export function ProjectSchemasPanel({
           <small>Разные источники схем</small>
         </article>
         <article className="summary-card">
-          <p>Текущий режим</p>
-          <strong>Schema-driven</strong>
-          <small>Подготовка payload для add/update товара</small>
+          <p>Аккаунтов в выборке</p>
+          <strong>{scopedAccountIds.length}</strong>
+          <small>
+            {effectiveFilterId === "all"
+              ? "Отображаем все аккаунты"
+              : "Выбран конкретный аккаунт"}
+          </small>
         </article>
       </section>
 
@@ -138,47 +198,75 @@ export function ProjectSchemasPanel({
           isLoading={accountsLoading}
         />
         <label className="field">
+          <span>Источник данных</span>
+          <select
+            className="input"
+            value={effectiveFilterId}
+            onChange={(event) => setAccountFilterId(event.target.value)}
+          >
+            <option value="all">Все аккаунты проекта</option>
+            {accounts.map((account) => (
+              <option key={account.id} value={account.id}>
+                {account.displayName} · {account.platform}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="field">
           <span>Поиск схем</span>
           <input
             className="input"
             value={schemaSearch}
             onChange={(event) => setSchemaSearch(event.target.value)}
-            placeholder="ID, название или провайдер"
+            placeholder="ID, название, провайдер, аккаунт"
           />
         </label>
       </div>
 
-      {!selectedAccountId ? (
-        <p className="route-hint">Выберите аккаунт, чтобы увидеть schema catalog.</p>
-      ) : schemasQuery.isPending ? (
-        <p className="route-hint">Загружаем схемы...</p>
-      ) : schemasQuery.error ? (
+      {scopedAccountIds.length === 0 ? (
+        <p className="route-hint">Добавьте аккаунт в проект, чтобы загрузить схемы.</p>
+      ) : anyPending ? (
+        <p className="route-hint">Загружаем схемы по аккаунтам...</p>
+      ) : firstError ? (
         <p className="route-error">
-          {schemasQuery.error instanceof Error
-            ? schemasQuery.error.message
-            : "Не удалось загрузить схемы."}
+          {firstError instanceof Error
+            ? firstError.message
+            : "Не удалось загрузить схемы по одному из аккаунтов."}
         </p>
       ) : filteredSchemas.length === 0 ? (
-        <p className="route-hint">Схемы для выбранного аккаунта не найдены.</p>
+        <p className="route-hint">Схемы для выбранной выборки аккаунтов не найдены.</p>
       ) : (
         <div className="split-grid">
           <section className="panel-card">
-            <h3>Список схем</h3>
+            <div className="panel-title-row">
+              <h3>Список схем</h3>
+              <button
+                type="button"
+                className="button button-ghost"
+                onClick={refreshSchemas}
+                disabled={anyFetching || scopedAccountIds.length === 0}
+              >
+                Обновить
+              </button>
+            </div>
             <ul className="entity-list">
-              {filteredSchemas.map((schema, index) => {
-                const schemaId = readFirstString(schema, ["schemaId", "id"]);
-                const isActive = schemaId === effectiveSelectedSchemaId;
+              {filteredSchemas.map(({ accountId, row }, index) => {
+                const schemaId = readFirstString(row, ["schemaId", "id"]);
+                const key = `${accountId}:${schemaId}`;
+                const isActive = key === effectiveSelectedSchemaKey;
+                const accountName = accountNameById.get(accountId) ?? accountId;
 
                 return (
-                  <li key={toReadableValue(schemaId || index)}>
+                  <li key={`${key || index}`}>
                     <button
                       type="button"
                       className={`list-select ${isActive ? "is-active" : ""}`}
-                      onClick={() => setSelectedSchemaId(schemaId)}
+                      onClick={() => setSelectedSchemaKey(key)}
                     >
                       <strong>{toReadableValue(schemaId || "unknown")}</strong>
-                      <small>{toReadableValue(schema.provider ?? schema.platform ?? "")}</small>
-                      <p>{toReadableValue(schema.title ?? schema.name ?? "Без описания")}</p>
+                      <small>{toReadableValue(row.provider ?? row.platform ?? "")}</small>
+                      <p>{toReadableValue(row.title ?? row.name ?? "Без описания")}</p>
+                      <small>Аккаунт: {accountName}</small>
                     </button>
                   </li>
                 );
@@ -194,27 +282,35 @@ export function ProjectSchemasPanel({
               <div className="page-stack">
                 <dl className="kv-list">
                   <div>
+                    <dt>Account</dt>
+                    <dd>
+                      {accountNameById.get(selectedSchema.accountId) ?? selectedSchema.accountId}
+                    </dd>
+                  </div>
+                  <div>
                     <dt>ID</dt>
-                    <dd>{toReadableValue(selectedSchema.schemaId ?? selectedSchema.id)}</dd>
+                    <dd>{toReadableValue(selectedSchema.row.schemaId ?? selectedSchema.row.id)}</dd>
                   </div>
                   <div>
                     <dt>Название</dt>
-                    <dd>{toReadableValue(selectedSchema.title ?? selectedSchema.name)}</dd>
+                    <dd>{toReadableValue(selectedSchema.row.title ?? selectedSchema.row.name)}</dd>
                   </div>
                   <div>
                     <dt>Версия</dt>
-                    <dd>{toReadableValue(selectedSchema.version ?? "n/a")}</dd>
+                    <dd>{toReadableValue(selectedSchema.row.version ?? "n/a")}</dd>
                   </div>
                   <div>
                     <dt>Провайдер</dt>
-                    <dd>{toReadableValue(selectedSchema.provider ?? selectedSchema.platform)}</dd>
+                    <dd>
+                      {toReadableValue(selectedSchema.row.provider ?? selectedSchema.row.platform)}
+                    </dd>
                   </div>
                 </dl>
 
                 <div className="panel-card panel-soft">
                   <h3>Raw schema payload</h3>
                   <pre className="json-preview">
-                    {JSON.stringify(selectedSchema, null, 2)}
+                    {JSON.stringify(selectedSchema.row, null, 2)}
                   </pre>
                 </div>
               </div>
@@ -225,3 +321,4 @@ export function ProjectSchemasPanel({
     </div>
   );
 }
+

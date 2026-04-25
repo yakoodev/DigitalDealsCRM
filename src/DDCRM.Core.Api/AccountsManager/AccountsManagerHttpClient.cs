@@ -13,6 +13,30 @@ public sealed class AccountsManagerHttpClient(
 {
     private readonly AccountsManagerClientOptions _options = options.Value;
 
+    public async Task<IReadOnlyList<AccountsManagerAccountTypeDefinition>> ListAccountTypesAsync(
+        CancellationToken cancellationToken)
+    {
+        EnsureEnabled();
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/internal/v1/account-types");
+        ApplyHeaders(request);
+
+        var response = await httpClient.SendAsync(request, cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            var body = await response.Content.ReadAsStringAsync(cancellationToken);
+            throw CreateUpstreamError(response.StatusCode, body, "listAccountTypes");
+        }
+
+        var payload = await response.Content.ReadFromJsonAsync<InternalAccountTypeListResponse>(cancellationToken);
+        if (payload?.Items is null)
+        {
+            return [];
+        }
+
+        return payload.Items.Select(ToDefinition).ToList();
+    }
+
     public async Task CreateLifecycleAsync(
         Guid projectId,
         Guid accountId,
@@ -103,14 +127,17 @@ public sealed class AccountsManagerHttpClient(
             "Accounts Manager client отключен в текущем runtime-профиле.");
     }
 
-    private void ApplyHeaders(HttpRequestMessage request, string idempotencyKey)
+    private void ApplyHeaders(HttpRequestMessage request, string? idempotencyKey = null)
     {
         if (!string.IsNullOrWhiteSpace(_options.ServiceToken))
         {
             request.Headers.TryAddWithoutValidation(HeaderNames.ServiceToken, _options.ServiceToken);
         }
 
-        request.Headers.TryAddWithoutValidation(HeaderNames.IdempotencyKey, idempotencyKey);
+        if (!string.IsNullOrWhiteSpace(idempotencyKey))
+        {
+            request.Headers.TryAddWithoutValidation(HeaderNames.IdempotencyKey, idempotencyKey);
+        }
     }
 
     private static ApiErrorException CreateUpstreamError(HttpStatusCode upstreamCode, string body, string operation)
@@ -151,4 +178,45 @@ public sealed class AccountsManagerHttpClient(
             ["upstreamBody"] = body,
         };
     }
+
+    private static AccountsManagerAccountTypeDefinition ToDefinition(InternalAccountTypeDto dto)
+    {
+        return new AccountsManagerAccountTypeDefinition(
+            dto.AccountTypeId,
+            dto.Platform,
+            dto.DisplayName,
+            dto.Description,
+            dto.WorkerProfileId,
+            dto.Enabled,
+            dto.SortOrder,
+            dto.FormFields.Select(field => new AccountsManagerAccountTypeField(
+                field.Key,
+                field.Label,
+                field.InputType,
+                field.Required,
+                field.Secret,
+                field.Placeholder,
+                field.DefaultValue)).ToList());
+    }
+
+    private sealed record InternalAccountTypeListResponse(IReadOnlyList<InternalAccountTypeDto> Items);
+
+    private sealed record InternalAccountTypeDto(
+        string AccountTypeId,
+        string Platform,
+        string DisplayName,
+        string? Description,
+        string WorkerProfileId,
+        bool Enabled,
+        int SortOrder,
+        IReadOnlyList<InternalAccountTypeFieldDto> FormFields);
+
+    private sealed record InternalAccountTypeFieldDto(
+        string Key,
+        string Label,
+        string InputType,
+        bool Required,
+        bool Secret,
+        string? Placeholder,
+        string? DefaultValue);
 }

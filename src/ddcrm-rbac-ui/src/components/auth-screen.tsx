@@ -9,6 +9,7 @@ import {
   getJwtMeta,
   type PlatformSession,
 } from "@/lib/auth";
+import { listProjectsRequest } from "@/lib/api-client";
 import { projectRoles, type ProjectRole } from "@/lib/rbac";
 
 interface AuthScreenProps {
@@ -52,6 +53,10 @@ export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
         password: demoPassword,
         baseUrl,
       });
+      await listProjectsRequest({
+        token: session.token,
+        baseUrl: session.baseUrl,
+      });
       onAuthenticated(session);
     } catch (error) {
       setStatusMessage(
@@ -62,7 +67,7 @@ export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
     }
   };
 
-  const handleManualSignIn = () => {
+  const handleManualSignIn = async () => {
     setIsSubmitting(true);
     setStatusMessage("Проверяю параметры ручного входа...");
 
@@ -74,6 +79,10 @@ export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
         email: manualEmail,
         role: manualRole,
         userId: manualUserId,
+      });
+      await listProjectsRequest({
+        token: session.token,
+        baseUrl: session.baseUrl,
       });
       onAuthenticated(session);
     } catch (error) {

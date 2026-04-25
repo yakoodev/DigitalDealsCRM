@@ -15,6 +15,13 @@ vi.mock("@/hooks/use-project-accounts", () => ({
         displayName: "Account 1",
         businessStatus: "active",
       },
+      {
+        id: "acc-2",
+        projectId: "project-1",
+        platform: "ggsell",
+        displayName: "Account 2",
+        businessStatus: "active",
+      },
     ],
     selectedAccountId: "acc-1",
     selectedAccount: null,
@@ -61,13 +68,13 @@ describe("ProjectMessagesPanel", () => {
   beforeEach(() => {
     vi.mocked(runAccountActionRequest).mockReset();
     vi.mocked(runAccountActionRequest).mockImplementation(
-      async (_session, _accountId, action) => {
+      async (_session, accountId, action) => {
         if (action === "conversations.list") {
           return {
             items: [
               {
-                conversationId: "conv-1",
-                title: "Support chat",
+                conversationId: accountId === "acc-2" ? "conv-2" : "conv-1",
+                title: accountId === "acc-2" ? "Second marketplace chat" : "Support chat",
                 preview: "Последнее сообщение",
               },
             ],
@@ -94,13 +101,22 @@ describe("ProjectMessagesPanel", () => {
     );
   });
 
-  it("автозагружает список переписок и не грузит историю до выбора переписки", async () => {
+  it("автозагружает список переписок по всем аккаунтам и не грузит историю до выбора переписки", async () => {
     renderPanel();
 
     await waitFor(() => {
       expect(runAccountActionRequest).toHaveBeenCalledWith(
         { baseUrl: "http://localhost:5073", token: "token" },
         "acc-1",
+        "conversations.list",
+        { limit: 100 },
+      );
+    });
+
+    await waitFor(() => {
+      expect(runAccountActionRequest).toHaveBeenCalledWith(
+        { baseUrl: "http://localhost:5073", token: "token" },
+        "acc-2",
         "conversations.list",
         { limit: 100 },
       );

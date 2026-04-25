@@ -69,6 +69,7 @@ var app = builder.Build();
 var runtimeSettings = ResolveRuntimeSettings(
     app.Environment,
     app.Services.GetRequiredService<IOptions<TestWorkerOptions>>().Value);
+var workerInstanceId = ResolveWorkerInstanceId(builder.Configuration);
 
 using (var scope = app.Services.CreateScope())
 {
@@ -151,6 +152,9 @@ worker.MapGet("/account", (HttpContext httpContext, TransientFailureState transi
     {
         ["projectId"] = "22222222-2222-2222-2222-222222222222",
         ["workerMode"] = runtimeSettings.TestWorkerEnabled ? "test-worker" : "runtime",
+        ["workerInstanceId"] = workerInstanceId,
+        ["workerMachineName"] = Environment.MachineName,
+        ["workerStartedAtUtc"] = startedAtUtc,
     };
 
     var account = new WorkerV2AccountInfo(
@@ -711,6 +715,17 @@ workerV2.MapGet("/schemas/products", (
 });
 
 app.Run();
+
+static string ResolveWorkerInstanceId(IConfiguration configuration)
+{
+    var configured = configuration["TEST_WORKER_INSTANCE_ID"]?.Trim();
+    if (!string.IsNullOrWhiteSpace(configured))
+    {
+        return configured;
+    }
+
+    return Environment.MachineName.Trim();
+}
 
 static WorkerRuntimeSettings ResolveRuntimeSettings(IHostEnvironment hostEnvironment, TestWorkerOptions options)
 {

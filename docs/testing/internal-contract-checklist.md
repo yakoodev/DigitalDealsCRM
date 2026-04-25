@@ -21,7 +21,7 @@
 
 ## 3. Интеграционные проверки
 - route/lifecycle endpoint-ы согласованы с актуальной логикой Accounts Manager;
-- worker-control endpoint-ы (`worker-servers`, `heartbeat`, `lifecycle/rebalance`) согласованы с placement-политикой и load/capacity/health инвариантами;
+- worker-control endpoint-ы (`worker-servers`, `account-types`, `heartbeat`, `lifecycle/rebalance`) согласованы с placement-политикой, onboarding-каталогом и load/capacity/health инвариантами;
 - billing/entitlement endpoint-ы согласованы с актуальной логикой коммерческого контура;
 - IAM endpoint-ы согласованы с текущей моделью membership/permission.
 

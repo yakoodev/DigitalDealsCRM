@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import { AuthScreen } from "./auth-screen";
 import type { PlatformSession } from "@/lib/auth";
 import * as authLib from "@/lib/auth";
+import * as apiClient from "@/lib/api-client";
 
 vi.mock("@/lib/auth", async () => {
   const actual = await vi.importActual<typeof import("@/lib/auth")>("@/lib/auth");
@@ -11,6 +12,16 @@ vi.mock("@/lib/auth", async () => {
     ...actual,
     authenticateDemo: vi.fn(),
     authenticateManual: vi.fn(),
+  };
+});
+
+vi.mock("@/lib/api-client", async () => {
+  const actual = await vi.importActual<typeof import("@/lib/api-client")>(
+    "@/lib/api-client",
+  );
+  return {
+    ...actual,
+    listProjectsRequest: vi.fn(),
   };
 });
 
@@ -32,7 +43,9 @@ describe("AuthScreen", () => {
     const user = userEvent.setup();
     const onAuthenticated = vi.fn();
     const authenticateDemoMock = vi.mocked(authLib.authenticateDemo);
+    const listProjectsRequestMock = vi.mocked(apiClient.listProjectsRequest);
     authenticateDemoMock.mockResolvedValue(demoSession);
+    listProjectsRequestMock.mockResolvedValue([]);
 
     render(<AuthScreen onAuthenticated={onAuthenticated} />);
 
@@ -40,6 +53,7 @@ describe("AuthScreen", () => {
 
     await waitFor(() => {
       expect(authenticateDemoMock).toHaveBeenCalledTimes(1);
+      expect(listProjectsRequestMock).toHaveBeenCalledTimes(1);
       expect(onAuthenticated).toHaveBeenCalledWith(demoSession);
     });
   });
@@ -48,6 +62,7 @@ describe("AuthScreen", () => {
     const user = userEvent.setup();
     const onAuthenticated = vi.fn();
     const authenticateManualMock = vi.mocked(authLib.authenticateManual);
+    const listProjectsRequestMock = vi.mocked(apiClient.listProjectsRequest);
     const manualSession: PlatformSession = {
       ...demoSession,
       token: "manual-token",
@@ -58,6 +73,7 @@ describe("AuthScreen", () => {
       },
     };
     authenticateManualMock.mockReturnValue(manualSession);
+    listProjectsRequestMock.mockResolvedValue([]);
 
     render(<AuthScreen onAuthenticated={onAuthenticated} />);
 
@@ -67,6 +83,7 @@ describe("AuthScreen", () => {
 
     await waitFor(() => {
       expect(authenticateManualMock).toHaveBeenCalledTimes(1);
+      expect(listProjectsRequestMock).toHaveBeenCalledTimes(1);
       expect(onAuthenticated).toHaveBeenCalledWith(manualSession);
     });
   });

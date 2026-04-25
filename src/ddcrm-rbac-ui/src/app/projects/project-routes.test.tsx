@@ -1,6 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import ProjectAccountCreateRoute from "@/app/projects/[projectId]/accounts/new/page";
 import ProjectMessagesRoute from "@/app/projects/[projectId]/messages/page";
 import ProjectProductsRoute from "@/app/projects/[projectId]/products/page";
 import ProjectSchemasRoute from "@/app/projects/[projectId]/schemas/page";
@@ -69,6 +70,9 @@ vi.mock("@/components/project-pages/messages-panel", () => ({
 vi.mock("@/components/project-pages/schemas-panel", () => ({
   ProjectSchemasPanel: () => <p>schemas-panel</p>,
 }));
+vi.mock("@/components/project-pages/account-create-panel", () => ({
+  ProjectAccountCreatePanel: () => <p>account-create-panel</p>,
+}));
 
 describe("project route pages", () => {
   beforeEach(() => {
@@ -86,7 +90,7 @@ describe("project route pages", () => {
     };
   });
 
-  it("deeplink routes products/messages/schemas открываются при активной сессии", () => {
+  it("deeplink routes products/messages/schemas/accounts-new открываются при активной сессии", () => {
     render(<ProjectProductsRoute />);
     expect(screen.getByTestId("shell-products")).toBeInTheDocument();
     expect(screen.getByText("products-panel")).toBeInTheDocument();
@@ -98,6 +102,10 @@ describe("project route pages", () => {
     render(<ProjectSchemasRoute />);
     expect(screen.getByTestId("shell-schemas")).toBeInTheDocument();
     expect(screen.getByText("schemas-panel")).toBeInTheDocument();
+
+    render(<ProjectAccountCreateRoute />);
+    expect(screen.getByTestId("shell-accounts")).toBeInTheDocument();
+    expect(screen.getByText("account-create-panel")).toBeInTheDocument();
   });
 
   it("без сессии показывает состояние guard", () => {

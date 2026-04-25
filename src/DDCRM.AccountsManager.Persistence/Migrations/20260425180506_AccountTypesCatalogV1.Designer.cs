@@ -3,6 +3,7 @@ using System;
 using DDCRM.AccountsManager.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace DDCRM.AccountsManager.Persistence.Migrations
 {
     [DbContext(typeof(AccountsManagerDbContext))]
-    partial class AccountsManagerDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260425180506_AccountTypesCatalogV1")]
+    partial class AccountTypesCatalogV1
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder

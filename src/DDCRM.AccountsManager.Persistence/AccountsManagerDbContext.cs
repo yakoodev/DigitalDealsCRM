@@ -11,6 +11,8 @@ public sealed class AccountsManagerDbContext(DbContextOptions<AccountsManagerDbC
 
     public DbSet<WorkerServerEntity> WorkerServers => Set<WorkerServerEntity>();
 
+    public DbSet<AccountTypeEntity> AccountTypes => Set<AccountTypeEntity>();
+
     public DbSet<LifecycleAuditEntity> LifecycleAudits => Set<LifecycleAuditEntity>();
 
     public DbSet<IdempotencyRecord> IdempotencyRecords => Set<IdempotencyRecord>();
@@ -52,6 +54,20 @@ public sealed class AccountsManagerDbContext(DbContextOptions<AccountsManagerDbC
             entity.Property(x => x.Notes).HasMaxLength(400).IsRequired();
             entity.Property(x => x.CreatedAtUtc).HasDefaultValueSql("NOW()");
             entity.HasIndex(x => new { x.AccountId, x.CreatedAtUtc });
+        });
+
+        modelBuilder.Entity<AccountTypeEntity>(entity =>
+        {
+            entity.ToTable("account_types");
+            entity.HasKey(x => x.AccountTypeId);
+            entity.Property(x => x.AccountTypeId).HasMaxLength(120).IsRequired();
+            entity.Property(x => x.Platform).HasMaxLength(80).IsRequired();
+            entity.Property(x => x.DisplayName).HasMaxLength(160).IsRequired();
+            entity.Property(x => x.Description).HasMaxLength(400);
+            entity.Property(x => x.WorkerProfileId).HasMaxLength(80).IsRequired();
+            entity.Property(x => x.FormFieldsJson).HasMaxLength(8000);
+            entity.Property(x => x.UpdatedAtUtc).HasDefaultValueSql("NOW()");
+            entity.HasIndex(x => new { x.Enabled, x.SortOrder });
         });
 
         modelBuilder.ConfigureIdempotencyRecord();

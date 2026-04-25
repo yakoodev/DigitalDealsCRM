@@ -53,6 +53,10 @@ public sealed class WorkerApiIntegrationTests
         var account = json.RootElement.GetProperty("account");
         Assert.Equal("platimarket", account.GetProperty("provider").GetString());
         Assert.Equal("active", account.GetProperty("status").GetString());
+
+        var raw = account.GetProperty("raw");
+        Assert.Equal("test-worker", raw.GetProperty("workerMode").GetString());
+        Assert.False(string.IsNullOrWhiteSpace(raw.GetProperty("workerInstanceId").GetString()));
     }
 
     [Fact]

@@ -67,6 +67,7 @@
 ## 6.1 Provider-профиль тестового воркера
 - активная симулируемая площадка задаётся env-переменной `TEST_WORKER_PROVIDER`;
 - допустимые значения: `funpay`, `playerok`, `ggsell`, `platimarket`;
+- `TEST_WORKER_INSTANCE_ID` задаёт диагностический идентификатор конкретного инстанса симулятора (если не задан, используется `MachineName`);
 - выбранный provider должен согласовываться с данными `/internal/v2/worker/account`, `/internal/v2/worker/capabilities` и `/internal/v2/worker/schemas/products`;
 - при смене provider-профиля contract-tests должны проверять provider-специфичные product schema (`*.item.v1`) и совместимость feature-map.
 
