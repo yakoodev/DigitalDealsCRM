@@ -263,6 +263,59 @@ public sealed class CoreApiIntegrationTests(CoreApiFactory factory) : IClassFixt
     }
 
     [Fact]
+    [Trait("Category", "Security")]
+    public async Task AdminIntegrationGrant_WithoutSystemPermission_IsForbidden()
+    {
+        using var client = CreateAuthorizedClient(Guid.NewGuid(), withSystemPermission: false);
+        var projectId = await CreateProjectAsync(client, "Integrations-NoAdmin");
+
+        var response = await SendJsonAsync(
+            client,
+            HttpMethod.Put,
+            $"/v1/admin/integrations/projects/{projectId}/grants/platform.funpay",
+            Guid.NewGuid().ToString("N"),
+            new
+            {
+                scopes = new[] { "use" },
+            });
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    [Trait("Category", "Integration")]
+    public async Task AdminIntegrationGrant_UpsertAndList_Works()
+    {
+        var userId = Guid.NewGuid();
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
+            "Bearer",
+            factory.CreateToken(userId, "system.integrations.manage"));
+
+        var projectId = await CreateProjectAsync(client, "Integrations-Admin");
+
+        var upsertResponse = await SendJsonAsync(
+            client,
+            HttpMethod.Put,
+            $"/v1/admin/integrations/projects/{projectId}/grants/funpaystat",
+            Guid.NewGuid().ToString("N"),
+            new
+            {
+                scopes = new[] { "read", "jobs" },
+            });
+        Assert.Equal(HttpStatusCode.OK, upsertResponse.StatusCode);
+
+        var listResponse = await client.GetAsync($"/v1/admin/integrations/projects/{projectId}/grants");
+        Assert.Equal(HttpStatusCode.OK, listResponse.StatusCode);
+
+        using var listJson = JsonDocument.Parse(await listResponse.Content.ReadAsStringAsync());
+        var items = listJson.RootElement.GetProperty("items");
+        Assert.Contains(items.EnumerateArray(), item =>
+            string.Equals(item.GetProperty("integrationKey").GetString(), "funpaystat", StringComparison.OrdinalIgnoreCase)
+            && string.Equals(item.GetProperty("status").GetString(), "active", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
     [Trait("Category", "Integration")]
     public async Task AdminAccountManagerEndpoints_WithSystemPermission_Work()
     {
@@ -845,13 +898,21 @@ public sealed class CoreApiIntegrationTests(CoreApiFactory factory) : IClassFixt
         return client;
     }
 
-    private static async Task<Guid> CreateProjectAsync(HttpClient client, string name)
+    private async Task<Guid> CreateProjectAsync(HttpClient client, string name)
     {
         var response = await SendCreateProjectAsync(client, Guid.NewGuid().ToString("N"), name);
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
 
         using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-        return json.RootElement.GetProperty("project").GetProperty("id").GetGuid();
+        var projectId = json.RootElement.GetProperty("project").GetProperty("id").GetGuid();
+
+        factory.GrantProjectIntegration(projectId, "platform.ozon", "use");
+        factory.GrantProjectIntegration(projectId, "platform.funpay", "use");
+        factory.GrantProjectIntegration(projectId, "platform.playerok", "use");
+        factory.GrantProjectIntegration(projectId, "platform.ggsell", "use");
+        factory.GrantProjectIntegration(projectId, "platform.platimarket", "use");
+
+        return projectId;
     }
 
     private static async Task<Guid> CreateAccountAsync(HttpClient client, Guid projectId, string displayName)

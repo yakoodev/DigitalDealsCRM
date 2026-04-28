@@ -21,6 +21,7 @@ tags:
   - name: admin
   - name: billing
   - name: gateway-proxy
+  - name: integrations
 
 paths:
   /v1/projects:
@@ -323,6 +324,278 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/AdminAccountTypeResponse'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /v1/admin/integrations/projects/{projectId}/grants:
+    get:
+      tags: [admin, integrations]
+      operationId: adminListProjectIntegrationGrants
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+      responses:
+        '200':
+          description: Список интеграционных grant-ов проекта
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminIntegrationGrantListResponse'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /v1/admin/integrations/projects/{projectId}/grants/{integrationKey}:
+    put:
+      tags: [admin, integrations]
+      operationId: adminUpsertProjectIntegrationGrant
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - name: integrationKey
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 2
+            maxLength: 120
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminIntegrationGrantUpsertRequest'
+      responses:
+        '200':
+          description: Интеграционный grant сохранен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminIntegrationGrantResponse'
+        default:
+          $ref: '#/components/responses/Error'
+    delete:
+      tags: [admin, integrations]
+      operationId: adminRevokeProjectIntegrationGrant
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - name: integrationKey
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 2
+            maxLength: 120
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: Интеграционный grant отозван
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AckResponse'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /v1/admin/integrations/telegram/proxies:
+    get:
+      tags: [admin, integrations]
+      operationId: adminListTelegramProxyProfiles
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Список proxy-профилей Telegram бота
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminTelegramProxyProfileListResponse'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /v1/admin/integrations/telegram/proxies/{proxyId}:
+    put:
+      tags: [admin, integrations]
+      operationId: adminUpsertTelegramProxyProfile
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: proxyId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminTelegramProxyProfileUpsertRequest'
+      responses:
+        '200':
+          description: Proxy-профиль Telegram сохранен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminTelegramProxyProfileResponse'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /v1/projects/{projectId}/integrations/status:
+    get:
+      tags: [projects, integrations]
+      operationId: getProjectIntegrationsStatus
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+      responses:
+        '200':
+          description: Статус интеграций проекта
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectIntegrationStatusResponse'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /v1/projects/{projectId}/integrations/{integrationKey}/actions/{scope}:
+    post:
+      tags: [projects, integrations]
+      operationId: invokeProjectServiceIntegration
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - name: integrationKey
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 2
+            maxLength: 120
+        - name: scope
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [read, jobs]
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GenericObjectRequest'
+      responses:
+        '200':
+          description: Ответ внешней сервисной интеграции
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProxyResponse'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /v1/projects/{projectId}/integrations/telegram/link-codes:
+    post:
+      tags: [projects, integrations]
+      operationId: createTelegramLinkCode
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TelegramLinkCodeCreateRequest'
+      responses:
+        '200':
+          description: Link code создан
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TelegramLinkCodeResponse'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /v1/projects/{projectId}/integrations/telegram/user-bind:
+    post:
+      tags: [projects, integrations]
+      operationId: bindTelegramUserChat
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TelegramUserBindRequest'
+      responses:
+        '200':
+          description: ЛС-привязка Telegram пользователя сохранена
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AckResponse'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /v1/integrations/telegram/link/confirm:
+    post:
+      tags: [integrations]
+      operationId: confirmTelegramGroupLink
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TelegramLinkConfirmRequest'
+      responses:
+        '200':
+          description: Group-chat привязка подтверждена
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AckResponse'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /v1/projects/{projectId}/integrations/notifications/critical:
+    post:
+      tags: [projects, integrations]
+      operationId: enqueueCriticalNotification
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CriticalNotificationRequest'
+      responses:
+        '202':
+          description: Критичное уведомление поставлено в outbox
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AckResponse'
         default:
           $ref: '#/components/responses/Error'
 
@@ -914,6 +1187,220 @@ components:
               type: array
               items:
                 $ref: '#/components/schemas/AdminWorkerServer'
+
+    AdminIntegrationGrantUpsertRequest:
+      type: object
+      properties:
+        scopes:
+          type: array
+          items:
+            type: string
+
+    AdminIntegrationGrant:
+      type: object
+      required: [integrationKey, status, scopes, grantedAtUtc]
+      properties:
+        integrationKey:
+          type: string
+        status:
+          type: string
+          enum: [active, revoked]
+        scopes:
+          type: array
+          items:
+            type: string
+        grantedAtUtc:
+          type: string
+          format: date-time
+        revokedAtUtc:
+          type: [string, 'null']
+          format: date-time
+        credentialStatus:
+          type: [string, 'null']
+          enum: [pending_sync, active, revoking, revoked]
+        credentialMasked:
+          type: [string, 'null']
+
+    AdminIntegrationGrantResponse:
+      allOf:
+        - $ref: '#/components/schemas/RequestMeta'
+        - type: object
+          required: [grant]
+          properties:
+            grant:
+              $ref: '#/components/schemas/AdminIntegrationGrant'
+
+    AdminIntegrationGrantListResponse:
+      allOf:
+        - $ref: '#/components/schemas/RequestMeta'
+        - type: object
+          required: [items]
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/AdminIntegrationGrant'
+
+    AdminTelegramProxyProfileUpsertRequest:
+      type: object
+      required: [name, host, port, setActive, clearCredentials]
+      properties:
+        name:
+          type: string
+        proxyType:
+          type: string
+          enum: [http, https, socks5]
+        host:
+          type: string
+        port:
+          type: integer
+          minimum: 1
+          maximum: 65535
+        setActive:
+          type: boolean
+        clearCredentials:
+          type: boolean
+        login:
+          type: string
+          writeOnly: true
+        password:
+          type: string
+          writeOnly: true
+
+    AdminTelegramProxyProfile:
+      type: object
+      required: [id, name, proxyType, host, port, isActive, hasCredentials, updatedAtUtc]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        proxyType:
+          type: string
+        host:
+          type: string
+        port:
+          type: integer
+        isActive:
+          type: boolean
+        hasCredentials:
+          type: boolean
+        updatedAtUtc:
+          type: string
+          format: date-time
+
+    AdminTelegramProxyProfileResponse:
+      allOf:
+        - $ref: '#/components/schemas/RequestMeta'
+        - type: object
+          required: [profile]
+          properties:
+            profile:
+              $ref: '#/components/schemas/AdminTelegramProxyProfile'
+
+    AdminTelegramProxyProfileListResponse:
+      allOf:
+        - $ref: '#/components/schemas/RequestMeta'
+        - type: object
+          required: [items]
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/AdminTelegramProxyProfile'
+
+    ProjectIntegrationStatus:
+      type: object
+      required: [integrationKey, status, scopes]
+      properties:
+        integrationKey:
+          type: string
+        status:
+          type: string
+        scopes:
+          type: array
+          items:
+            type: string
+        credentialStatus:
+          type: [string, 'null']
+        credentialMasked:
+          type: [string, 'null']
+
+    TelegramBindingsSummary:
+      type: object
+      required: [groupChats, userDmChats]
+      properties:
+        groupChats:
+          type: integer
+          minimum: 0
+        userDmChats:
+          type: integer
+          minimum: 0
+
+    ProjectIntegrationStatusResponse:
+      allOf:
+        - $ref: '#/components/schemas/RequestMeta'
+        - type: object
+          required: [items, telegram]
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/ProjectIntegrationStatus'
+            telegram:
+              $ref: '#/components/schemas/TelegramBindingsSummary'
+
+    TelegramLinkCodeCreateRequest:
+      type: object
+      properties:
+        bindingType:
+          type: string
+          enum: [group, user]
+
+    TelegramLinkCodeResponse:
+      allOf:
+        - $ref: '#/components/schemas/RequestMeta'
+        - type: object
+          required: [code, bindingType, expiresAtUtc]
+          properties:
+            code:
+              type: string
+            bindingType:
+              type: string
+              enum: [group, user]
+            expiresAtUtc:
+              type: string
+              format: date-time
+
+    TelegramUserBindRequest:
+      type: object
+      required: [chatId]
+      properties:
+        chatId:
+          type: string
+        chatTitle:
+          type: string
+
+    TelegramLinkConfirmRequest:
+      type: object
+      required: [code, chatId]
+      properties:
+        code:
+          type: string
+        chatId:
+          type: string
+        chatTitle:
+          type: string
+
+    CriticalNotificationRequest:
+      type: object
+      required: [eventType, message]
+      properties:
+        eventType:
+          type: string
+        message:
+          type: string
 
     Account:
       type: object

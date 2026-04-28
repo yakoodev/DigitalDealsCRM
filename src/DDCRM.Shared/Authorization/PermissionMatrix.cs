@@ -15,6 +15,7 @@ public static class PermissionMatrix
         [ProjectPermissions.ProjectBillingView] = [ProjectRoles.Owner, ProjectRoles.Admin],
         [ProjectPermissions.ProjectBillingChangePlan] = [ProjectRoles.Owner, ProjectRoles.Admin],
         [ProjectPermissions.ProjectModulesOperate] = [ProjectRoles.Owner, ProjectRoles.Admin, ProjectRoles.Moderator],
+        [ProjectPermissions.ProjectIntegrationsUse] = [ProjectRoles.Owner, ProjectRoles.Admin],
     };
 
     public static bool HasPermission(string role, string permission)

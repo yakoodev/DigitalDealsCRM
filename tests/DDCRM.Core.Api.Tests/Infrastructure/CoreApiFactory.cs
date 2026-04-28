@@ -128,4 +128,43 @@ public sealed class CoreApiFactory : WebApplicationFactory<Program>
         var dbContext = scope.ServiceProvider.GetRequiredService<CoreDbContext>();
         return dbContext.ProxyCredentialsAudits.AsNoTracking().Count(x => x.ProjectId == projectId && x.AccountId == accountId);
     }
+
+    public void GrantProjectIntegration(Guid projectId, string integrationKey, params string[] scopes)
+    {
+        using var scope = Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<CoreDbContext>();
+
+        var now = DateTimeOffset.UtcNow;
+        var normalizedKey = integrationKey.Trim().ToLowerInvariant();
+        var normalizedScopes = (scopes.Length == 0 ? ["use"] : scopes)
+            .Select(x => x.Trim().ToLowerInvariant())
+            .Distinct(StringComparer.OrdinalIgnoreCase);
+
+        var grant = dbContext.ProjectIntegrationGrants.SingleOrDefault(
+            x => x.ProjectId == projectId && x.IntegrationKey == normalizedKey);
+
+        if (grant is null)
+        {
+            dbContext.ProjectIntegrationGrants.Add(new Core.Persistence.Entities.ProjectIntegrationGrantEntity
+            {
+                Id = Guid.NewGuid(),
+                ProjectId = projectId,
+                IntegrationKey = normalizedKey,
+                Status = "active",
+                ScopesCsv = string.Join(',', normalizedScopes),
+                GrantedByUserId = Guid.NewGuid(),
+                GrantedAtUtc = now,
+            });
+        }
+        else
+        {
+            grant.Status = "active";
+            grant.ScopesCsv = string.Join(',', normalizedScopes);
+            grant.GrantedAtUtc = now;
+            grant.RevokedAtUtc = null;
+            grant.RevokedByUserId = null;
+        }
+
+        dbContext.SaveChanges();
+    }
 }

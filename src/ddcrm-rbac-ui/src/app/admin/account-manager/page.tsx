@@ -49,6 +49,9 @@ export default function AccountManagerAdminOverviewPage() {
             <Link href="/admin/account-manager/templates" className="button button-ghost">
               Открыть templates
             </Link>
+            <Link href="/admin/account-manager/integrations" className="button button-ghost">
+              Открыть integrations
+            </Link>
           </div>
         </article>
 

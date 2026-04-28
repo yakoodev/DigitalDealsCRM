@@ -13,4 +13,5 @@ public static class ProjectPermissions
     public const string ProjectBillingView = "project.billing.view";
     public const string ProjectBillingChangePlan = "project.billing.changePlan";
     public const string ProjectModulesOperate = "project.modules.operate";
+    public const string ProjectIntegrationsUse = "project.integrations.use";
 }
