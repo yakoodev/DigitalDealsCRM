@@ -40,6 +40,11 @@ public sealed class AccountsManagerDbContext(DbContextOptions<AccountsManagerDbC
             entity.Property(x => x.BaseUrlTemplate).HasMaxLength(512).IsRequired();
             entity.Property(x => x.Status).HasMaxLength(32).IsRequired();
             entity.Property(x => x.Health).HasMaxLength(32).IsRequired();
+            entity.Property(x => x.DockerHost).HasMaxLength(512);
+            entity.Property(x => x.DockerNetwork).HasMaxLength(160);
+            entity.Property(x => x.RegistryHost).HasMaxLength(160);
+            entity.Property(x => x.RegistryUsername).HasMaxLength(160);
+            entity.Property(x => x.RegistryTokenEncrypted).HasMaxLength(8000);
             entity.Property(x => x.MetadataJson).HasMaxLength(4000);
             entity.Property(x => x.UpdatedAtUtc).HasDefaultValueSql("NOW()");
             entity.HasIndex(x => new { x.Status, x.Health });
@@ -66,6 +71,7 @@ public sealed class AccountsManagerDbContext(DbContextOptions<AccountsManagerDbC
             entity.Property(x => x.Description).HasMaxLength(400);
             entity.Property(x => x.WorkerProfileId).HasMaxLength(80).IsRequired();
             entity.Property(x => x.FormFieldsJson).HasMaxLength(8000);
+            entity.Property(x => x.RuntimeConfigJson).HasMaxLength(12000);
             entity.Property(x => x.UpdatedAtUtc).HasDefaultValueSql("NOW()");
             entity.HasIndex(x => new { x.Enabled, x.SortOrder });
         });

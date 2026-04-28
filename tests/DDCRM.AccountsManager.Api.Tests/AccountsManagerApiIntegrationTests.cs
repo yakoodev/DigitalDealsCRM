@@ -19,17 +19,121 @@ public sealed class AccountsManagerApiIntegrationTests
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
         using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-        var items = json.RootElement.GetProperty("items");
-        Assert.Single(items.EnumerateArray());
+        var items = json.RootElement
+            .GetProperty("items")
+            .EnumerateArray()
+            .ToArray();
 
-        var first = items[0];
-        Assert.Equal("test-worker.funpay", first.GetProperty("accountTypeId").GetString());
-        Assert.Equal("funpay", first.GetProperty("platform").GetString());
-        Assert.Equal("test-worker", first.GetProperty("workerProfileId").GetString());
-        Assert.True(first.GetProperty("enabled").GetBoolean());
+        Assert.Equal(4, items.Length);
 
-        var formFields = first.GetProperty("formFields");
-        Assert.True(formFields.GetArrayLength() >= 5);
+        var accountTypeIds = items
+            .Select(x => x.GetProperty("accountTypeId").GetString() ?? string.Empty)
+            .ToArray();
+        Assert.Equal(
+            ["test-worker.funpay", "test-worker.playerok", "test-worker.ggsell", "test-worker.platimarket"],
+            accountTypeIds);
+
+        var platforms = items
+            .Select(x => x.GetProperty("platform").GetString() ?? string.Empty)
+            .ToArray();
+        Assert.Equal(["funpay", "playerok", "ggsell", "platimarket"], platforms);
+
+        foreach (var item in items)
+        {
+            Assert.Equal("test-worker", item.GetProperty("workerProfileId").GetString());
+            Assert.True(item.GetProperty("enabled").GetBoolean());
+            Assert.True(item.GetProperty("formFields").GetArrayLength() >= 5);
+            var runtime = item.GetProperty("runtime");
+            Assert.True(runtime.GetProperty("autospawnEnabled").GetBoolean());
+            Assert.False(string.IsNullOrWhiteSpace(runtime.GetProperty("workerImage").GetString()));
+        }
+    }
+
+    [Fact]
+    [Trait("Category", "Integration")]
+    public async Task AccountTypeUpsert_UpdatesRuntimeTemplate_AndEnforcesSingleActiveProfilePerPlatform()
+    {
+        using var factory = new AccountsManagerApiFactory();
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add("X-Service-Token", "internal-token-a");
+
+        using var upsertRequest = CreateMutatingRequest(
+            HttpMethod.Put,
+            "/internal/v1/account-types/test-worker.funpay",
+            Guid.NewGuid().ToString("N"),
+            new
+            {
+                platform = "funpay",
+                displayName = "FunPay profile v2",
+                description = "Updated runtime profile",
+                workerProfileId = "test-worker",
+                enabled = true,
+                sortOrder = 10,
+                formFields = new[]
+                {
+                    new
+                    {
+                        key = "displayName",
+                        label = "Название аккаунта",
+                        inputType = "text",
+                        required = true,
+                        secret = false,
+                        placeholder = "FunPay account",
+                        defaultValue = "FunPay account",
+                    },
+                },
+                runtime = new
+                {
+                    autospawnEnabled = true,
+                    workerImage = "ddcrm/worker-api:local",
+                    workerPathPrefix = "/internal/v2/worker",
+                    healthPath = "/health",
+                    containerPort = 8080,
+                    environmentVariables = new
+                    {
+                        TEST_WORKER_PROVIDER = "funpay",
+                    },
+                },
+            });
+
+        var upsertResponse = await client.SendAsync(upsertRequest);
+        Assert.Equal(HttpStatusCode.OK, upsertResponse.StatusCode);
+
+        using var conflictRequest = CreateMutatingRequest(
+            HttpMethod.Put,
+            "/internal/v1/account-types/funpay.custom",
+            Guid.NewGuid().ToString("N"),
+            new
+            {
+                platform = "funpay",
+                displayName = "FunPay custom",
+                workerProfileId = "test-worker",
+                enabled = true,
+                sortOrder = 11,
+                formFields = new[]
+                {
+                    new
+                    {
+                        key = "displayName",
+                        label = "Название аккаунта",
+                        inputType = "text",
+                        required = true,
+                        secret = false,
+                    },
+                },
+                runtime = new
+                {
+                    autospawnEnabled = true,
+                    workerImage = "ddcrm/worker-api:local",
+                    workerPathPrefix = "/internal/v2/worker",
+                    healthPath = "/health",
+                    containerPort = 8080,
+                    environmentVariables = new { },
+                },
+            });
+
+        var conflictResponse = await client.SendAsync(conflictRequest);
+        Assert.Equal(HttpStatusCode.Conflict, conflictResponse.StatusCode);
     }
 
     [Fact]
@@ -52,6 +156,8 @@ public sealed class AccountsManagerApiIntegrationTests
                 health = "healthy",
                 capacity = 12,
                 currentLoad = 2,
+                dockerHost = "unix:///var/run/docker.sock",
+                dockerNetwork = "ddcrm_ddcrm",
                 metadata = new
                 {
                     region = "eu",
@@ -71,6 +177,8 @@ public sealed class AccountsManagerApiIntegrationTests
             Assert.Equal(12, listed.GetProperty("capacity").GetInt32());
             Assert.Equal("active", listed.GetProperty("status").GetString());
             Assert.Equal("healthy", listed.GetProperty("health").GetString());
+            Assert.Equal("unix:///var/run/docker.sock", listed.GetProperty("dockerHost").GetString());
+            Assert.Equal("ddcrm_ddcrm", listed.GetProperty("dockerNetwork").GetString());
         }
 
         var heartbeatResponse = await client.PostAsJsonAsync(
@@ -87,6 +195,90 @@ public sealed class AccountsManagerApiIntegrationTests
         Assert.Equal("degraded", fromDb!.Health);
         Assert.Equal(3, fromDb.CurrentLoad);
         Assert.NotNull(fromDb.LastHeartbeatAtUtc);
+    }
+
+    [Fact]
+    [Trait("Category", "Integration")]
+    public async Task WorkerServers_RegistryToken_IsWriteOnly_AndSupportsClear()
+    {
+        using var factory = new AccountsManagerApiFactory();
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add("X-Service-Token", "internal-token-a");
+
+        var serverId = "srv-registry";
+        using var upsertRequest = CreateMutatingRequest(
+            HttpMethod.Put,
+            $"/internal/v1/worker-servers/{serverId}",
+            Guid.NewGuid().ToString("N"),
+            new
+            {
+                baseUrlTemplate = "http://worker-registry.local",
+                status = "active",
+                health = "healthy",
+                capacity = 10,
+                currentLoad = 1,
+                registry = new
+                {
+                    enabled = true,
+                    host = "ghcr.io",
+                    username = "demo-user",
+                    token = "ghp_secret_token",
+                },
+            });
+
+        var upsertResponse = await client.SendAsync(upsertRequest);
+        Assert.Equal(HttpStatusCode.OK, upsertResponse.StatusCode);
+
+        var upsertRaw = await upsertResponse.Content.ReadAsStringAsync();
+        Assert.DoesNotContain("ghp_secret_token", upsertRaw, StringComparison.Ordinal);
+
+        using (var upsertJson = JsonDocument.Parse(upsertRaw))
+        {
+            var registry = upsertJson.RootElement
+                .GetProperty("workerServer")
+                .GetProperty("registry");
+            Assert.True(registry.GetProperty("enabled").GetBoolean());
+            Assert.Equal("ghcr.io", registry.GetProperty("host").GetString());
+            Assert.Equal("demo-user", registry.GetProperty("username").GetString());
+            Assert.True(registry.GetProperty("hasToken").GetBoolean());
+            Assert.False(registry.TryGetProperty("token", out _));
+        }
+
+        var fromDb = factory.FindWorkerServer(serverId);
+        Assert.NotNull(fromDb);
+        Assert.NotNull(fromDb!.RegistryTokenEncrypted);
+        Assert.NotEqual("ghp_secret_token", fromDb.RegistryTokenEncrypted);
+
+        var listResponse = await client.GetAsync("/internal/v1/worker-servers");
+        Assert.Equal(HttpStatusCode.OK, listResponse.StatusCode);
+
+        using (var listJson = JsonDocument.Parse(await listResponse.Content.ReadAsStringAsync()))
+        {
+            var listed = listJson.RootElement.GetProperty("items")[0];
+            var registry = listed.GetProperty("registry");
+            Assert.True(registry.GetProperty("hasToken").GetBoolean());
+            Assert.False(registry.TryGetProperty("token", out _));
+        }
+
+        using var clearRequest = CreateMutatingRequest(
+            HttpMethod.Put,
+            $"/internal/v1/worker-servers/{serverId}",
+            Guid.NewGuid().ToString("N"),
+            new
+            {
+                registry = new
+                {
+                    clearToken = true,
+                },
+            });
+
+        var clearResponse = await client.SendAsync(clearRequest);
+        Assert.Equal(HttpStatusCode.OK, clearResponse.StatusCode);
+
+        var cleared = factory.FindWorkerServer(serverId);
+        Assert.NotNull(cleared);
+        Assert.Null(cleared!.RegistryTokenEncrypted);
+        Assert.NotNull(cleared.RegistryTokenUpdatedAtUtc);
     }
 
     [Fact]
@@ -212,7 +404,7 @@ public sealed class AccountsManagerApiIntegrationTests
 
         var applyCall = Assert.Single(factory.WorkerControlClient.ApplyCalls);
         Assert.Equal("srv-default", applyCall.WorkerBinding.ServerId);
-        Assert.Null(applyCall.BaseUrlTemplateOverride);
+        Assert.Equal("http://worker-api:8080", applyCall.BaseUrlTemplateOverride);
     }
 
     [Fact]

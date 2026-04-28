@@ -12,7 +12,7 @@ x-service-auth-env: &service-auth-env
 x-external-api-env: &external-api-env
   EXTERNAL_API_CORS_ENABLED: "true"
   EXTERNAL_API_CORS_ALLOW_CREDENTIALS: "true"
-  EXTERNAL_API_CORS_ALLOW_ORIGINS: http://localhost:3000
+  EXTERNAL_API_CORS_ALLOW_ORIGINS: http://localhost:3000,http://localhost:3400
   EXTERNAL_API_CORS_ALLOW_METHODS: GET,POST,PATCH,DELETE,OPTIONS
   EXTERNAL_API_CORS_ALLOW_HEADERS: Authorization,Content-Type,Idempotency-Key,X-Request-Id
   EXTERNAL_API_CORS_EXPOSE_HEADERS: X-Request-Id
@@ -20,6 +20,8 @@ x-external-api-env: &external-api-env
   EXTERNAL_API_JWT_ISSUER: ddcrm-local
   EXTERNAL_API_JWT_AUDIENCE: ddcrm-api
   EXTERNAL_API_JWT_SIGNING_KEY: replace-with-long-random-signing-key
+  EXTERNAL_API_SYSTEM_PERMISSION_CLAIM_TYPE: ddcrm.system.permissions
+  EXTERNAL_API_SYSTEM_PERMISSION_CLAIM_VALUE: system.accountManager.manage
 
 x-dotnet-service: &dotnet-service
   build:
@@ -121,6 +123,15 @@ services:
       WORKER_CONTROL_CLIENT_ENABLED: "true"
       WORKER_CONTROL_CLIENT_BASE_URL_TEMPLATE: http://worker-api:8080
       WORKER_CONTROL_CLIENT_PATH_PREFIX: /internal/v2/worker
+      ACCOUNT_MANAGER_AUTOSPAWN_ENABLED: "true"
+      ACCOUNT_MANAGER_AUTOSPAWN_DOCKER_ENDPOINT: unix:///var/run/docker.sock
+      ACCOUNT_MANAGER_AUTOSPAWN_DOCKER_NETWORK: ddcrm_ddcrm
+      ACCOUNT_MANAGER_AUTOSPAWN_WORKER_INTERNAL_PORT: "8080"
+      ACCOUNT_MANAGER_AUTOSPAWN_HEALTH_TIMEOUT_SECONDS: "45"
+      ACCOUNT_MANAGER_AUTOSPAWN_HEALTH_POLL_INTERVAL_MS: "800"
+      ACCOUNT_MANAGER_AUTOSPAWN_FALLBACK_WORKER_ID: worker-api
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
     ports:
       - "5137:8080"
 
@@ -166,7 +177,7 @@ services:
       RouteRegistryClient__BaseUrl: http://route-registry-api:8080
       IamClient__BaseUrl: http://iam-api:8080
       EntitlementClient__BaseUrl: http://entitlement-api:8080
-      WorkerProxyClient__BaseUrlTemplate: http://worker-api:8080
+      WorkerProxyClient__BaseUrlTemplate: http://{workerId}:8080
       WorkerProxyClient__PathPrefix: /internal/v2/worker
       TEST_WORKER_EXT_ACTIONS_ENABLED: "true"
     ports:
@@ -179,6 +190,7 @@ services:
       dockerfile: docker/api.Dockerfile
       args:
         SERVICE_PROJECT: src/DDCRM.Worker.Api/DDCRM.Worker.Api.csproj
+    image: ddcrm/worker-api:local
     command: ["DDCRM.Worker.Api.dll"]
     environment:
       <<: *service-auth-env
@@ -215,7 +227,7 @@ services:
     environment:
       NEXT_TELEMETRY_DISABLED: "1"
     ports:
-      - "3000:3000"
+      - "3400:3000"
     networks:
       - ddcrm
 

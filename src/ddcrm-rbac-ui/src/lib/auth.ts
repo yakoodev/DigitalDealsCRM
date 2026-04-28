@@ -11,6 +11,12 @@ const DEFAULT_JWT_AUDIENCE =
 const DEFAULT_JWT_SIGNING_KEY =
   process.env.NEXT_PUBLIC_EXTERNAL_API_JWT_SIGNING_KEY ??
   "replace-with-long-random-signing-key";
+const DEFAULT_SYSTEM_PERMISSION_CLAIM_TYPE =
+  process.env.NEXT_PUBLIC_EXTERNAL_API_SYSTEM_PERMISSION_CLAIM_TYPE ??
+  "ddcrm.system.permissions";
+const DEFAULT_SYSTEM_PERMISSION_CLAIM_VALUE =
+  process.env.NEXT_PUBLIC_EXTERNAL_API_SYSTEM_PERMISSION_CLAIM_VALUE ??
+  "system.accountManager.manage";
 const JWT_TIME_SKEW_SECONDS = 120;
 const DEMO_TOKEN_VALID_FROM_UNIX = 1704067200; // 2024-01-01T00:00:00Z
 const DEMO_TOKEN_VALID_TO_UNIX = 2524608000; // 2050-01-01T00:00:00Z
@@ -20,6 +26,8 @@ export interface PlatformUserProfile {
   email: string;
   displayName: string;
   role: ProjectRole;
+  systemPermissions?: string[];
+  isSystemAdmin?: boolean;
   authMode: "demo" | "manual";
   loggedInAt: string;
 }
@@ -34,6 +42,7 @@ interface DemoUserCredential {
   password: string;
   displayName: string;
   role: ProjectRole;
+  systemPermissions?: readonly string[];
 }
 
 export const demoUsers: readonly DemoUserCredential[] = [
@@ -50,6 +59,7 @@ export const demoUsers: readonly DemoUserCredential[] = [
     password: "Admin123!",
     displayName: "Admin Demo",
     role: "admin",
+    systemPermissions: [DEFAULT_SYSTEM_PERMISSION_CLAIM_VALUE],
   },
   {
     userId: "33333333-3333-3333-3333-333333333333",
@@ -103,9 +113,42 @@ async function signHs256(unsignedPayload: string, signingKey: string) {
   return toBase64Url(new Uint8Array(signature));
 }
 
-async function createDemoToken(subject: string) {
+function splitPermissions(value: string) {
+  return value
+    .split(/[,\s;]+/g)
+    .map((item) => item.trim())
+    .filter((item) => item.length > 0);
+}
+
+function resolveSystemPermissions(payload: Record<string, unknown> | null): string[] {
+  if (!payload) {
+    return [];
+  }
+
+  const rawValue = payload[DEFAULT_SYSTEM_PERMISSION_CLAIM_TYPE];
+  if (typeof rawValue === "string") {
+    return splitPermissions(rawValue);
+  }
+
+  if (Array.isArray(rawValue)) {
+    return rawValue
+      .filter((item): item is string => typeof item === "string")
+      .flatMap((item) => splitPermissions(item));
+  }
+
+  return [];
+}
+
+function hasSystemPermission(permissions: readonly string[]) {
+  return permissions.some(
+    (permission) =>
+      permission.toLowerCase() === DEFAULT_SYSTEM_PERMISSION_CLAIM_VALUE.toLowerCase(),
+  );
+}
+
+async function createDemoToken(subject: string, systemPermissions: readonly string[]) {
   const header = { alg: "HS256", typ: "JWT" };
-  const payload = {
+  const payload: Record<string, unknown> = {
     sub: subject,
     iss: DEFAULT_JWT_ISSUER,
     aud: DEFAULT_JWT_AUDIENCE,
@@ -114,6 +157,9 @@ async function createDemoToken(subject: string) {
     nbf: DEMO_TOKEN_VALID_FROM_UNIX,
     exp: DEMO_TOKEN_VALID_TO_UNIX,
   };
+  if (systemPermissions.length > 0) {
+    payload[DEFAULT_SYSTEM_PERMISSION_CLAIM_TYPE] = systemPermissions.join(" ");
+  }
 
   const unsigned = `${encodeJsonBase64Url(header)}.${encodeJsonBase64Url(payload)}`;
   const signature = await signHs256(unsigned, DEFAULT_JWT_SIGNING_KEY);
@@ -132,7 +178,8 @@ export async function authenticateDemo(params: {
     throw new Error("Неверный email или пароль.");
   }
 
-  const token = await createDemoToken(user.userId);
+  const permissions = [...(user.systemPermissions ?? [])];
+  const token = await createDemoToken(user.userId, permissions);
   return {
     token,
     baseUrl: normalizeBaseUrl(params.baseUrl),
@@ -141,6 +188,8 @@ export async function authenticateDemo(params: {
       email: user.email,
       displayName: user.displayName,
       role: user.role,
+      systemPermissions: permissions,
+      isSystemAdmin: hasSystemPermission(permissions),
       authMode: "demo",
       loggedInAt: new Date().toISOString(),
     },
@@ -211,6 +260,7 @@ export function authenticateManual(params: {
   if (!isRole(params.role)) {
     throw new Error("Некорректная роль в ручном входе.");
   }
+  const systemPermissions = resolveSystemPermissions(payload);
 
   return {
     token,
@@ -220,6 +270,8 @@ export function authenticateManual(params: {
       email: params.email.trim() || "manual@ddcrm.local",
       displayName: params.displayName.trim() || "Manual User",
       role: params.role,
+      systemPermissions,
+      isSystemAdmin: hasSystemPermission(systemPermissions),
       authMode: "manual",
       loggedInAt: new Date().toISOString(),
     },
@@ -260,6 +312,24 @@ export function readStoredSession(): PlatformSession | null {
     return {
       ...parsed,
       baseUrl: normalizeBaseUrl(parsed.baseUrl),
+      profile: {
+        ...parsed.profile,
+        systemPermissions: Array.isArray(parsed.profile.systemPermissions)
+          ? parsed.profile.systemPermissions.filter(
+              (value): value is string => typeof value === "string",
+            )
+          : [],
+        isSystemAdmin:
+          typeof parsed.profile.isSystemAdmin === "boolean"
+            ? parsed.profile.isSystemAdmin
+            : hasSystemPermission(
+                Array.isArray(parsed.profile.systemPermissions)
+                  ? parsed.profile.systemPermissions.filter(
+                      (value): value is string => typeof value === "string",
+                    )
+                  : [],
+              ),
+      },
     };
   } catch {
     return null;

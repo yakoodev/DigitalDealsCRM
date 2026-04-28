@@ -344,6 +344,62 @@ public sealed class WorkerApiIntegrationTests
 
     [Fact]
     [Trait("Category", "Integration")]
+    public async Task WorkerV2ProviderProfile_GgSell_DisablesUnsupportedOperationsAtRuntime()
+    {
+        using var factory = new WorkerApiFactory(new Dictionary<string, string?>
+        {
+            ["TEST_WORKER_PROVIDER"] = "ggsell",
+        });
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add("X-Service-Token", "worker-token-a");
+
+        var capabilitiesResponse = await client.GetAsync("/internal/v2/worker/capabilities");
+        Assert.Equal(HttpStatusCode.OK, capabilitiesResponse.StatusCode);
+        using var capabilitiesJson = JsonDocument.Parse(await capabilitiesResponse.Content.ReadAsStringAsync());
+        Assert.Equal("ggsell", capabilitiesJson.RootElement.GetProperty("provider").GetString());
+
+        var features = capabilitiesJson.RootElement.GetProperty("features");
+        Assert.False(features.GetProperty("conversations.list").GetBoolean());
+        Assert.False(features.GetProperty("products.create").GetBoolean());
+        Assert.True(features.GetProperty("products.list").GetBoolean());
+
+        var accountResponse = await client.GetAsync("/internal/v2/worker/account");
+        Assert.Equal(HttpStatusCode.OK, accountResponse.StatusCode);
+
+        var conversationsResponse = await client.GetAsync("/internal/v2/worker/conversations?limit=5");
+        Assert.Equal(HttpStatusCode.Conflict, conversationsResponse.StatusCode);
+        using (var conversationsJson = JsonDocument.Parse(await conversationsResponse.Content.ReadAsStringAsync()))
+        {
+            Assert.Equal("WORKER_RUNTIME_CONFLICT", conversationsJson.RootElement.GetProperty("errorCode").GetString());
+        }
+
+        using var createRequest = CreateMutatingRequest(
+            HttpMethod.Post,
+            "/internal/v2/worker/products",
+            Guid.NewGuid().ToString("N"),
+            new
+            {
+                schemaId = "digital_goods.v1",
+                title = "Disabled by feature map",
+                description = "should fail for ggsell profile",
+                price = new { amount = 99m, currency = "RUB" },
+                quantity = 1,
+                attributes = new { region = "RU" },
+            });
+
+        var createResponse = await client.SendAsync(createRequest);
+        Assert.Equal(HttpStatusCode.Conflict, createResponse.StatusCode);
+        using (var createJson = JsonDocument.Parse(await createResponse.Content.ReadAsStringAsync()))
+        {
+            Assert.Equal("WORKER_RUNTIME_CONFLICT", createJson.RootElement.GetProperty("errorCode").GetString());
+        }
+
+        var productsListResponse = await client.GetAsync("/internal/v2/worker/products?limit=5");
+        Assert.Equal(HttpStatusCode.OK, productsListResponse.StatusCode);
+    }
+
+    [Fact]
+    [Trait("Category", "Integration")]
     public async Task WorkerV2ProductSchemas_WithInvalidProviderQuery_ReturnsValidationError()
     {
         using var factory = new WorkerApiFactory();

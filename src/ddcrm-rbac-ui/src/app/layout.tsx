@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { IBM_Plex_Mono, Space_Grotesk } from "next/font/google";
 import { QueryProvider } from "@/components/query-provider";
+import { getThemeInitScript } from "@/lib/theme";
 import "./globals.css";
 
 const spaceGrotesk = Space_Grotesk({
@@ -28,8 +29,12 @@ export default function RootLayout({
   return (
     <html
       lang="ru"
+      suppressHydrationWarning
       className={`${spaceGrotesk.variable} ${ibmPlexMono.variable}`}
     >
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: getThemeInitScript() }} />
+      </head>
       <body>
         <QueryProvider>{children}</QueryProvider>
       </body>

@@ -9,6 +9,7 @@ vi.mock("next/navigation", () => ({
     replace: replaceMock,
   }),
   usePathname: () => "/projects/project-1/messages",
+  useSearchParams: () => new URLSearchParams(),
 }));
 
 function Probe() {

@@ -1,24 +1,99 @@
 "use client";
 
-import { useQueries } from "@tanstack/react-query";
-import Link from "next/link";
-import { useMemo } from "react";
+import { useQueries, useQueryClient } from "@tanstack/react-query";
+import { useMemo, useState } from "react";
 import { AccountSelector } from "@/components/account-selector";
+import { ModulePageShell } from "@/components/layout/module-page-shell";
+import { RouteModalHost } from "@/components/layout/route-modal-host";
+import { ProjectAccountCreatePanel } from "@/components/project-pages/account-create-panel";
+import { ProjectAccountManagePanel } from "@/components/project-pages/account-manage-panel";
+import { useProjectAccounts } from "@/hooks/use-project-accounts";
+import { useRouteModal } from "@/hooks/use-route-modal";
 import type { ApiSession } from "@/lib/api-client";
 import { runAccountActionRequest } from "@/lib/api-client";
-import { useProjectAccounts } from "@/hooks/use-project-accounts";
-import { toReadableValue } from "@/lib/worker-result";
+import { hasPermission, projectPermissions, type ProjectRole } from "@/lib/rbac";
+import { isRecord, toReadableValue } from "@/lib/worker-result";
 
 interface ProjectAccountsPanelProps {
   apiSession: ApiSession;
   projectId: string;
+  activeRole: ProjectRole;
+}
+
+interface NormalizedAccountInfo {
+  accountId: string;
+  platform: string;
+  nickname: string;
+  status: string;
+  displayName: string;
+  balance: string;
+  workerInstanceId: string;
+  workerMachineName: string;
+  workerStartedAtUtc: string;
+  requestId: string;
+}
+
+function normalizeBalance(value: unknown): string {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value.toFixed(2);
+  }
+
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) {
+      return parsed.toFixed(2);
+    }
+  }
+
+  return "";
+}
+
+function normalizeAccountInfo(payload: Record<string, unknown>): NormalizedAccountInfo {
+  const account = isRecord(payload.account) ? payload.account : payload;
+  const profile = isRecord(account.profile) ? account.profile : null;
+  const raw = isRecord(account.raw) ? account.raw : null;
+
+  const accountId = toReadableValue(account.accountId ?? payload.accountId);
+  const platform = toReadableValue(
+    account.provider
+      ?? account.service
+      ?? account.platform
+      ?? payload.provider
+      ?? payload.platform,
+  );
+  const nickname = toReadableValue(account.nickname ?? payload.nickname);
+  const status = toReadableValue(account.status ?? payload.status);
+  const displayName = toReadableValue(
+    profile?.displayName ?? account.displayName ?? payload.displayName,
+  );
+  const balance = normalizeBalance(profile?.balance ?? account.balance ?? payload.balance);
+
+  return {
+    accountId,
+    platform,
+    nickname,
+    status,
+    displayName,
+    balance,
+    workerInstanceId: toReadableValue(raw?.workerInstanceId ?? payload.workerInstanceId),
+    workerMachineName: toReadableValue(raw?.workerMachineName ?? payload.workerMachineName),
+    workerStartedAtUtc: toReadableValue(raw?.workerStartedAtUtc ?? payload.workerStartedAtUtc),
+    requestId: toReadableValue(payload.requestId),
+  };
 }
 
 export function ProjectAccountsPanel({
   apiSession,
   projectId,
+  activeRole,
 }: ProjectAccountsPanelProps) {
-  const status = "Загрузите или создайте аккаунт проекта.";
+  const queryClient = useQueryClient();
+  const [search, setSearch] = useState("");
+  const { modal, accountId: modalAccountId, closeModal, openModal } = useRouteModal();
+
+  const canManageLifecycle = hasPermission(activeRole, projectPermissions.accountsLifecycleManage);
+  const canRevealProxy = hasPermission(activeRole, projectPermissions.proxyCredentialsReveal);
+  const canUpdateProxy = hasPermission(activeRole, projectPermissions.proxyCredentialsUpdate);
 
   const {
     accounts,
@@ -31,15 +106,8 @@ export function ProjectAccountsPanel({
 
   const accountInfoQueries = useQueries({
     queries: accounts.map((account) => ({
-      queryKey: [
-        "account.info",
-        apiSession.baseUrl,
-        apiSession.token,
-        projectId,
-        account.id,
-      ] as const,
-      queryFn: () =>
-        runAccountActionRequest(apiSession, account.id, "account.info", {}),
+      queryKey: ["account.info", apiSession.baseUrl, apiSession.token, projectId, account.id] as const,
+      queryFn: () => runAccountActionRequest(apiSession, account.id, "account.info", {}),
       enabled: Boolean(account.id),
       refetchInterval: 30_000,
       staleTime: 10_000,
@@ -47,12 +115,12 @@ export function ProjectAccountsPanel({
   });
 
   const accountInfoById = useMemo(() => {
-    const map = new Map<string, Record<string, unknown>>();
+    const map = new Map<string, NormalizedAccountInfo>();
     for (let index = 0; index < accounts.length; index += 1) {
       const account = accounts[index];
       const query = accountInfoQueries[index];
-      if (query?.data && typeof query.data === "object") {
-        map.set(account.id, query.data as Record<string, unknown>);
+      if (query?.data && isRecord(query.data)) {
+        map.set(account.id, normalizeAccountInfo(query.data));
       }
     }
 
@@ -68,7 +136,7 @@ export function ProjectAccountsPanel({
         query?.error instanceof Error
           ? query.error.message
           : query?.error
-            ? "Не удалось загрузить account.info."
+            ? "Не удалось получить account.info."
             : null;
       if (message) {
         map.set(account.id, message);
@@ -78,177 +146,119 @@ export function ProjectAccountsPanel({
     return map;
   }, [accountInfoQueries, accounts]);
 
-  const selectedAccountInfo = selectedAccountId
-    ? accountInfoById.get(selectedAccountId) ?? null
-    : null;
-  const selectedAccountInfoError = selectedAccountId
-    ? accountInfoErrorById.get(selectedAccountId) ?? null
-    : null;
-
-  const anyAccountInfoFetching = accountInfoQueries.some((query) => query.isFetching);
-  const anyAccountInfoPending = accountInfoQueries.some((query) => query.isPending);
-
-  const activeAccountsCount = accounts.filter(
-    (account) => account.businessStatus === "active",
-  ).length;
-
-  const topPlatforms = useMemo(() => {
-    const counters = new Map<string, number>();
-    for (const account of accounts) {
-      const key = account.platform.trim().toLowerCase() || "unknown";
-      counters.set(key, (counters.get(key) ?? 0) + 1);
+  const filteredAccounts = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    if (!query) {
+      return accounts;
     }
 
-    return [...counters.entries()]
-      .sort((left, right) => right[1] - left[1])
-      .slice(0, 4);
-  }, [accounts]);
+    return accounts.filter((account) => {
+      const searchable = `${account.displayName} ${account.platform} ${account.id} ${account.businessStatus}`.toLowerCase();
+      return searchable.includes(query);
+    });
+  }, [accounts, search]);
+
+  const selectedAccountInfo = selectedAccountId ? accountInfoById.get(selectedAccountId) ?? null : null;
+  const selectedAccountError = selectedAccountId ? accountInfoErrorById.get(selectedAccountId) ?? null : null;
+  const anyAccountInfoFetching = accountInfoQueries.some((query) => query.isFetching);
+
+  const activeAccountsCount = accounts.filter((account) => account.businessStatus === "active").length;
+  const platformsCount = new Set(accounts.map((account) => account.platform.toLowerCase())).size;
+  const modalManageAccountId = modalAccountId || selectedAccountId;
 
   const refreshAccountInfo = async () => {
     await Promise.all(accountInfoQueries.map((query) => query.refetch()));
   };
 
+  const handleCreateCompleted = async () => {
+    await queryClient.invalidateQueries({
+      queryKey: ["accounts", apiSession.baseUrl, apiSession.token, projectId],
+    });
+    closeModal();
+  };
+
+  const handleManageChanged = async () => {
+    await queryClient.invalidateQueries({
+      queryKey: ["accounts", apiSession.baseUrl, apiSession.token, projectId],
+    });
+  };
+
+  const handleManageDeleted = async () => {
+    await queryClient.invalidateQueries({
+      queryKey: ["accounts", apiSession.baseUrl, apiSession.token, projectId],
+    });
+    closeModal();
+  };
+
   return (
     <div className="page-stack" data-testid="project-accounts-panel">
-      <header className="page-section-header">
-        <h2>Аккаунты проекта</h2>
-        <p>
-          В этой вкладке подключаются площадки проекта: создаём аккаунт, проверяем
-          статус и фиксируем прокси-конфигурацию.
-        </p>
-      </header>
+      <ModulePageShell
+        title="Аккаунты / Accounts"
+        description="Подключайте аккаунты площадок, проверяйте состояние worker account и управляйте lifecycle из модальных сценариев."
+        actions={
+          canManageLifecycle ? (
+            <button type="button" className="button button-primary" onClick={() => openModal("create")}>
+              Добавить аккаунт
+            </button>
+          ) : null
+        }
+        stats={[
+          { label: "Всего аккаунтов", value: String(accounts.length), hint: "В текущем проекте" },
+          { label: "Активные", value: String(activeAccountsCount), hint: "Готовы к работе" },
+          { label: "Платформы", value: String(platformsCount), hint: "Уникальные provider'ы" },
+        ]}
+        main={(
+          <section className="glass-card page-stack">
+            <div className="panel-title-row">
+              <h3>Список аккаунтов</h3>
+              <button
+                type="button"
+                className="button button-ghost"
+                onClick={refreshAccountInfo}
+                disabled={anyAccountInfoFetching}
+              >
+                Обновить
+              </button>
+            </div>
 
-      <section className="summary-grid">
-        <article className="summary-card">
-          <p>Всего аккаунтов</p>
-          <strong>{accounts.length}</strong>
-          <small>Подключено к текущему проекту</small>
-        </article>
-        <article className="summary-card">
-          <p>Активные</p>
-          <strong>{activeAccountsCount}</strong>
-          <small>Готовы к операциям воркера</small>
-        </article>
-        <article className="summary-card">
-          <p>Площадки</p>
-          <strong>{topPlatforms.length}</strong>
-          <small>
-            {topPlatforms.length === 0
-              ? "Нет данных"
-              : topPlatforms.map(([platform, count]) => `${platform}: ${count}`).join(" · ")}
-          </small>
-        </article>
-      </section>
+            <label className="field">
+              <span>Поиск</span>
+              <input
+                className="input"
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="display name / platform / status / id"
+              />
+            </label>
 
-      <div className="split-grid">
-        <section className="panel-card">
-          <h3>Доступные аккаунты</h3>
-          {error ? <p className="route-error">{error.message}</p> : null}
-          {isLoading ? <p className="route-hint">Загружаем аккаунты...</p> : null}
-          {!isLoading && accounts.length === 0 ? (
-            <p className="route-hint">
-              Аккаунтов пока нет. Откройте отдельную страницу «Добавить аккаунт».
-            </p>
-          ) : null}
+            {error ? <p className="route-error">{error.message}</p> : null}
+            {isLoading ? <p className="route-hint">Загружаем аккаунты...</p> : null}
+            {!isLoading && filteredAccounts.length === 0 ? (
+              <p className="route-hint">Аккаунты не найдены. Создайте новый или измените фильтр.</p>
+            ) : null}
 
-          <AccountSelector
-            accounts={accounts}
-            selectedAccountId={selectedAccountId}
-            onChange={setSelectedAccountId}
-            isLoading={isLoading}
-          />
+            <ul className="entity-list">
+              {filteredAccounts.map((account) => {
+                const info = accountInfoById.get(account.id);
+                const infoError = accountInfoErrorById.get(account.id);
+                const isSelected = account.id === selectedAccountId;
 
-          {selectedAccount ? (
-            <dl className="kv-list">
-              <div>
-                <dt>ID</dt>
-                <dd>{selectedAccount.id}</dd>
-              </div>
-              <div>
-                <dt>Platform</dt>
-                <dd>{selectedAccount.platform}</dd>
-              </div>
-              <div>
-                <dt>Status</dt>
-                <dd>{selectedAccount.businessStatus}</dd>
-              </div>
-              <div>
-                <dt>Display Name</dt>
-                <dd>{selectedAccount.displayName}</dd>
-              </div>
-            </dl>
-          ) : null}
-
-          {selectedAccountId ? (
-            <section className="panel-card panel-soft">
-              <div className="panel-title-row">
-                <h3>Состояние выбранного worker account</h3>
-                <button
-                  type="button"
-                  className="button button-ghost"
-                  onClick={refreshAccountInfo}
-                  disabled={anyAccountInfoFetching}
-                >
-                  Обновить
-                </button>
-              </div>
-              {anyAccountInfoPending ? (
-                <p className="route-hint">Проверяем account.info...</p>
-              ) : selectedAccountInfoError ? (
-                <p className="route-error">{selectedAccountInfoError}</p>
-              ) : !selectedAccountInfo ? (
-                <p className="route-error">Не удалось получить account.info.</p>
-              ) : (
-                <dl className="kv-list">
-                  {Object.entries(selectedAccountInfo).map(([key, value]) => (
-                    <div key={key}>
-                      <dt>{key}</dt>
-                      <dd>{toReadableValue(value) || "n/a"}</dd>
-                    </div>
-                  ))}
-                </dl>
-              )}
-            </section>
-          ) : null}
-
-          {!isLoading && accounts.length > 0 ? (
-            <section className="panel-card panel-soft">
-              <div className="panel-title-row">
-                <h3>Состояние всех worker account</h3>
-                <button
-                  type="button"
-                  className="button button-ghost"
-                  onClick={refreshAccountInfo}
-                  disabled={anyAccountInfoFetching}
-                >
-                  Обновить
-                </button>
-              </div>
-              <ul className="entity-list compact-list">
-                {accounts.map((account) => {
-                  const accountInfo = accountInfoById.get(account.id);
-                  const accountInfoError = accountInfoErrorById.get(account.id);
-                  const infoStatus = toReadableValue(
-                    accountInfo?.status ?? account.businessStatus,
-                  ) || "n/a";
-                  const workerInstanceId = toReadableValue(
-                    (accountInfo?.raw as Record<string, unknown> | undefined)
-                      ?.workerInstanceId,
-                  );
-
-                  return (
-                    <li key={`worker-info-${account.id}`} className="entity-list-item">
-                      <div>
-                        <strong>{account.displayName}</strong>
-                        <p>{account.platform}</p>
-                        <small>Status: {infoStatus}</small>
-                        <small>
-                          Worker: {workerInstanceId || "ожидаем account.info"}
-                        </small>
-                        {accountInfoError ? (
-                          <small className="route-error">{accountInfoError}</small>
-                        ) : null}
+                return (
+                  <li
+                    key={account.id}
+                    className={`entity-list-item ${isSelected ? "is-selected" : ""}`}
+                  >
+                    <div>
+                      <strong>{info?.displayName || account.displayName}</strong>
+                      <div className="entity-pills">
+                        <span className="entity-pill">{info?.platform || account.platform}</span>
+                        <span className="entity-pill">{info?.status || account.businessStatus}</span>
+                        <span className="entity-pill">{account.id}</span>
                       </div>
+                      {infoError ? <small className="route-error">{infoError}</small> : null}
+                    </div>
+
+                    <div className="inline-actions">
                       <button
                         type="button"
                         className="button button-ghost"
@@ -256,49 +266,145 @@ export function ProjectAccountsPanel({
                       >
                         Открыть
                       </button>
-                    </li>
-                  );
-                })}
-              </ul>
-            </section>
-          ) : null}
+                      {canManageLifecycle ? (
+                        <button
+                          type="button"
+                          className="button button-ghost"
+                          onClick={() => openModal("manage", { accountId: account.id })}
+                        >
+                          Управлять
+                        </button>
+                      ) : null}
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          </section>
+        )}
+        side={(
+          <section className="glass-card page-stack">
+            <h3>Контекст проекта</h3>
+            <AccountSelector
+              accounts={accounts}
+              selectedAccountId={selectedAccountId}
+              onChange={setSelectedAccountId}
+              isLoading={isLoading}
+            />
 
-          {!isLoading && accounts.length > 0 ? (
-            <ul className="entity-list compact-list">
-              {accounts.map((account) => (
-                <li key={account.id}>
+            {!selectedAccount ? (
+              <p className="route-hint">Выберите аккаунт, чтобы увидеть детали и действия.</p>
+            ) : (
+              <>
+                <dl className="kv-list">
+                  <div>
+                    <dt>Display name</dt>
+                    <dd>{selectedAccountInfo?.displayName || selectedAccount.displayName}</dd>
+                  </div>
+                  <div>
+                    <dt>Площадка</dt>
+                    <dd>{selectedAccountInfo?.platform || selectedAccount.platform}</dd>
+                  </div>
+                  <div>
+                    <dt>Ник</dt>
+                    <dd>{selectedAccountInfo?.nickname || "n/a"}</dd>
+                  </div>
+                  <div>
+                    <dt>Баланс</dt>
+                    <dd>{selectedAccountInfo?.balance || "n/a"}</dd>
+                  </div>
+                  <div>
+                    <dt>Статус</dt>
+                    <dd>{selectedAccountInfo?.status || selectedAccount.businessStatus}</dd>
+                  </div>
+                </dl>
+
+                {selectedAccountError ? <p className="route-error">{selectedAccountError}</p> : null}
+
+                <details className="details-block">
+                  <summary>Technical details</summary>
+                  <dl className="kv-list">
+                    <div>
+                      <dt>Account ID</dt>
+                      <dd>{selectedAccount.id}</dd>
+                    </div>
+                    <div>
+                      <dt>Worker instance</dt>
+                      <dd>{selectedAccountInfo?.workerInstanceId || "n/a"}</dd>
+                    </div>
+                    <div>
+                      <dt>Worker host</dt>
+                      <dd>{selectedAccountInfo?.workerMachineName || "n/a"}</dd>
+                    </div>
+                    <div>
+                      <dt>Worker started at</dt>
+                      <dd>{selectedAccountInfo?.workerStartedAtUtc || "n/a"}</dd>
+                    </div>
+                    <div>
+                      <dt>Request ID</dt>
+                      <dd>{selectedAccountInfo?.requestId || "n/a"}</dd>
+                    </div>
+                  </dl>
+                </details>
+
+                {canManageLifecycle ? (
                   <button
                     type="button"
-                    className={`list-select ${selectedAccountId === account.id ? "is-active" : ""}`}
-                    onClick={() => setSelectedAccountId(account.id)}
+                    className="button button-primary"
+                    onClick={() => openModal("manage", { accountId: selectedAccount.id })}
                   >
-                    <strong>{account.displayName}</strong>
-                    <small>{account.platform}</small>
-                    <p>{account.businessStatus}</p>
+                    Управлять выбранным аккаунтом
                   </button>
-                </li>
-              ))}
-            </ul>
-          ) : null}
-        </section>
+                ) : (
+                  <p className="route-hint">
+                    `moderator` работает только в режиме просмотра без lifecycle-операций.
+                  </p>
+                )}
 
-        <section className="panel-card">
-          <h3>Добавление аккаунта</h3>
-          <p className="route-hint">
-            Создание вынесено в отдельный route: сначала выбираем тип аккаунта из
-            каталога Accounts Manager, затем заполняем форму.
-          </p>
-          <div className="panel-actions">
-            <Link
-              href={`/projects/${projectId}/accounts/new`}
-              className="button button-primary"
-            >
-              Добавить аккаунт
-            </Link>
-          </div>
-          <p className="route-hint">{status}</p>
-        </section>
-      </div>
+                {!canRevealProxy || !canUpdateProxy ? (
+                  <p className="route-hint">
+                    Proxy reveal/update доступны только ролям owner/admin.
+                  </p>
+                ) : null}
+              </>
+            )}
+          </section>
+        )}
+      />
+
+      <RouteModalHost
+        isOpen={modal === "create"}
+        title="Добавить аккаунт"
+        description="Выберите тип аккаунта из каталога Accounts Manager и заполните форму подключения."
+        onClose={closeModal}
+      >
+        <ProjectAccountCreatePanel
+          apiSession={apiSession}
+          projectId={projectId}
+          activeRole={activeRole}
+          mode="modal"
+          onCancel={closeModal}
+          onCompleted={handleCreateCompleted}
+        />
+      </RouteModalHost>
+
+      <RouteModalHost
+        isOpen={modal === "manage"}
+        title="Управление аккаунтом"
+        description="Изменение параметров, proxy credentials и lifecycle."
+        onClose={closeModal}
+      >
+        <ProjectAccountManagePanel
+          apiSession={apiSession}
+          projectId={projectId}
+          accountId={modalManageAccountId}
+          activeRole={activeRole}
+          mode="modal"
+          onCancel={closeModal}
+          onUpdated={handleManageChanged}
+          onDeleted={handleManageDeleted}
+        />
+      </RouteModalHost>
     </div>
   );
 }

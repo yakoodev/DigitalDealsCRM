@@ -1,40 +1,70 @@
 # DDCRM Platform UI
 
-Платформенный frontend-проект `WP-RBAC-UI` на `Next.js App Router + TypeScript + TanStack Query + Orval`.
+Frontend проекта `WP-RBAC-UI` на `Next.js App Router + TypeScript + TanStack Query + Orval`.
 
 ## Скрипты
 
 - `npm run generate:api` — генерация клиента из `docs/api-contracts/openapi-external.yaml`.
 - `npm run dev` — запуск dev-сервера UI.
-- `npm run test:run` — запуск unit-тестов (`vitest`).
-- `npm run lint` — eslint-проверка.
-- `npm run build` — production сборка (с авто-генерацией Orval через `prebuild`).
+- `npm run test:run` — запуск unit/component тестов (`vitest`).
+- `npm run lint` — eslint.
+- `npm run build` — production сборка (`prebuild` включает генерацию Orval).
 
-## Быстрый запуск
+## Route Map (W9)
 
-1. Запустите backend (локально или через `docker compose` в корне репозитория).
-2. Запустите UI: `npm run dev`.
-3. Откройте `http://localhost:3000` и выберите режим входа:
-   - `Demo Вход`: преднастроенные пользователи (`owner/admin/moderator`), JWT подписывается локально через env-конфиг.
-   - `Ручной JWT`: вход с вашим bearer-токеном и UI-ролью для role-aware guard.
-4. После входа доступен route-driven project flow:
-   - `/projects` — отдельная страница списка проектов + `Создать проект`;
-  - `/projects/[projectId]/accounts` — список аккаунтов проекта, live `account.info` для выбранного аккаунта и сводный статус всех worker-account в проекте;
-  - `/projects/[projectId]/products` — агрегирует `products.list` по всем аккаунтам проекта (всем worker-route) с фильтром по аккаунту и ручным refresh;
-  - `/projects/[projectId]/messages` — агрегирует `conversations.list` по всем аккаунтам; история чата остаётся lazy-load после выбора переписки и грузится из account-specific worker-route;
-  - `/projects/[projectId]/schemas` — агрегирует `products.schemas.list` по всем аккаунтам с фильтром и unified просмотром schema payload;
-   - выбранный аккаунт сохраняется отдельно по `projectId`, чтобы не терять контекст между вкладками.
+- `/login` — авторизация (demo/manual JWT).
+- `/dashboard` — стартовый экран после логина (`Dashboard root`).
+- `/projects` — портфель проектов + создание проекта.
+- `/admin/account-manager` — системный admin overview для AccountManager control plane.
+- `/admin/account-manager/servers` — настройка worker server registry.
+- `/admin/account-manager/templates` — настройка platform templates (runtime/autospawn).
+- `/projects/[projectId]` — overview проекта (аккаунты + live KPI по товарам/перепискам + быстрые переходы).
+- `/projects/[projectId]/accounts` — аккаунты проекта (modal-first create/manage).
+- `/projects/[projectId]/products` — товары проекта (modal-first create/edit).
+- `/projects/[projectId]/messages` — переписки проекта; история чата открывается в modal-first thread.
 
-## Env для demo-авторизации
+## IA / Sidebar Policy
 
-- `NEXT_PUBLIC_EXTERNAL_API_JWT_ISSUER` (по умолчанию `ddcrm-local`)
-- `NEXT_PUBLIC_EXTERNAL_API_JWT_AUDIENCE` (по умолчанию `ddcrm-api`)
-- `NEXT_PUBLIC_EXTERNAL_API_JWT_SIGNING_KEY` (по умолчанию `replace-with-long-random-signing-key`)
+- Левый sidebar не используется для выбора проектов.
+- На `/dashboard` и `/projects` sidebar показывает профиль/настройки и навигацию.
+- Для пользователей с system-claim доступна отдельная admin-навигация на `/admin/account-manager/*`.
+- На `/projects/[projectId]` и `/projects/[projectId]/*` sidebar становится контекстным: статус проекта, статистика аккаунтов, навигация по вкладкам (`overview/accounts/products/messages`).
+- Выбор и создание проектов выполняются в центральной области `dashboard/projects`, а не в боковой панели.
 
-Значения должны соответствовать проверке JWT в `Core API`, иначе external endpoint-ы будут возвращать `401`.
+## Route-bound modal URL contract
 
-## Важно
+- `accounts`:
+  - create: `?modal=create`
+  - manage: `?modal=manage&accountId=<...>`
+- `products`:
+  - create: `?modal=create&accountId=<...>`
+  - edit: `?modal=edit&accountId=<...>&productId=<...>`
+- `messages`:
+  - thread: `?modal=thread&accountId=<...>&conversationId=<...>`
 
-- UI guard скрывает операции по матрице ролей, но source of truth по доступу остаётся в backend.
-- В текущей итерации UX сфокусирован на project workflow (`projects/accounts/products/messages/schemas`) без legacy-разделов `profile/activity/proxy/billing/gateway/members`.
-- Секреты/реальные прокси и токены не хранятся в git.
+Закрытие модалки удаляет только modal-параметры и сохраняет остальной контекст URL.
+
+## Legacy operation routes
+
+Старые route-ы оставлены только как redirect:
+
+- `/projects/[projectId]/accounts/new` -> `/projects/[projectId]/accounts?modal=create`
+- `/projects/[projectId]/accounts/manage` -> `/projects/[projectId]/accounts?modal=manage&accountId=<...>`
+- `/projects/[projectId]/products/new` -> `/projects/[projectId]/products?modal=create&accountId=<...>`
+- `/projects/[projectId]/products/edit` -> `/projects/[projectId]/products?modal=edit&accountId=<...>&productId=<...>`
+- `/projects/[projectId]/messages/thread` -> `/projects/[projectId]/messages?modal=thread&accountId=<...>&conversationId=<...>`
+
+## Env для demo JWT
+
+- `NEXT_PUBLIC_EXTERNAL_API_JWT_ISSUER` (`ddcrm-local` по умолчанию)
+- `NEXT_PUBLIC_EXTERNAL_API_JWT_AUDIENCE` (`ddcrm-api` по умолчанию)
+- `NEXT_PUBLIC_EXTERNAL_API_JWT_SIGNING_KEY` (`replace-with-long-random-signing-key` по умолчанию)
+
+Значения должны совпадать с конфигурацией JWT в Core API, иначе external API вернет `401`.
+
+## Принципы
+
+- Backend OpenAPI-контракты не меняются UI-слоем.
+- UI role-aware: чувствительные account lifecycle/proxy операции доступны только owner/admin.
+- System admin зона `/admin/account-manager/*` доступна только при JWT claim `system.accountManager.manage`.
+- Техполя (`id/requestId/worker instance`) показываются в `Details`-блоках, а не в основном потоке.

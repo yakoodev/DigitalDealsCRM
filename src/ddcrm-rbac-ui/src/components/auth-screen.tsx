@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { ThemeToggle } from "@/components/theme-toggle";
 import {
   authenticateDemo,
   authenticateManual,
@@ -20,18 +21,15 @@ type AuthMode = "demo" | "manual";
 
 export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
   const jwtMeta = useMemo(() => getJwtMeta(), []);
-
   const [authMode, setAuthMode] = useState<AuthMode>("demo");
   const [statusMessage, setStatusMessage] = useState(
-    "Войдите в платформу, чтобы открыть список проектов и рабочие вкладки проекта.",
+    "Войдите в DDCRM, чтобы открыть dashboard и project workflow.",
   );
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const [baseUrl, setBaseUrl] = useState(getDefaultBaseUrl());
-
   const [demoEmail, setDemoEmail] = useState(demoUsers[0].email);
   const [demoPassword, setDemoPassword] = useState(demoUsers[0].password);
-
   const [manualToken, setManualToken] = useState("");
   const [manualRole, setManualRole] = useState<ProjectRole>("owner");
   const [manualDisplayName, setManualDisplayName] = useState("Manual User");
@@ -45,7 +43,7 @@ export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
 
   const handleDemoSignIn = async () => {
     setIsSubmitting(true);
-    setStatusMessage("Проверяю demo-аккаунт и создаю JWT...");
+    setStatusMessage("Проверяю demo-аккаунт...");
 
     try {
       const session = await authenticateDemo({
@@ -59,9 +57,7 @@ export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
       });
       onAuthenticated(session);
     } catch (error) {
-      setStatusMessage(
-        error instanceof Error ? error.message : "Не удалось выполнить demo-вход.",
-      );
+      setStatusMessage(error instanceof Error ? error.message : "Не удалось выполнить demo-вход.");
     } finally {
       setIsSubmitting(false);
     }
@@ -69,7 +65,7 @@ export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
 
   const handleManualSignIn = async () => {
     setIsSubmitting(true);
-    setStatusMessage("Проверяю параметры ручного входа...");
+    setStatusMessage("Проверяю JWT...");
 
     try {
       const session = authenticateManual({
@@ -86,58 +82,48 @@ export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
       });
       onAuthenticated(session);
     } catch (error) {
-      setStatusMessage(
-        error instanceof Error ? error.message : "Не удалось выполнить ручной вход.",
-      );
+      setStatusMessage(error instanceof Error ? error.message : "Не удалось выполнить ручной вход.");
     } finally {
       setIsSubmitting(false);
     }
   };
 
   return (
-    <main className="auth-shell" data-testid="auth-screen">
-      <section className="auth-hero">
-        <p className="auth-eyebrow">DDCRM PLATFORM</p>
-        <h1>Единый кабинет управления проектами и маркетплейс-аккаунтами</h1>
+    <main className="auth-layout" data-testid="auth-screen">
+      <section className="auth-hero-card">
+        <p className="module-page-kicker">DigitalDeals CRM</p>
+        <h1>Clean control plane для проектов, аккаунтов и воркеров</h1>
         <p>
-          Route-driven интерфейс DDCRM: вход в платформу, список проектов и
-          рабочие вкладки проекта (аккаунты, товары, сообщения, схемы).
+          После входа вы попадете на `/dashboard`, затем сможете перейти в `/projects`
+          и открыть любой проект по чистым route-страницам.
         </p>
-
-        <div className="auth-features">
-          <div className="auth-feature-card">
-            <h2>Авторизация</h2>
-            <p>
-              Demo-вход создаёт JWT совместимый с локальным external API. Можно
-              войти и с вашим собственным токеном.
-            </p>
-          </div>
-          <div className="auth-feature-card">
-            <h2>Project Workflow</h2>
-            <p>
-              После входа пользователь попадает в список проектов, открывает
-              конкретный проект и работает с его вкладками.
-            </p>
-          </div>
-          <div className="auth-feature-card">
-            <h2>Операционные Вкладки</h2>
-            <p>
-              Аккаунты, товары, сообщения и schemas работают через единый
-              API-layer на TanStack Query + Orval.
-            </p>
-          </div>
+        <div className="auth-hero-stats">
+          <article>
+            <span>Flow</span>
+            <strong>Projects → Accounts → Products → Messages</strong>
+          </article>
+          <article>
+            <span>Theme</span>
+            <strong>System / Light / Dark</strong>
+          </article>
+          <article>
+            <span>UI language</span>
+            <strong>RU + EN terms</strong>
+          </article>
         </div>
       </section>
 
-      <section className="auth-panel">
-        <div className="auth-mode-switch">
+      <section className="auth-form-card">
+        <ThemeToggle />
+
+        <div className="segmented-control">
           <button
             className={`button ${authMode === "demo" ? "button-primary" : "button-ghost"}`}
             onClick={() => setAuthMode("demo")}
             type="button"
             data-testid="auth-mode-demo"
           >
-            Demo Вход
+            Demo вход
           </button>
           <button
             className={`button ${authMode === "manual" ? "button-primary" : "button-ghost"}`}
@@ -163,7 +149,7 @@ export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
         {authMode === "demo" ? (
           <>
             <label className="field">
-              <span>Demo User</span>
+              <span>Demo user</span>
               <select
                 className="input"
                 value={demoEmail}
@@ -196,22 +182,18 @@ export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
               />
             </label>
 
-            <div className="auth-hint-card">
+            <section className="hint-block">
               <p>
-                JWT issuer/audience для demo-подписи:
-                <strong>
-                  {" "}
-                  {jwtMeta.issuer} / {jwtMeta.audience}
-                </strong>
+                JWT issuer/audience: <strong>{jwtMeta.issuer}</strong> /{" "}
+                <strong>{jwtMeta.audience}</strong>
               </p>
               <p>
-                Выбранный пользователь:
+                Выбран пользователь:{" "}
                 <strong>
-                  {" "}
                   {selectedDemoUser.displayName} ({selectedDemoUser.userId})
                 </strong>
               </p>
-            </div>
+            </section>
 
             <button
               type="button"
@@ -220,7 +202,7 @@ export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
               onClick={handleDemoSignIn}
               data-testid="auth-demo-submit"
             >
-              Войти В Платформу
+              Войти
             </button>
           </>
         ) : (
@@ -238,7 +220,7 @@ export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
 
             <div className="grid-2">
               <label className="field">
-                <span>Display Name</span>
+                <span>Display name</span>
                 <input
                   className="input"
                   value={manualDisplayName}
@@ -259,7 +241,7 @@ export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
 
             <div className="grid-2">
               <label className="field">
-                <span>UI Role</span>
+                <span>UI role</span>
                 <select
                   className="input"
                   value={manualRole}
@@ -279,7 +261,7 @@ export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
                   className="input"
                   value={manualUserId}
                   onChange={(event) => setManualUserId(event.target.value)}
-                  placeholder="GUID; если пусто, берётся из JWT sub"
+                  placeholder="GUID (если пусто, берется из JWT sub)"
                   data-testid="auth-manual-user-id"
                 />
               </label>
@@ -292,7 +274,7 @@ export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
               onClick={handleManualSignIn}
               data-testid="auth-manual-submit"
             >
-              Продолжить С JWT
+              Продолжить
             </button>
           </>
         )}

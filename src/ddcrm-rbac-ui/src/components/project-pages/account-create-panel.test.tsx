@@ -27,7 +27,7 @@ vi.mock("@/lib/api-client", async () => {
   };
 });
 
-function renderPanel() {
+function renderPanel(activeRole: "owner" | "admin" | "moderator" = "owner") {
   const queryClient = new QueryClient({
     defaultOptions: {
       queries: {
@@ -44,6 +44,7 @@ function renderPanel() {
       <ProjectAccountCreatePanel
         apiSession={{ baseUrl: "http://localhost:5073", token: "token" }}
         projectId="project-1"
+        activeRole={activeRole}
       />
     </QueryClientProvider>,
   );
@@ -163,5 +164,15 @@ describe("ProjectAccountCreatePanel", () => {
     await waitFor(() => {
       expect(pushMock).toHaveBeenCalledWith("/projects/project-1/accounts");
     });
+  });
+
+  it("для moderator показывает запрет на создание аккаунта", () => {
+    renderPanel("moderator");
+
+    expect(
+      screen.getByText("Недостаточно прав для добавления аккаунтов в проект."),
+    ).toBeInTheDocument();
+    expect(listProjectAccountTypesRequest).not.toHaveBeenCalled();
+    expect(createAccountRequest).not.toHaveBeenCalled();
   });
 });

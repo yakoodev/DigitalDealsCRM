@@ -41,6 +41,8 @@ public sealed class CoreApiFactory : WebApplicationFactory<Program>
                 ["EXTERNAL_API_CORS_ALLOW_HEADERS"] = "Authorization,Content-Type,Idempotency-Key,X-Request-Id",
                 ["EXTERNAL_API_CORS_EXPOSE_HEADERS"] = "X-Request-Id",
                 ["EXTERNAL_API_CORS_MAX_AGE_SECONDS"] = "600",
+                ["EXTERNAL_API_SYSTEM_PERMISSION_CLAIM_TYPE"] = "ddcrm.system.permissions",
+                ["EXTERNAL_API_SYSTEM_PERMISSION_CLAIM_VALUE"] = "system.accountManager.manage",
                 ["TEST_USE_INMEMORY_DB"] = "true",
                 ["TEST_INMEMORY_DB_NAME"] = $"core-tests-{Guid.NewGuid():N}",
             });
@@ -66,16 +68,48 @@ public sealed class CoreApiFactory : WebApplicationFactory<Program>
         });
     }
 
-    public string CreateToken(Guid userId)
+    public string CreateToken(Guid userId, bool includeSystemPermission = false)
     {
         var credentials = new SigningCredentials(
             new SymmetricSecurityKey(Encoding.UTF8.GetBytes(SigningKey)),
             SecurityAlgorithms.HmacSha256);
 
-        var claims = new[]
+        var claims = new List<Claim>
         {
             new Claim(JwtRegisteredClaimNames.Sub, userId.ToString()),
         };
+
+        if (includeSystemPermission)
+        {
+            claims.Add(new Claim("ddcrm.system.permissions", "system.accountManager.manage"));
+        }
+
+        var token = new JwtSecurityToken(
+            issuer: Issuer,
+            audience: Audience,
+            claims: claims,
+            notBefore: DateTime.UtcNow.AddMinutes(-1),
+            expires: DateTime.UtcNow.AddHours(1),
+            signingCredentials: credentials);
+
+        return new JwtSecurityTokenHandler().WriteToken(token);
+    }
+
+    public string CreateToken(Guid userId, params string[] systemPermissions)
+    {
+        var credentials = new SigningCredentials(
+            new SymmetricSecurityKey(Encoding.UTF8.GetBytes(SigningKey)),
+            SecurityAlgorithms.HmacSha256);
+
+        var claims = new List<Claim>
+        {
+            new Claim(JwtRegisteredClaimNames.Sub, userId.ToString()),
+        };
+
+        if (systemPermissions.Length > 0)
+        {
+            claims.Add(new Claim("ddcrm.system.permissions", string.Join(' ', systemPermissions)));
+        }
 
         var token = new JwtSecurityToken(
             issuer: Issuer,

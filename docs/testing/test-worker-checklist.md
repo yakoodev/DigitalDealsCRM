@@ -17,6 +17,7 @@
 ## 2. Проверка профиля возможностей
 - активный capability-профиль (`TW-CAP-*`) опубликован в `/internal/v2/worker/capabilities`;
 - активный provider-профиль опубликован в `/internal/v2/worker/capabilities` (`provider`) и `/internal/v2/worker/account`;
+- операции с `features=false` в `/internal/v2/worker/capabilities` отклоняются worker runtime-ом с `409/WORKER_RUNTIME_CONFLICT`;
 - выбранный сценарий совместим с активным capability-профилем;
 - тесты Gateway не отправляют action вне объявленного capability-набора.
 

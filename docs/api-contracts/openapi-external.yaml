@@ -18,6 +18,7 @@ tags:
   - name: projects
   - name: members
   - name: accounts
+  - name: admin
   - name: billing
   - name: gateway-proxy
 
@@ -228,6 +229,100 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/AccountTypeListResponse'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /v1/admin/account-manager/worker-servers:
+    get:
+      tags: [admin]
+      operationId: adminListWorkerServers
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Worker servers для системной админки
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminWorkerServerListResponse'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /v1/admin/account-manager/worker-servers/{serverId}:
+    put:
+      tags: [admin]
+      operationId: adminUpsertWorkerServer
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: serverId
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 120
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminWorkerServerUpsertRequest'
+      responses:
+        '200':
+          description: Worker server upserted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminWorkerServerResponse'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /v1/admin/account-manager/account-types:
+    get:
+      tags: [admin]
+      operationId: adminListAccountTypes
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Account type templates для системной админки
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminAccountTypeListResponse'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /v1/admin/account-manager/account-types/{accountTypeId}:
+    put:
+      tags: [admin]
+      operationId: adminUpsertAccountType
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: accountTypeId
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 120
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminAccountTypeUpsertRequest'
+      responses:
+        '200':
+          description: Account type upserted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminAccountTypeResponse'
         default:
           $ref: '#/components/responses/Error'
 
@@ -601,6 +696,205 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/AccountTypeField'
+
+    AdminAccountTypeRuntime:
+      type: object
+      required:
+        - autospawnEnabled
+        - workerImage
+        - workerPathPrefix
+        - healthPath
+        - containerPort
+        - environmentVariables
+      properties:
+        autospawnEnabled:
+          type: boolean
+        workerImage:
+          type: string
+        workerPathPrefix:
+          type: string
+        healthPath:
+          type: string
+        containerPort:
+          type: integer
+          minimum: 1
+          maximum: 65535
+        environmentVariables:
+          type: object
+          additionalProperties:
+            type: string
+
+    AdminAccountType:
+      allOf:
+        - $ref: '#/components/schemas/AccountType'
+        - type: object
+          required: [runtime]
+          properties:
+            runtime:
+              $ref: '#/components/schemas/AdminAccountTypeRuntime'
+
+    AdminAccountTypeUpsertRequest:
+      type: object
+      properties:
+        platform:
+          type: string
+        displayName:
+          type: string
+        description:
+          type: string
+        workerProfileId:
+          type: string
+        enabled:
+          type: boolean
+        sortOrder:
+          type: integer
+        formFields:
+          type: array
+          items:
+            $ref: '#/components/schemas/AccountTypeField'
+        runtime:
+          $ref: '#/components/schemas/AdminAccountTypeRuntime'
+
+    AdminAccountTypeResponse:
+      allOf:
+        - $ref: '#/components/schemas/RequestMeta'
+        - type: object
+          required: [accountType]
+          properties:
+            accountType:
+              $ref: '#/components/schemas/AdminAccountType'
+
+    AdminAccountTypeListResponse:
+      allOf:
+        - $ref: '#/components/schemas/RequestMeta'
+        - type: object
+          required: [items]
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/AdminAccountType'
+
+    AdminWorkerServer:
+      type: object
+      required:
+        - serverId
+        - baseUrlTemplate
+        - status
+        - health
+        - capacity
+        - currentLoad
+        - registry
+        - metadata
+      properties:
+        serverId:
+          type: string
+        baseUrlTemplate:
+          type: string
+        status:
+          type: string
+          enum: [active, draining, inactive]
+        health:
+          type: string
+          enum: [healthy, degraded, unhealthy]
+        capacity:
+          type: integer
+          minimum: 0
+        currentLoad:
+          type: integer
+          minimum: 0
+        dockerHost:
+          type: [string, 'null']
+        dockerNetwork:
+          type: [string, 'null']
+        lastHeartbeatAtUtc:
+          type: [string, 'null']
+          format: date-time
+        registry:
+          $ref: '#/components/schemas/AdminWorkerServerRegistrySummary'
+        metadata:
+          type: object
+          additionalProperties: true
+
+    AdminWorkerServerRegistrySummary:
+      type: object
+      required: [enabled, host, hasToken]
+      properties:
+        enabled:
+          type: boolean
+        host:
+          type: string
+          example: ghcr.io
+        username:
+          type: [string, 'null']
+        hasToken:
+          type: boolean
+        tokenUpdatedAtUtc:
+          type: [string, 'null']
+          format: date-time
+
+    AdminWorkerServerRegistryUpsertRequest:
+      type: object
+      properties:
+        enabled:
+          type: boolean
+        host:
+          type: string
+          example: ghcr.io
+        username:
+          type: string
+        token:
+          type: string
+          writeOnly: true
+        clearToken:
+          type: boolean
+
+    AdminWorkerServerUpsertRequest:
+      type: object
+      properties:
+        baseUrlTemplate:
+          type: string
+        status:
+          type: string
+          enum: [active, draining, inactive]
+        health:
+          type: string
+          enum: [healthy, degraded, unhealthy]
+        capacity:
+          type: integer
+          minimum: 0
+        currentLoad:
+          type: integer
+          minimum: 0
+        dockerHost:
+          type: string
+        dockerNetwork:
+          type: string
+        registry:
+          $ref: '#/components/schemas/AdminWorkerServerRegistryUpsertRequest'
+        metadata:
+          type: object
+          additionalProperties: true
+
+    AdminWorkerServerResponse:
+      allOf:
+        - $ref: '#/components/schemas/RequestMeta'
+        - type: object
+          required: [workerServer]
+          properties:
+            workerServer:
+              $ref: '#/components/schemas/AdminWorkerServer'
+
+    AdminWorkerServerListResponse:
+      allOf:
+        - $ref: '#/components/schemas/RequestMeta'
+        - type: object
+          required: [items]
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/AdminWorkerServer'
 
     Account:
       type: object

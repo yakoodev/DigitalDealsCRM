@@ -21,7 +21,9 @@
 
 ## 3. Интеграционные проверки
 - route/lifecycle endpoint-ы согласованы с актуальной логикой Accounts Manager;
-- worker-control endpoint-ы (`worker-servers`, `account-types`, `heartbeat`, `lifecycle/rebalance`) согласованы с placement-политикой, onboarding-каталогом и load/capacity/health инвариантами;
+- worker-control endpoint-ы (`worker-servers`, `account-types`, `account-types/{accountTypeId}`, `heartbeat`, `lifecycle/rebalance`) согласованы с placement-политикой, onboarding-каталогом, Docker-autospawn runtime-template и load/capacity/health инвариантами;
+- `worker-servers` поддерживает registry-конфиг GHCR с write-only token update/clear (токен не возвращается в `GET`/`PUT` response);
+- lifecycle create/migrate при отсутствии локального образа выполняют `pull-if-missing` через Docker Engine с per-server GHCR credentials;
 - billing/entitlement endpoint-ы согласованы с актуальной логикой коммерческого контура;
 - IAM endpoint-ы согласованы с текущей моделью membership/permission.
 
@@ -36,3 +38,4 @@
 - `409` конфликт состояния для конфликтных mutating-операций;
 - `400/422` на невалидное тело запроса и несовместимый schema payload;
 - идемпотентный повтор mutating-запроса не приводит к повторному побочному эффекту.
+- детерминированная ошибка конфигурации при `ghcr.io` image и отсутствующих/некорректных registry credentials.

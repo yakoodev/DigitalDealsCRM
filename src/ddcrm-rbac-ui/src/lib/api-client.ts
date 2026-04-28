@@ -15,6 +15,7 @@ import {
   createAccount,
   createPayment,
   createProject,
+  deleteAccount,
   getAccountProxyCredentialsMasked,
   listAccounts,
   listProjectAccountTypes,
@@ -23,6 +24,7 @@ import {
   purchaseAddon,
   revealAccountProxyCredentials,
   removeMember,
+  updateAccount,
   updateAccountProxyCredentials,
 } from "@/generated/external-api";
 import { createIdempotencyKey } from "@/lib/idempotency";
@@ -33,6 +35,72 @@ export interface ApiSession {
 }
 
 export type ProjectAccountType = AccountType;
+
+export interface AdminWorkerServer {
+  serverId: string;
+  baseUrlTemplate: string;
+  status: "active" | "draining" | "inactive";
+  health: "healthy" | "degraded" | "unhealthy";
+  capacity: number;
+  currentLoad: number;
+  dockerHost?: string | null;
+  dockerNetwork?: string | null;
+  lastHeartbeatAtUtc?: string | null;
+  registry: AdminWorkerServerRegistrySummary;
+  metadata: Record<string, unknown>;
+}
+
+export interface AdminWorkerServerRegistrySummary {
+  enabled: boolean;
+  host: string;
+  username?: string | null;
+  hasToken: boolean;
+  tokenUpdatedAtUtc?: string | null;
+}
+
+export interface AdminWorkerServerRegistryUpsertPayload {
+  enabled?: boolean;
+  host?: string;
+  username?: string;
+  token?: string;
+  clearToken?: boolean;
+}
+
+export interface AdminWorkerServerUpsertPayload {
+  baseUrlTemplate?: string;
+  status?: AdminWorkerServer["status"];
+  health?: AdminWorkerServer["health"];
+  capacity?: number;
+  currentLoad?: number;
+  dockerHost?: string;
+  dockerNetwork?: string;
+  registry?: AdminWorkerServerRegistryUpsertPayload;
+  metadata?: Record<string, unknown>;
+}
+
+export interface AdminAccountTypeRuntime {
+  autospawnEnabled: boolean;
+  workerImage: string;
+  workerPathPrefix: string;
+  healthPath: string;
+  containerPort: number;
+  environmentVariables: Record<string, string>;
+}
+
+export interface AdminAccountType extends ProjectAccountType {
+  runtime: AdminAccountTypeRuntime;
+}
+
+export interface AdminAccountTypeUpsertPayload {
+  platform?: string;
+  displayName?: string;
+  description?: string;
+  workerProfileId?: string;
+  enabled?: boolean;
+  sortOrder?: number;
+  formFields?: ProjectAccountType["formFields"];
+  runtime?: AdminAccountTypeRuntime;
+}
 
 interface ProxyCredentialsUpdateInput {
   reason: string;
@@ -48,6 +116,26 @@ type ApiResponseEnvelope<TSuccess> = {
   status: number;
   headers: Headers;
 };
+
+interface AdminWorkerServerListEnvelope {
+  requestId: string;
+  items: AdminWorkerServer[];
+}
+
+interface AdminWorkerServerEnvelope {
+  requestId: string;
+  workerServer: AdminWorkerServer;
+}
+
+interface AdminAccountTypeListEnvelope {
+  requestId: string;
+  items: AdminAccountType[];
+}
+
+interface AdminAccountTypeEnvelope {
+  requestId: string;
+  accountType: AdminAccountType;
+}
 
 function resolveRequestId(headers: Headers, fallback?: string) {
   const headerValue = headers.get("x-request-id")?.trim();
@@ -141,6 +229,38 @@ function unwrapOrThrow<TSuccess>(response: ApiResponseEnvelope<TSuccess>): TSucc
   const message = errorPayload?.message ?? "Неизвестная ошибка API.";
 
   throw new Error(`${errorCode}: ${message} (requestId: ${requestId})`);
+}
+
+async function requestAdminEnvelope<TSuccess>(
+  session: ApiSession,
+  path: string,
+  init: {
+    method: "GET" | "PUT";
+    body?: unknown;
+    idempotent?: boolean;
+  },
+) {
+  const requestInit = buildRequestInit(session, init.idempotent ?? false);
+  const headers = new Headers(requestInit.headers);
+  let body: string | undefined;
+  if (typeof init.body !== "undefined") {
+    headers.set("Content-Type", "application/json");
+    body = JSON.stringify(init.body);
+  }
+
+  const response = await createBaseUrlFetcher(session.baseUrl)(path, {
+    method: init.method,
+    headers,
+    body,
+  });
+  const raw = await response.text();
+  const data = raw ? (JSON.parse(raw) as TSuccess | ErrorResponse) : ({} as TSuccess);
+
+  return unwrapOrThrow({
+    data,
+    status: response.status,
+    headers: response.headers,
+  });
 }
 
 export async function listProjectsRequest(session: ApiSession): Promise<Project[]> {
@@ -238,6 +358,70 @@ export async function listProjectAccountTypesRequest(
   return unwrapOrThrow(response).items;
 }
 
+export async function listAdminWorkerServersRequest(
+  session: ApiSession,
+): Promise<AdminWorkerServer[]> {
+  const response = await requestAdminEnvelope<AdminWorkerServerListEnvelope>(
+    session,
+    "/v1/admin/account-manager/worker-servers",
+    {
+      method: "GET",
+    },
+  );
+
+  return response.items ?? [];
+}
+
+export async function upsertAdminWorkerServerRequest(
+  session: ApiSession,
+  serverId: string,
+  payload: AdminWorkerServerUpsertPayload,
+): Promise<AdminWorkerServer> {
+  const response = await requestAdminEnvelope<AdminWorkerServerEnvelope>(
+    session,
+    `/v1/admin/account-manager/worker-servers/${encodeURIComponent(serverId)}`,
+    {
+      method: "PUT",
+      body: payload,
+      idempotent: true,
+    },
+  );
+
+  return response.workerServer;
+}
+
+export async function listAdminAccountTypesRequest(
+  session: ApiSession,
+): Promise<AdminAccountType[]> {
+  const response = await requestAdminEnvelope<AdminAccountTypeListEnvelope>(
+    session,
+    "/v1/admin/account-manager/account-types",
+    {
+      method: "GET",
+    },
+  );
+
+  return response.items ?? [];
+}
+
+export async function upsertAdminAccountTypeRequest(
+  session: ApiSession,
+  accountTypeId: string,
+  payload: AdminAccountTypeUpsertPayload,
+): Promise<AdminAccountType> {
+  const response = await requestAdminEnvelope<AdminAccountTypeEnvelope>(
+    session,
+    `/v1/admin/account-manager/account-types/${encodeURIComponent(accountTypeId)}`,
+    {
+      method: "PUT",
+      body: payload,
+      idempotent: true,
+    },
+  );
+
+  return response.accountType;
+}
+
 export async function createAccountRequest(
   session: ApiSession,
   projectId: string,
@@ -251,6 +435,38 @@ export async function createAccountRequest(
   );
 
   return unwrapOrThrow(response).account;
+}
+
+export async function updateAccountRequest(
+  session: ApiSession,
+  projectId: string,
+  accountId: string,
+  payload: GenericObjectRequest,
+): Promise<Account> {
+  const response = await updateAccount(
+    projectId,
+    accountId,
+    payload,
+    buildRequestInit(session, true),
+    createBaseUrlFetcher(session.baseUrl),
+  );
+
+  return unwrapOrThrow(response).account;
+}
+
+export async function deleteAccountRequest(
+  session: ApiSession,
+  projectId: string,
+  accountId: string,
+) {
+  const response = await deleteAccount(
+    projectId,
+    accountId,
+    buildRequestInit(session, true),
+    createBaseUrlFetcher(session.baseUrl),
+  );
+
+  return unwrapOrThrow(response);
 }
 
 export async function getMaskedProxyCredentialsRequest(

@@ -1,35 +1,27 @@
 "use client";
 
-import { useParams } from "next/navigation";
-import { ProjectAccountCreatePanel } from "@/components/project-pages/account-create-panel";
-import { ProjectShell } from "@/components/project-shell";
+import { useEffect } from "react";
+import { useParams, useRouter } from "next/navigation";
 import { useSessionGuard } from "@/lib/use-session-guard";
 
-export default function ProjectAccountCreateRoute() {
+export default function LegacyAccountCreateRoute() {
+  const { session } = useSessionGuard();
+  const router = useRouter();
   const params = useParams<{ projectId: string }>();
-  const projectId = params.projectId;
-  const { session, logout } = useSessionGuard();
 
-  if (!session) {
-    return (
-      <main className="workspace-layout">
-        <section className="workspace-main-card">
-          <h1>Проверяем сессию...</h1>
-        </section>
-      </main>
-    );
-  }
+  useEffect(() => {
+    if (!session) {
+      return;
+    }
+
+    router.replace(`/projects/${params.projectId}/accounts?modal=create`);
+  }, [params.projectId, router, session]);
 
   return (
-    <ProjectShell
-      session={session}
-      projectId={projectId}
-      activeTab="accounts"
-      onLogout={logout}
-    >
-      {({ apiSession, project }) => (
-        <ProjectAccountCreatePanel apiSession={apiSession} projectId={project.id} />
-      )}
-    </ProjectShell>
+    <main className="loading-shell">
+      <section className="glass-card">
+        <h1>Открываем форму добавления аккаунта...</h1>
+      </section>
+    </main>
   );
 }

@@ -49,6 +49,10 @@ namespace DDCRM.AccountsManager.Persistence.Migrations
                         .HasMaxLength(80)
                         .HasColumnType("character varying(80)");
 
+                    b.Property<string>("RuntimeConfigJson")
+                        .HasMaxLength(12000)
+                        .HasColumnType("character varying(12000)");
+
                     b.Property<int>("SortOrder")
                         .HasColumnType("integer");
 
@@ -176,6 +180,14 @@ namespace DDCRM.AccountsManager.Persistence.Migrations
                     b.Property<int>("CurrentLoad")
                         .HasColumnType("integer");
 
+                    b.Property<string>("DockerHost")
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)");
+
+                    b.Property<string>("DockerNetwork")
+                        .HasMaxLength(160)
+                        .HasColumnType("character varying(160)");
+
                     b.Property<string>("Health")
                         .IsRequired()
                         .HasMaxLength(32)
@@ -187,6 +199,24 @@ namespace DDCRM.AccountsManager.Persistence.Migrations
                     b.Property<string>("MetadataJson")
                         .HasMaxLength(4000)
                         .HasColumnType("character varying(4000)");
+
+                    b.Property<bool>("RegistryEnabled")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("RegistryHost")
+                        .HasMaxLength(160)
+                        .HasColumnType("character varying(160)");
+
+                    b.Property<string>("RegistryTokenEncrypted")
+                        .HasMaxLength(8000)
+                        .HasColumnType("character varying(8000)");
+
+                    b.Property<DateTimeOffset?>("RegistryTokenUpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("RegistryUsername")
+                        .HasMaxLength(160)
+                        .HasColumnType("character varying(160)");
 
                     b.Property<string>("Status")
                         .IsRequired()

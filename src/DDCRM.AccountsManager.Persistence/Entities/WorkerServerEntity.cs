@@ -21,6 +21,25 @@ public sealed class WorkerServerEntity
 
     public int CurrentLoad { get; set; }
 
+    [MaxLength(512)]
+    public string? DockerHost { get; set; }
+
+    [MaxLength(160)]
+    public string? DockerNetwork { get; set; }
+
+    public bool RegistryEnabled { get; set; }
+
+    [MaxLength(160)]
+    public string? RegistryHost { get; set; }
+
+    [MaxLength(160)]
+    public string? RegistryUsername { get; set; }
+
+    [MaxLength(8000)]
+    public string? RegistryTokenEncrypted { get; set; }
+
+    public DateTimeOffset? RegistryTokenUpdatedAtUtc { get; set; }
+
     [MaxLength(4000)]
     public string? MetadataJson { get; set; }
 

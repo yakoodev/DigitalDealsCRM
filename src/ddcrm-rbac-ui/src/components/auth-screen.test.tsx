@@ -48,6 +48,9 @@ describe("AuthScreen", () => {
     listProjectsRequestMock.mockResolvedValue([]);
 
     render(<AuthScreen onAuthenticated={onAuthenticated} />);
+    expect(screen.getByTestId("theme-option-system")).toBeInTheDocument();
+    expect(screen.getByTestId("theme-option-light")).toBeInTheDocument();
+    expect(screen.getByTestId("theme-option-dark")).toBeInTheDocument();
 
     await user.click(screen.getByTestId("auth-demo-submit"));
 

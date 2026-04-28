@@ -16,19 +16,36 @@ interface SessionGuardState {
 export function useSessionGuard(): SessionGuardState {
   const router = useRouter();
   const pathname = usePathname();
-  const [session, setSession] = useState<PlatformSession | null>(() =>
-    readStoredSession(),
-  );
+  const [session, setSession] = useState<PlatformSession | null>(null);
+  const [isInitialized, setIsInitialized] = useState(false);
 
-  const redirectTarget = useMemo(() => pathname, [pathname]);
+  const redirectTarget = useMemo(() => {
+    if (typeof window === "undefined") {
+      return pathname;
+    }
+
+    const nextSearch = window.location.search;
+    return nextSearch ? `${pathname}${nextSearch}` : pathname;
+  }, [pathname]);
 
   useEffect(() => {
-    if (session) {
+    const timer = window.setTimeout(() => {
+      setSession(readStoredSession());
+      setIsInitialized(true);
+    }, 0);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!isInitialized || session) {
       return;
     }
 
     router.replace(`/login?next=${encodeURIComponent(redirectTarget)}`);
-  }, [redirectTarget, router, session]);
+  }, [isInitialized, redirectTarget, router, session]);
 
   const logout = () => {
     clearStoredSession();

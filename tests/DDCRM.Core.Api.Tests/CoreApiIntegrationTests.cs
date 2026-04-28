@@ -139,15 +139,135 @@ public sealed class CoreApiIntegrationTests(CoreApiFactory factory) : IClassFixt
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
         using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-        var items = json.RootElement.GetProperty("items");
-        Assert.Single(items.EnumerateArray());
+        var items = json.RootElement
+            .GetProperty("items")
+            .EnumerateArray()
+            .ToArray();
 
-        var first = items[0];
-        Assert.Equal("test-worker.funpay", first.GetProperty("accountTypeId").GetString());
-        Assert.Equal("funpay", first.GetProperty("platform").GetString());
-        Assert.Equal("test-worker", first.GetProperty("workerProfileId").GetString());
-        Assert.True(first.GetProperty("enabled").GetBoolean());
-        Assert.True(first.GetProperty("formFields").GetArrayLength() >= 5);
+        Assert.Equal(4, items.Length);
+
+        var accountTypeIds = items
+            .Select(x => x.GetProperty("accountTypeId").GetString() ?? string.Empty)
+            .ToArray();
+        Assert.Equal(
+            ["test-worker.funpay", "test-worker.playerok", "test-worker.ggsell", "test-worker.platimarket"],
+            accountTypeIds);
+
+        foreach (var item in items)
+        {
+            Assert.Equal("test-worker", item.GetProperty("workerProfileId").GetString());
+            Assert.True(item.GetProperty("enabled").GetBoolean());
+            Assert.True(item.GetProperty("formFields").GetArrayLength() >= 5);
+        }
+    }
+
+    [Fact]
+    [Trait("Category", "Security")]
+    public async Task AdminAccountManagerEndpoints_WithoutSystemPermission_AreForbidden()
+    {
+        using var client = CreateAuthorizedClient(Guid.NewGuid(), withSystemPermission: false);
+
+        var response = await client.GetAsync("/v1/admin/account-manager/account-types");
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    [Trait("Category", "Integration")]
+    public async Task AdminAccountManagerEndpoints_WithSystemPermission_Work()
+    {
+        factory.AccountsManagerClient.Reset();
+        using var client = CreateAuthorizedClient(Guid.NewGuid(), withSystemPermission: true);
+
+        var serversResponse = await client.GetAsync("/v1/admin/account-manager/worker-servers");
+        Assert.Equal(HttpStatusCode.OK, serversResponse.StatusCode);
+
+        var serverUpsertResponse = await SendJsonAsync(
+            client,
+            HttpMethod.Put,
+            "/v1/admin/account-manager/worker-servers/srv-admin-a",
+            Guid.NewGuid().ToString("N"),
+            new
+            {
+                baseUrlTemplate = "http://{workerId}:{workerPort}",
+                status = "active",
+                health = "healthy",
+                capacity = 20,
+                currentLoad = 1,
+                dockerHost = "unix:///var/run/docker.sock",
+                dockerNetwork = "ddcrm_ddcrm",
+                registry = new
+                {
+                    enabled = true,
+                    host = "ghcr.io",
+                    username = "demo-user",
+                    token = "ghp_demo_token",
+                },
+                metadata = new
+                {
+                    region = "eu",
+                },
+            });
+        Assert.Equal(HttpStatusCode.OK, serverUpsertResponse.StatusCode);
+        Assert.Single(factory.AccountsManagerClient.UpsertWorkerServerCalls);
+        using (var workerServerJson = JsonDocument.Parse(await serverUpsertResponse.Content.ReadAsStringAsync()))
+        {
+            var registry = workerServerJson.RootElement
+                .GetProperty("workerServer")
+                .GetProperty("registry");
+            Assert.True(registry.GetProperty("enabled").GetBoolean());
+            Assert.Equal("ghcr.io", registry.GetProperty("host").GetString());
+            Assert.Equal("demo-user", registry.GetProperty("username").GetString());
+            Assert.True(registry.GetProperty("hasToken").GetBoolean());
+            Assert.False(registry.TryGetProperty("token", out _));
+        }
+
+        var upsertCall = factory.AccountsManagerClient.UpsertWorkerServerCalls.Single();
+        Assert.Equal("ghp_demo_token", upsertCall.Input.Registry?.Token);
+
+        var accountTypesResponse = await client.GetAsync("/v1/admin/account-manager/account-types");
+        Assert.Equal(HttpStatusCode.OK, accountTypesResponse.StatusCode);
+
+        var accountTypeUpsertResponse = await SendJsonAsync(
+            client,
+            HttpMethod.Put,
+            "/v1/admin/account-manager/account-types/test-worker.funpay",
+            Guid.NewGuid().ToString("N"),
+            new
+            {
+                platform = "funpay",
+                displayName = "FunPay runtime profile",
+                description = "Updated by admin",
+                workerProfileId = "test-worker",
+                enabled = true,
+                sortOrder = 10,
+                formFields = new[]
+                {
+                    new
+                    {
+                        key = "displayName",
+                        label = "Название аккаунта",
+                        inputType = "text",
+                        required = true,
+                        secret = false,
+                        placeholder = "FunPay account",
+                        defaultValue = "FunPay account",
+                    },
+                },
+                runtime = new
+                {
+                    autospawnEnabled = true,
+                    workerImage = "ddcrm/worker-api:local",
+                    workerPathPrefix = "/internal/v2/worker",
+                    healthPath = "/health",
+                    containerPort = 8080,
+                    environmentVariables = new
+                    {
+                        TEST_WORKER_PROVIDER = "funpay",
+                    },
+                },
+            });
+        Assert.Equal(HttpStatusCode.OK, accountTypeUpsertResponse.StatusCode);
+        Assert.Single(factory.AccountsManagerClient.UpsertAccountTypeCalls);
     }
 
     [Fact]
@@ -625,10 +745,12 @@ public sealed class CoreApiIntegrationTests(CoreApiFactory factory) : IClassFixt
         Assert.Empty(factory.BillingClient.CreatePaymentCalls);
     }
 
-    private HttpClient CreateAuthorizedClient(Guid userId)
+    private HttpClient CreateAuthorizedClient(Guid userId, bool withSystemPermission = false)
     {
         var client = factory.CreateClient();
-        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", factory.CreateToken(userId));
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
+            "Bearer",
+            factory.CreateToken(userId, withSystemPermission));
         return client;
     }
 

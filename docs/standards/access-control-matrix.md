@@ -39,7 +39,12 @@
 ## 4. Системные админы DDCRM
 Это отдельная сущность, не совпадающая с проектными ролями.
 
+Правило:
+- доступ к `/v1/admin/*` определяется только системными правами;
+- проектные роли (`owner/admin/moderator`) сами по себе не дают доступ к системным admin endpoint-ам.
+
 Права системного админа:
+- `system.accountManager.manage`
 - `system.plans.manage`
 - `system.limits.manage`
 - `system.entitlements.override`

@@ -16,10 +16,14 @@
 ## 2. Конвенции env-переменных
 - `EXTERNAL_API_CORS_*` — переменные CORS-контура external API;
 - `EXTERNAL_API_JWT_*` — переменные валидации bearer JWT для external API;
+- `EXTERNAL_API_SYSTEM_PERMISSION_*` — переменные проверки system-claim для `external` admin endpoint-ов (`/v1/admin/*`);
 - `INTERNAL_API_SERVICE_AUTH_*` — переменные service-auth контура internal API;
 - `WORKER_API_SERVICE_AUTH_*` — переменные service-auth контура worker API;
 - `WORKER_PROXY_CREDENTIALS_ENCRYPTION_KEY` — ключ шифрования proxy credentials в worker state storage;
 - `WORKER_CONTROL_CLIENT_*` — переменные internal worker-control client-а (service-to-service вызовы internal -> worker);
+- `ACCOUNT_MANAGER_AUTOSPAWN_*` — переменные Docker-autospawn orchestration в Accounts Manager;
+- `ACCOUNT_MANAGER_AUTOSPAWN_REGISTRY_*` — переменные secret-handling для registry credentials в Accounts Manager (`worker-servers` GHCR auth, write-only storage);
+- порт worker runtime выбирается Accounts Manager автоматически: приоритет `account-types.runtime.containerPort`, fallback `ACCOUNT_MANAGER_AUTOSPAWN_WORKER_INTERNAL_PORT` (ручная настройка порта на уровне `worker-servers` не используется);
 - `TEST_WORKER_*` — переменные управления тестовым воркером по `docs/standards/test-worker-governance.md`;
 - `TEST_WORKER_PROVIDER` — выбор provider-профиля симулятора (`funpay/playerok/ggsell/platimarket`);
 - `TEST_WORKER_INSTANCE_ID` — метка инстанса симулятора для диагностики и агрегации данных multi-worker в UI;
@@ -41,6 +45,9 @@
 - значения токенов и секретов в production не хранятся в git;
 - `.env.*.example` содержат только шаблонные значения;
 - реальные значения должны поставляться через secret manager/CI variables.
+- при `ACCOUNT_MANAGER_AUTOSPAWN_ENABLED=true` Docker endpoint/socket (`ACCOUNT_MANAGER_AUTOSPAWN_DOCKER_ENDPOINT`) должен передаваться в runtime безопасным способом (socket mount/secret-managed host endpoint).
+- ключ `ACCOUNT_MANAGER_AUTOSPAWN_REGISTRY_SECRET_ENCRYPTION_KEY` обязателен для шифрования per-server registry токенов (не короче 32 символов, только secret storage);
+- registry токены из `worker-servers` сохраняются только в зашифрованном виде и никогда не возвращаются API-ответами (`write-only` поведение).
 
 ## 4. Процесс изменения
 - добавить/изменить переменную сначала в соответствующем `.env.*.example`;

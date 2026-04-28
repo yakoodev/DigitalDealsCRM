@@ -5,8 +5,8 @@ export default function LoginPage() {
   return (
     <Suspense
       fallback={
-        <main className="workspace-layout">
-          <section className="workspace-main-card">
+        <main className="loading-shell">
+          <section className="glass-card">
             <h1>Открываем форму входа...</h1>
           </section>
         </main>

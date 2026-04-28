@@ -1,21 +1,35 @@
 "use client";
 
-import { useEffect } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams } from "next/navigation";
+import { ProjectOverviewPanel } from "@/components/project-pages/project-overview-panel";
+import { ProjectShell } from "@/components/project-shell";
+import { useSessionGuard } from "@/lib/use-session-guard";
 
-export default function ProjectRootRedirectPage() {
-  const router = useRouter();
+export default function ProjectOverviewRoute() {
   const params = useParams<{ projectId: string }>();
+  const projectId = params.projectId;
+  const { session, logout } = useSessionGuard();
 
-  useEffect(() => {
-    router.replace(`/projects/${params.projectId}/accounts`);
-  }, [params.projectId, router]);
+  if (!session) {
+    return (
+      <main className="loading-shell">
+        <section className="glass-card">
+          <h1>Проверяем сессию...</h1>
+        </section>
+      </main>
+    );
+  }
 
   return (
-    <main className="workspace-layout">
-      <section className="workspace-main-card">
-        <h1>Открываем проект...</h1>
-      </section>
-    </main>
+    <ProjectShell
+      session={session}
+      projectId={projectId}
+      activeTab="overview"
+      onLogout={logout}
+    >
+      {({ apiSession, project }) => (
+        <ProjectOverviewPanel apiSession={apiSession} projectId={project.id} />
+      )}
+    </ProjectShell>
   );
 }

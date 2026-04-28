@@ -50,6 +50,9 @@
 - internal API недоступен без валидного `X-Service-Token`
 - worker API недоступен без валидного `X-Service-Token`
 - service-auth токены internal и worker контуров не переиспользуются между собой
+- `/v1/admin/account-manager/*` недоступен без JWT system-claim `system.accountManager.manage`
+- write-only токен registry (`/v1/admin/account-manager/worker-servers`) не возвращается в ответах/ошибках и корректно очищается через explicit clear-flag
+- Docker autospawn при отсутствии локального образа выполняет `GHCR pull-if-missing`, а при невалидных credentials возвращает детерминированную configuration error
 - action-key в Gateway валидируется по `docs/standards/worker-action-conventions.md`
 - external API корректно обрабатывает CORS preflight и применяет allowlist origins
 - CORS runtime-настройки external API читаются по `docs/standards/runtime-configuration.md`

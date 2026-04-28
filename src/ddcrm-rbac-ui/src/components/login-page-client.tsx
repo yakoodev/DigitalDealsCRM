@@ -12,7 +12,7 @@ export function LoginPageClient() {
   const nextPath = useMemo(() => {
     const candidate = searchParams.get("next");
     if (!candidate || !candidate.startsWith("/")) {
-      return "/projects";
+      return "/dashboard";
     }
 
     return candidate;

@@ -1,12 +1,23 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, waitFor } from "@testing-library/react";
-import { describe, expect, it, beforeEach, vi } from "vitest";
+import { render, screen, waitFor } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ProjectProductsPanel } from "@/components/project-pages/products-panel";
 import { runAccountActionRequest } from "@/lib/api-client";
 
 const accountState = {
   selectedAccountId: "acc-1",
 };
+
+vi.mock("@/hooks/use-route-modal", () => ({
+  useRouteModal: () => ({
+    modal: null,
+    accountId: "",
+    productId: "",
+    conversationId: "",
+    openModal: vi.fn(),
+    closeModal: vi.fn(),
+  }),
+}));
 
 vi.mock("@/hooks/use-project-accounts", () => ({
   useProjectAccounts: () => ({
@@ -93,5 +104,35 @@ describe("ProjectProductsPanel", () => {
         { limit: 100 },
       );
     });
+  });
+
+  it("показывает данные с доступных воркеров, даже если один аккаунт вернул ошибку", async () => {
+    vi.mocked(runAccountActionRequest).mockImplementation(
+      async (_session, accountId, action) => {
+        if (action !== "products.list") {
+          return {};
+        }
+
+        if (accountId === "acc-2") {
+          throw new Error("WORKER_UNAVAILABLE: route timeout");
+        }
+
+        return {
+          items: [
+            {
+              productId: "prod-1",
+              title: "Gold Pack",
+              price: 100,
+            },
+          ],
+        };
+      },
+    );
+
+    renderPanel();
+
+    expect(await screen.findByText("Gold Pack")).toBeInTheDocument();
+    expect(await screen.findByText("Часть воркеров недоступна")).toBeInTheDocument();
+    expect(await screen.findByText("WORKER_UNAVAILABLE: route timeout")).toBeInTheDocument();
   });
 });

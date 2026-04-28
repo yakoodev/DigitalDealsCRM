@@ -88,6 +88,7 @@ using (var scope = app.Services.CreateScope())
 
 var startedAtUtc = DateTimeOffset.UtcNow;
 var v2State = WorkerV2State.CreateDefault();
+var workerV2Features = ResolveWorkerV2FeatureMap(runtimeSettings.Provider);
 
 app.UseDdcrmCommonPipeline();
 app.UseServiceTokenAuth();
@@ -114,7 +115,6 @@ worker.MapGet("/capabilities", (HttpContext httpContext) =>
     var capabilityItems = runtimeSettings.Capabilities
         .Select(x => new CapabilityItem(x, true))
         .ToArray();
-    var features = ResolveWorkerV2FeatureMap(provider);
 
     if (runtimeSettings.Scenario == WorkerScenarioIds.ContractDrift)
     {
@@ -133,11 +133,12 @@ worker.MapGet("/capabilities", (HttpContext httpContext) =>
         });
     }
 
-    return Results.Ok(new WorkerV2CapabilitiesResponse(requestId, provider, features, capabilityItems));
+    return Results.Ok(new WorkerV2CapabilitiesResponse(requestId, provider, workerV2Features, capabilityItems));
 });
 
 worker.MapGet("/account", (HttpContext httpContext, TransientFailureState transientFailureState) =>
 {
+    EnsureWorkerV2FeatureEnabled(workerV2Features, "account.info");
     ApplyScenarioGuard(runtimeSettings, transientFailureState, "workerV2AccountInfo");
     var descriptor = ResolveWorkerV2AccountDescriptor(runtimeSettings.Provider);
 
@@ -309,6 +310,7 @@ workerV2.MapGet("/conversations", (
     bool? onlyUnread,
     TransientFailureState transientFailureState) =>
 {
+    EnsureWorkerV2FeatureEnabled(workerV2Features, "conversations.list");
     ApplyScenarioGuard(runtimeSettings, transientFailureState, "workerV2ConversationsList");
 
     if (runtimeSettings.Scenario == WorkerScenarioIds.MalformedPayload)
@@ -337,6 +339,8 @@ workerV2.MapGet("/conversations/{conversationId}/messages", (
     string? cursor,
     TransientFailureState transientFailureState) =>
 {
+    EnsureWorkerV2FeatureEnabled(workerV2Features, "conversations.messages.list");
+
     if (string.IsNullOrWhiteSpace(conversationId))
     {
         throw CreatePlatformError(StatusCodes.Status400BadRequest, "conversationId обязателен.");
@@ -362,6 +366,8 @@ workerV2.MapPost("/conversations/{conversationId}/messages", async (
     TransientFailureState transientFailureState,
     CancellationToken cancellationToken) =>
 {
+    EnsureWorkerV2FeatureEnabled(workerV2Features, "conversations.messages.send");
+
     if (string.IsNullOrWhiteSpace(conversationId))
     {
         throw CreatePlatformError(StatusCodes.Status400BadRequest, "conversationId обязателен.");
@@ -406,6 +412,7 @@ workerV2.MapGet("/products", async (
     TransientFailureState transientFailureState,
     CancellationToken cancellationToken) =>
 {
+    EnsureWorkerV2FeatureEnabled(workerV2Features, "products.list");
     ApplyScenarioGuard(runtimeSettings, transientFailureState, "workerV2ProductsList");
 
     var normalizedLimit = NormalizeLimit(limit);
@@ -439,6 +446,8 @@ workerV2.MapPost("/products", async (
     TransientFailureState transientFailureState,
     CancellationToken cancellationToken) =>
 {
+    EnsureWorkerV2FeatureEnabled(workerV2Features, "products.create");
+
     if (string.IsNullOrWhiteSpace(request.SchemaId))
     {
         throw CreatePlatformError(StatusCodes.Status400BadRequest, "schemaId обязателен.");
@@ -515,6 +524,8 @@ workerV2.MapPatch("/products/{productId}", async (
     TransientFailureState transientFailureState,
     CancellationToken cancellationToken) =>
 {
+    EnsureWorkerV2FeatureEnabled(workerV2Features, "products.update");
+
     if (string.IsNullOrWhiteSpace(productId))
     {
         throw CreatePlatformError(StatusCodes.Status400BadRequest, "productId обязателен.");
@@ -632,6 +643,8 @@ workerV2.MapDelete("/products/{productId}", async (
     TransientFailureState transientFailureState,
     CancellationToken cancellationToken) =>
 {
+    EnsureWorkerV2FeatureEnabled(workerV2Features, "products.delete");
+
     if (string.IsNullOrWhiteSpace(productId))
     {
         throw CreatePlatformError(StatusCodes.Status400BadRequest, "productId обязателен.");
@@ -1258,6 +1271,16 @@ static IReadOnlyDictionary<string, bool> ResolveWorkerV2FeatureMap(string provid
         ["products.delete"] = true,
     },
 };
+
+static void EnsureWorkerV2FeatureEnabled(IReadOnlyDictionary<string, bool> features, string featureKey)
+{
+    if (features.TryGetValue(featureKey, out var enabled) && enabled)
+    {
+        return;
+    }
+
+    throw CreateRuntimeConflict($"Операция `{featureKey}` отключена активным provider feature-map.");
+}
 
 static string NormalizeWorkerV2Provider(string? provider)
 {

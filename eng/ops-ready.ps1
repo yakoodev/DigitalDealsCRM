@@ -99,7 +99,7 @@ try {
         @{ Name = 'entitlement-api'; Url = 'http://localhost:5221/health'; Token = 'internal-token-a' },
         @{ Name = 'gateway-api'; Url = 'http://localhost:5068/health'; Token = $null },
         @{ Name = 'worker-api'; Url = 'http://localhost:5072/health'; Token = 'worker-token-a' },
-        @{ Name = 'ui'; Url = 'http://localhost:3000'; Token = $null }
+        @{ Name = 'ui'; Url = 'http://localhost:3400'; Token = $null }
     )
 
     Invoke-Step -Title 'ops:smoke:health-probes' -Action {

@@ -1,9 +1,22 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it, beforeEach, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ProjectMessagesPanel } from "@/components/project-pages/messages-panel";
 import { runAccountActionRequest } from "@/lib/api-client";
+
+const openModalMock = vi.fn();
+
+vi.mock("@/hooks/use-route-modal", () => ({
+  useRouteModal: () => ({
+    modal: null,
+    accountId: "",
+    productId: "",
+    conversationId: "",
+    openModal: openModalMock,
+    closeModal: vi.fn(),
+  }),
+}));
 
 vi.mock("@/hooks/use-project-accounts", () => ({
   useProjectAccounts: () => ({
@@ -66,6 +79,7 @@ function renderPanel() {
 
 describe("ProjectMessagesPanel", () => {
   beforeEach(() => {
+    openModalMock.mockReset();
     vi.mocked(runAccountActionRequest).mockReset();
     vi.mocked(runAccountActionRequest).mockImplementation(
       async (_session, accountId, action) => {
@@ -81,27 +95,12 @@ describe("ProjectMessagesPanel", () => {
           };
         }
 
-        if (action === "conversations.messages.list") {
-          return {
-            items: [
-              {
-                direction: "in",
-                text: "Привет!",
-              },
-            ],
-          };
-        }
-
-        if (action === "conversations.messages.send") {
-          return { status: "ok" };
-        }
-
         return {};
       },
     );
   });
 
-  it("автозагружает список переписок по всем аккаунтам и не грузит историю до выбора переписки", async () => {
+  it("автозагружает список переписок по всем аккаунтам и не грузит историю чата в обзорной странице", async () => {
     renderPanel();
 
     await waitFor(() => {
@@ -122,68 +121,49 @@ describe("ProjectMessagesPanel", () => {
       );
     });
 
-    expect(runAccountActionRequest).not.toHaveBeenCalledWith(
-      { baseUrl: "http://localhost:5073", token: "token" },
-      "acc-1",
-      "conversations.messages.list",
-      expect.anything(),
-    );
+    const actions = vi.mocked(runAccountActionRequest).mock.calls.map((call) => call[2]);
+    expect(actions).not.toContain("conversations.messages.list");
+    expect(actions).not.toContain("conversations.messages.send");
+  });
 
-    await userEvent.click(
-      await screen.findByRole("button", {
-        name: /Support chat/i,
-      }),
-    );
+  it("строит route-bound открытие чата с accountId и conversationId", async () => {
+    renderPanel();
 
-    await waitFor(() => {
-      expect(runAccountActionRequest).toHaveBeenCalledWith(
-        { baseUrl: "http://localhost:5073", token: "token" },
-        "acc-1",
-        "conversations.messages.list",
-        {
-          conversationId: "conv-1",
-          limit: 200,
-        },
-      );
+    const button = await screen.findByTestId("open-thread-acc-1-conv-1");
+    await userEvent.click(button);
+    expect(openModalMock).toHaveBeenCalledWith("thread", {
+      accountId: "acc-1",
+      conversationId: "conv-1",
     });
   });
 
-  it("отправляет сообщение и инвалидацией перезагружает чат и список переписок", async () => {
+  it("оставляет список переписок доступным при частичном падении воркеров", async () => {
+    vi.mocked(runAccountActionRequest).mockImplementation(
+      async (_session, accountId, action) => {
+        if (action !== "conversations.list") {
+          return {};
+        }
+
+        if (accountId === "acc-2") {
+          throw new Error("WORKER_UNAVAILABLE: gateway timeout");
+        }
+
+        return {
+          items: [
+            {
+              conversationId: "conv-1",
+              title: "Support chat",
+              preview: "Последнее сообщение",
+            },
+          ],
+        };
+      },
+    );
+
     renderPanel();
 
-    await userEvent.click(
-      await screen.findByRole("button", {
-        name: /Support chat/i,
-      }),
-    );
-    await screen.findByText("Привет!");
-
-    await userEvent.type(screen.getByPlaceholderText("Введите сообщение"), "Тест");
-    await userEvent.click(screen.getByRole("button", { name: "Отправить сообщение" }));
-
-    await waitFor(() => {
-      expect(runAccountActionRequest).toHaveBeenCalledWith(
-        { baseUrl: "http://localhost:5073", token: "token" },
-        "acc-1",
-        "conversations.messages.send",
-        {
-          conversationId: "conv-1",
-          text: "Тест",
-        },
-      );
-    });
-
-    await waitFor(() => {
-      const conversationsCalls = vi
-        .mocked(runAccountActionRequest)
-        .mock.calls.filter(([, , action]) => action === "conversations.list").length;
-      const messagesCalls = vi
-        .mocked(runAccountActionRequest)
-        .mock.calls.filter(([, , action]) => action === "conversations.messages.list")
-        .length;
-
-      expect(conversationsCalls).toBeGreaterThan(1);
-      expect(messagesCalls).toBeGreaterThan(1);
-    });
+    expect(await screen.findByText("Support chat")).toBeInTheDocument();
+    expect(await screen.findByText("Часть воркеров недоступна")).toBeInTheDocument();
+    expect(await screen.findByText("WORKER_UNAVAILABLE: gateway timeout")).toBeInTheDocument();
   });
 });

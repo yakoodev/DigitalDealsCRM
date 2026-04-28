@@ -4,16 +4,22 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
+import type { Account } from "@/generated/external-api";
 import {
   createAccountRequest,
   listProjectAccountTypesRequest,
   type ApiSession,
   type ProjectAccountType,
 } from "@/lib/api-client";
+import { hasPermission, projectPermissions, type ProjectRole } from "@/lib/rbac";
 
 interface ProjectAccountCreatePanelProps {
   apiSession: ApiSession;
   projectId: string;
+  activeRole: ProjectRole;
+  mode?: "page" | "modal";
+  onCompleted?: (account: Account) => void;
+  onCancel?: () => void;
 }
 
 type AccountDraft = Record<string, string>;
@@ -47,16 +53,25 @@ function readRequiredDraftValue(
 export function ProjectAccountCreatePanel({
   apiSession,
   projectId,
+  activeRole,
+  mode = "page",
+  onCompleted,
+  onCancel,
 }: ProjectAccountCreatePanelProps) {
   const router = useRouter();
   const queryClient = useQueryClient();
   const [selectedTypeId, setSelectedTypeId] = useState("");
   const [draftsByType, setDraftsByType] = useState<Record<string, AccountDraft>>({});
   const [status, setStatus] = useState("Выберите тип аккаунта и заполните форму.");
+  const canManageLifecycle = hasPermission(
+    activeRole,
+    projectPermissions.accountsLifecycleManage,
+  );
 
   const accountTypesQuery = useQuery({
     queryKey: ["account-types", apiSession.baseUrl, apiSession.token, projectId],
     queryFn: () => listProjectAccountTypesRequest(apiSession, projectId),
+    enabled: canManageLifecycle,
   });
 
   const accountTypes = useMemo(
@@ -123,7 +138,12 @@ export function ProjectAccountCreatePanel({
       await queryClient.invalidateQueries({
         queryKey: ["accounts", apiSession.baseUrl, apiSession.token, projectId],
       });
-      setStatus("Аккаунт добавлен в проект. Возвращаемся к списку.");
+      setStatus("Аккаунт добавлен в проект.");
+      if (onCompleted) {
+        onCompleted(account);
+        return account;
+      }
+
       router.push(`/projects/${projectId}/accounts`);
       return account;
     },
@@ -147,18 +167,44 @@ export function ProjectAccountCreatePanel({
     }));
   };
 
+  if (!canManageLifecycle) {
+    return (
+      <div className="page-stack" data-testid="project-account-create-panel-forbidden">
+        <section className="panel-card">
+          <h3>Добавить аккаунт</h3>
+          <p className="route-error">
+            Недостаточно прав для добавления аккаунтов в проект.
+          </p>
+          {mode === "page" ? (
+            <Link href={`/projects/${projectId}/accounts`} className="button button-ghost">
+              Назад к аккаунтам
+            </Link>
+          ) : onCancel ? (
+            <button type="button" className="button button-ghost" onClick={onCancel}>
+              Закрыть
+            </button>
+          ) : null}
+        </section>
+      </div>
+    );
+  }
+
   return (
     <div className="page-stack" data-testid="project-account-create-panel">
-      <header className="page-section-header">
-        <h2>Добавить аккаунт</h2>
-        <p>Выберите тип аккаунта из каталога Accounts Manager и заполните форму подключения.</p>
-      </header>
+      {mode === "page" ? (
+        <>
+          <header className="page-section-header">
+            <h2>Добавить аккаунт</h2>
+            <p>Выберите тип аккаунта из каталога Accounts Manager и заполните форму подключения.</p>
+          </header>
 
-      <div className="panel-actions">
-        <Link href={`/projects/${projectId}/accounts`} className="button button-ghost">
-          Назад к аккаунтам
-        </Link>
-      </div>
+          <div className="panel-actions">
+            <Link href={`/projects/${projectId}/accounts`} className="button button-ghost">
+              Назад к аккаунтам
+            </Link>
+          </div>
+        </>
+      ) : null}
 
       {accountTypesQuery.isPending ? (
         <section className="panel-card">
@@ -256,6 +302,11 @@ export function ProjectAccountCreatePanel({
                 >
                   Добавить аккаунт в проект
                 </button>
+                {mode === "modal" && onCancel ? (
+                  <button type="button" className="button button-ghost" onClick={onCancel}>
+                    Отмена
+                  </button>
+                ) : null}
                 <p className="route-hint">{status}</p>
               </div>
             </section>

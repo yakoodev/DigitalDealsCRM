@@ -1,3 +1,6 @@
+using System.Globalization;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using DDCRM.AccountsManager.Api.RouteRegistry;
 using DDCRM.AccountsManager.Api.Worker;
@@ -51,6 +54,17 @@ builder.Services.Configure<WorkerControlClientOptions>(options =>
     options.PathPrefix = builder.Configuration["WORKER_CONTROL_CLIENT_PATH_PREFIX"] ?? options.PathPrefix;
     options.ServiceToken = builder.Configuration["WORKER_API_SERVICE_AUTH_CLIENT_TOKEN"];
 });
+builder.Services.Configure<AccountManagerAutospawnOptions>(options =>
+{
+    options.Enabled = builder.Configuration.GetValue("ACCOUNT_MANAGER_AUTOSPAWN_ENABLED", false);
+    options.DockerEndpoint = builder.Configuration["ACCOUNT_MANAGER_AUTOSPAWN_DOCKER_ENDPOINT"] ?? options.DockerEndpoint;
+    options.DockerNetwork = builder.Configuration["ACCOUNT_MANAGER_AUTOSPAWN_DOCKER_NETWORK"] ?? options.DockerNetwork;
+    options.WorkerInternalPort = builder.Configuration.GetValue("ACCOUNT_MANAGER_AUTOSPAWN_WORKER_INTERNAL_PORT", options.WorkerInternalPort);
+    options.HealthTimeoutSeconds = builder.Configuration.GetValue("ACCOUNT_MANAGER_AUTOSPAWN_HEALTH_TIMEOUT_SECONDS", options.HealthTimeoutSeconds);
+    options.HealthPollIntervalMilliseconds = builder.Configuration.GetValue("ACCOUNT_MANAGER_AUTOSPAWN_HEALTH_POLL_INTERVAL_MS", options.HealthPollIntervalMilliseconds);
+    options.FallbackWorkerId = builder.Configuration["ACCOUNT_MANAGER_AUTOSPAWN_FALLBACK_WORKER_ID"] ?? options.FallbackWorkerId;
+    options.WorkerApiServiceToken = builder.Configuration["WORKER_API_SERVICE_AUTH_CLIENT_TOKEN"];
+});
 
 builder.Services.AddHttpClient<IRouteRegistryClient, RouteRegistryHttpClient>((serviceProvider, client) =>
 {
@@ -61,6 +75,13 @@ builder.Services.AddHttpClient<IRouteRegistryClient, RouteRegistryHttpClient>((s
     }
 });
 builder.Services.AddHttpClient<IWorkerControlClient, WorkerControlHttpClient>();
+builder.Services.AddHttpClient("docker-autospawn-health", client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(5);
+});
+builder.Services.AddSingleton<IDockerWorkerRuntimeClient, DockerWorkerRuntimeClient>();
+var registrySecretEncryptionKey = ResolveRegistrySecretsEncryptionKey(
+    builder.Configuration["ACCOUNT_MANAGER_AUTOSPAWN_REGISTRY_SECRET_ENCRYPTION_KEY"]);
 
 var app = builder.Build();
 
@@ -122,6 +143,94 @@ app.MapGet("/internal/v1/account-types", async (
     return Results.Ok(new AccountTypeListResponse(httpContext.GetOrCreateRequestId(), items));
 });
 
+app.MapPut("/internal/v1/account-types/{accountTypeId}", async (
+    HttpContext httpContext,
+    string accountTypeId,
+    AccountTypeUpsertRequest request,
+    AccountsManagerDbContext dbContext,
+    IdempotencyExecutor idempotency,
+    CancellationToken cancellationToken) =>
+{
+    var idempotencyKey = httpContext.RequireIdempotencyKey();
+    var normalizedAccountTypeId = NormalizeAccountTypeId(accountTypeId);
+
+    return await idempotency.ExecuteAsync(
+        dbContext,
+        $"accounts-manager:account-type:upsert:{normalizedAccountTypeId}",
+        idempotencyKey,
+        async ct =>
+        {
+            var existing = await dbContext.AccountTypes.SingleOrDefaultAsync(
+                x => x.AccountTypeId == normalizedAccountTypeId,
+                ct);
+            var now = DateTimeOffset.UtcNow;
+
+            var platform = NormalizePlatform(request.Platform, existing);
+            var enabled = request.Enabled ?? existing?.Enabled ?? true;
+            if (enabled)
+            {
+                var otherEnabled = await dbContext.AccountTypes
+                    .AsNoTracking()
+                    .Where(x => x.AccountTypeId != normalizedAccountTypeId)
+                    .AnyAsync(
+                        x => x.Enabled
+                             && x.Platform == platform,
+                        ct);
+                if (otherEnabled)
+                {
+                    throw new ApiErrorException(
+                        StatusCodes.Status409Conflict,
+                        ApiErrorCodes.Conflict,
+                        $"Для платформы `{platform}` уже существует активный account-type. Допустим только один активный профиль на платформу.");
+                }
+            }
+
+            var displayName = NormalizeAccountTypeDisplayName(request.DisplayName, existing);
+            var workerProfileId = NormalizeWorkerProfileId(request.WorkerProfileId, existing);
+            var sortOrder = request.SortOrder ?? existing?.SortOrder ?? 100;
+            var description = request.Description?.Trim() ?? existing?.Description;
+            var formFields = NormalizeFormFields(request.FormFields, existing);
+            var runtime = NormalizeRuntimeConfig(request.Runtime, existing, platform);
+
+            if (existing is null)
+            {
+                existing = new AccountTypeEntity
+                {
+                    AccountTypeId = normalizedAccountTypeId,
+                    Platform = platform,
+                    DisplayName = displayName,
+                    Description = description,
+                    WorkerProfileId = workerProfileId,
+                    Enabled = enabled,
+                    SortOrder = sortOrder,
+                    FormFieldsJson = SerializeFormFields(formFields),
+                    RuntimeConfigJson = SerializeRuntimeConfig(runtime),
+                    UpdatedAtUtc = now,
+                };
+                dbContext.AccountTypes.Add(existing);
+            }
+            else
+            {
+                existing.Platform = platform;
+                existing.DisplayName = displayName;
+                existing.Description = description;
+                existing.WorkerProfileId = workerProfileId;
+                existing.Enabled = enabled;
+                existing.SortOrder = sortOrder;
+                existing.FormFieldsJson = SerializeFormFields(formFields);
+                existing.RuntimeConfigJson = SerializeRuntimeConfig(runtime);
+                existing.UpdatedAtUtc = now;
+            }
+
+            await dbContext.SaveChangesAsync(ct);
+
+            return new IdempotentExecutionResult(
+                StatusCodes.Status200OK,
+                new AccountTypeResponse(httpContext.GetOrCreateRequestId(), ToAccountTypeDto(existing)));
+        },
+        cancellationToken);
+});
+
 workerServers.MapPut("/{serverId}", async (
     HttpContext httpContext,
     string serverId,
@@ -148,7 +257,15 @@ workerServers.MapPut("/{serverId}", async (
             var health = NormalizeWorkerServerHealth(request.Health, existing);
             var capacity = NormalizeCapacity(request.Capacity, existing);
             var currentLoad = NormalizeCurrentLoad(request.CurrentLoad, existing, capacity);
+            var dockerHost = NormalizeDockerHost(request.DockerHost, existing);
+            var dockerNetwork = NormalizeDockerNetwork(request.DockerNetwork, existing);
             var metadata = NormalizeMetadata(request.Metadata, existing);
+            var now = DateTimeOffset.UtcNow;
+            var registry = NormalizeWorkerServerRegistry(
+                request.Registry,
+                existing,
+                registrySecretEncryptionKey,
+                now);
 
             if (existing is null)
             {
@@ -160,8 +277,15 @@ workerServers.MapPut("/{serverId}", async (
                     Health = health,
                     Capacity = capacity,
                     CurrentLoad = currentLoad,
+                    DockerHost = dockerHost,
+                    DockerNetwork = dockerNetwork,
+                    RegistryEnabled = registry.Enabled,
+                    RegistryHost = registry.Host,
+                    RegistryUsername = registry.Username,
+                    RegistryTokenEncrypted = registry.TokenEncrypted,
+                    RegistryTokenUpdatedAtUtc = registry.TokenUpdatedAtUtc,
                     MetadataJson = SerializeMetadata(metadata),
-                    UpdatedAtUtc = DateTimeOffset.UtcNow,
+                    UpdatedAtUtc = now,
                 };
                 dbContext.WorkerServers.Add(existing);
             }
@@ -172,8 +296,15 @@ workerServers.MapPut("/{serverId}", async (
                 existing.Health = health;
                 existing.Capacity = capacity;
                 existing.CurrentLoad = currentLoad;
+                existing.DockerHost = dockerHost;
+                existing.DockerNetwork = dockerNetwork;
+                existing.RegistryEnabled = registry.Enabled;
+                existing.RegistryHost = registry.Host;
+                existing.RegistryUsername = registry.Username;
+                existing.RegistryTokenEncrypted = registry.TokenEncrypted;
+                existing.RegistryTokenUpdatedAtUtc = registry.TokenUpdatedAtUtc;
                 existing.MetadataJson = SerializeMetadata(metadata);
-                existing.UpdatedAtUtc = DateTimeOffset.UtcNow;
+                existing.UpdatedAtUtc = now;
             }
 
             await dbContext.SaveChangesAsync(ct);
@@ -246,6 +377,16 @@ workerServers.MapPost("/{serverId}/heartbeat", async (
         existing.MetadataJson = SerializeMetadata(request.Metadata);
     }
 
+    if (request.DockerHost is not null)
+    {
+        existing.DockerHost = NormalizeDockerHost(request.DockerHost, existing);
+    }
+
+    if (request.DockerNetwork is not null)
+    {
+        existing.DockerNetwork = NormalizeDockerNetwork(request.DockerNetwork, existing);
+    }
+
     existing.Capacity = capacity;
     existing.CurrentLoad = currentLoad;
     existing.LastHeartbeatAtUtc = DateTimeOffset.UtcNow;
@@ -264,6 +405,8 @@ lifecycle.MapPost("/create", async (
     AccountsManagerDbContext dbContext,
     IRouteRegistryClient routeRegistryClient,
     IWorkerControlClient workerControlClient,
+    IDockerWorkerRuntimeClient dockerWorkerRuntimeClient,
+    IOptions<AccountManagerAutospawnOptions> autospawnOptions,
     IdempotencyExecutor idempotency,
     CancellationToken cancellationToken) =>
 {
@@ -273,6 +416,7 @@ lifecycle.MapPost("/create", async (
     {
         throw new ApiErrorException(StatusCodes.Status400BadRequest, ApiErrorCodes.ValidationError, "platform обязателен для lifecycle create.");
     }
+    var normalizedPlatform = request.Platform.Trim().ToLowerInvariant();
 
     if (request.ProxyConfig is null || request.ProxyConfig.Count == 0)
     {
@@ -293,9 +437,46 @@ lifecycle.MapPost("/create", async (
 
             var availableServers = await dbContext.WorkerServers.ToListAsync(ct);
             var targetServer = ResolveCreateTargetServer(availableServers);
+            var accountType = await ResolveActiveAccountTypeForPlatformAsync(
+                dbContext,
+                normalizedPlatform,
+                ct);
+            var runtimeConfig = ResolveRuntimeConfig(accountType, normalizedPlatform);
 
-            var workerId = $"worker-{request.AccountId:N}";
-            var podId = $"pod-{request.AccountId:N}";
+            var spawnEnabled = dockerWorkerRuntimeClient.Enabled && runtimeConfig.AutospawnEnabled;
+            var fallbackWorkerId = NormalizeFallbackWorkerId(autospawnOptions.Value.FallbackWorkerId);
+            var initialWorkerId = spawnEnabled
+                ? BuildSpawnWorkerId(request.AccountId)
+                : fallbackWorkerId;
+            var initialPodId = spawnEnabled
+                ? $"pod-{Guid.NewGuid():N}"[..16]
+                : $"pod-{request.AccountId:N}"[..16];
+            var workerPort = ResolveWorkerPort(runtimeConfig, autospawnOptions.Value.WorkerInternalPort);
+            var workerId = initialWorkerId;
+            var podId = initialPodId;
+            if (spawnEnabled)
+            {
+                var spawnResult = await dockerWorkerRuntimeClient.SpawnWorkerAsync(
+                    new DockerSpawnRequest(
+                        initialWorkerId,
+                        normalizedPlatform,
+                        runtimeConfig.WorkerImage,
+                        workerPort,
+                        targetServer.Server?.DockerNetwork,
+                        targetServer.Server?.DockerHost,
+                        BuildWorkerSpawnEnvironment(runtimeConfig, normalizedPlatform, request.AccountId),
+                        runtimeConfig.HealthPath,
+                        ResolveRegistryAuth(targetServer.Server, registrySecretEncryptionKey)),
+                    ct);
+                workerId = spawnResult.WorkerId;
+                podId = spawnResult.PodId;
+            }
+            var workerControlBaseUrlTemplate = ResolveWorkerControlBaseUrlTemplate(
+                workerId,
+                targetServer.Server,
+                workerPort,
+                targetServer.BaseUrlTemplate);
+
             var routeVersion = 1;
             var workerBinding = new WorkerBindingDto(targetServer.ServerId, workerId, podId);
 
@@ -309,19 +490,33 @@ lifecycle.MapPost("/create", async (
                 idempotencyKey,
                 ct);
 
-            await workerControlClient.ApplyProxyCredentialsAsync(
-                workerBinding,
-                request.AccountId,
-                request.ProxyConfig,
-                idempotencyKey,
-                targetServer.BaseUrlTemplate,
-                ct);
+            try
+            {
+                await workerControlClient.ApplyProxyCredentialsAsync(
+                    workerBinding,
+                    request.AccountId,
+                    request.ProxyConfig,
+                    idempotencyKey,
+                    workerControlBaseUrlTemplate,
+                    ct);
+            }
+            catch
+            {
+                if (spawnEnabled)
+                {
+                    await dockerWorkerRuntimeClient.RemoveWorkerAsync(
+                        new DockerRemoveRequest(workerId, targetServer.Server?.DockerHost),
+                        ct);
+                }
+
+                throw;
+            }
 
             var entity = new WorkerPlacementEntity
             {
                 AccountId = request.AccountId,
                 ProjectId = request.ProjectId,
-                Platform = request.Platform,
+                Platform = normalizedPlatform,
                 WorkerId = workerId,
                 ServerId = targetServer.ServerId,
                 PodId = podId,
@@ -347,6 +542,7 @@ lifecycle.MapPost("/update", async (
     LifecycleUpdateRequest request,
     AccountsManagerDbContext dbContext,
     IWorkerControlClient workerControlClient,
+    IOptions<AccountManagerAutospawnOptions> autospawnOptions,
     IdempotencyExecutor idempotency,
     CancellationToken cancellationToken) =>
 {
@@ -372,13 +568,24 @@ lifecycle.MapPost("/update", async (
             var workerServer = await dbContext.WorkerServers
                 .AsNoTracking()
                 .SingleOrDefaultAsync(x => x.ServerId == existing.ServerId, ct);
+            var accountType = await ResolveActiveAccountTypeForPlatformAsync(
+                dbContext,
+                existing.Platform,
+                ct);
+            var runtimeConfig = ResolveRuntimeConfig(accountType, existing.Platform);
+            var workerPort = ResolveWorkerPort(runtimeConfig, autospawnOptions.Value.WorkerInternalPort);
+            var workerControlBaseUrlTemplate = ResolveWorkerControlBaseUrlTemplate(
+                existing.WorkerId,
+                workerServer,
+                workerPort,
+                workerServer?.BaseUrlTemplate);
 
             await workerControlClient.ApplyProxyCredentialsAsync(
                 new WorkerBindingDto(existing.ServerId, existing.WorkerId, existing.PodId),
                 request.AccountId,
                 request.ProxyConfig!,
                 idempotencyKey,
-                workerServer?.BaseUrlTemplate,
+                workerControlBaseUrlTemplate,
                 ct);
 
             existing.ProxyConfigured = true;
@@ -397,6 +604,7 @@ lifecycle.MapPost("/delete", async (
     LifecycleDeleteRequest request,
     AccountsManagerDbContext dbContext,
     IRouteRegistryClient routeRegistryClient,
+    IDockerWorkerRuntimeClient dockerWorkerRuntimeClient,
     IdempotencyExecutor idempotency,
     CancellationToken cancellationToken) =>
 {
@@ -416,6 +624,12 @@ lifecycle.MapPost("/delete", async (
             }
 
             var sourceServer = await dbContext.WorkerServers.SingleOrDefaultAsync(x => x.ServerId == existing.ServerId, ct);
+            if (dockerWorkerRuntimeClient.Enabled && IsManagedWorker(existing.WorkerId))
+            {
+                await dockerWorkerRuntimeClient.RemoveWorkerAsync(
+                    new DockerRemoveRequest(existing.WorkerId, sourceServer?.DockerHost),
+                    ct);
+            }
 
             dbContext.LifecycleAudits.Add(CreateAudit(existing, "delete", "accounts-manager", "worker placement deleted"));
             dbContext.WorkerPlacements.Remove(existing);
@@ -434,6 +648,8 @@ lifecycle.MapPost("/migrate", async (
     LifecycleMigrateRequest request,
     AccountsManagerDbContext dbContext,
     IRouteRegistryClient routeRegistryClient,
+    IDockerWorkerRuntimeClient dockerWorkerRuntimeClient,
+    IOptions<AccountManagerAutospawnOptions> autospawnOptions,
     IdempotencyExecutor idempotency,
     CancellationToken cancellationToken) =>
 {
@@ -464,19 +680,63 @@ lifecycle.MapPost("/migrate", async (
                 return new IdempotentExecutionResult(StatusCodes.Status202Accepted, new AckResponse(httpContext.GetOrCreateRequestId(), "accepted"));
             }
 
+            var accountType = await ResolveActiveAccountTypeForPlatformAsync(
+                dbContext,
+                existing.Platform,
+                ct);
+            var runtimeConfig = ResolveRuntimeConfig(accountType, existing.Platform);
+            var spawnEnabled = dockerWorkerRuntimeClient.Enabled && runtimeConfig.AutospawnEnabled;
+            var workerPort = ResolveWorkerPort(runtimeConfig, autospawnOptions.Value.WorkerInternalPort);
+
+            var previousWorkerId = existing.WorkerId;
+            var targetWorkerId = spawnEnabled
+                ? BuildSpawnWorkerId(existing.AccountId)
+                : previousWorkerId;
             var targetPodId = $"pod-{Guid.NewGuid():N}"[..16];
+            if (spawnEnabled)
+            {
+                var spawnResult = await dockerWorkerRuntimeClient.SpawnWorkerAsync(
+                    new DockerSpawnRequest(
+                        targetWorkerId,
+                        existing.Platform,
+                        runtimeConfig.WorkerImage,
+                        workerPort,
+                        targetServer.Server?.DockerNetwork,
+                        targetServer.Server?.DockerHost,
+                        BuildWorkerSpawnEnvironment(runtimeConfig, existing.Platform, existing.AccountId),
+                        runtimeConfig.HealthPath,
+                        ResolveRegistryAuth(targetServer.Server, registrySecretEncryptionKey)),
+                    ct);
+                targetWorkerId = spawnResult.WorkerId;
+                targetPodId = spawnResult.PodId;
+            }
+
             var nextRouteVersion = existing.RouteVersion + 1;
             var previousServerId = existing.ServerId;
+            try
+            {
+                await routeRegistryClient.SwitchAsync(
+                    request.AccountId,
+                    new RouteSwitchRequestDto(
+                        new WorkerBindingDto(targetServer.ServerId, targetWorkerId, targetPodId),
+                        nextRouteVersion),
+                    idempotencyKey,
+                    ct);
+            }
+            catch
+            {
+                if (spawnEnabled)
+                {
+                    await dockerWorkerRuntimeClient.RemoveWorkerAsync(
+                        new DockerRemoveRequest(targetWorkerId, targetServer.Server?.DockerHost),
+                        ct);
+                }
 
-            await routeRegistryClient.SwitchAsync(
-                request.AccountId,
-                new RouteSwitchRequestDto(
-                    new WorkerBindingDto(targetServer.ServerId, existing.WorkerId, targetPodId),
-                    nextRouteVersion),
-                idempotencyKey,
-                ct);
+                throw;
+            }
 
             existing.ServerId = targetServer.ServerId;
+            existing.WorkerId = targetWorkerId;
             existing.PodId = targetPodId;
             existing.RouteVersion = nextRouteVersion;
             existing.UpdatedAtUtc = DateTimeOffset.UtcNow;
@@ -486,6 +746,14 @@ lifecycle.MapPost("/migrate", async (
 
             dbContext.LifecycleAudits.Add(CreateAudit(existing, "migrate", "accounts-manager", $"migrated to {targetServer.ServerId}"));
             await dbContext.SaveChangesAsync(ct);
+
+            if (spawnEnabled && IsManagedWorker(previousWorkerId))
+            {
+                var sourceServer = FindServer(availableServers, previousServerId);
+                await dockerWorkerRuntimeClient.RemoveWorkerAsync(
+                    new DockerRemoveRequest(previousWorkerId, sourceServer?.DockerHost),
+                    ct);
+            }
 
             return new IdempotentExecutionResult(StatusCodes.Status202Accepted, new AckResponse(httpContext.GetOrCreateRequestId(), "accepted"));
         },
@@ -497,6 +765,8 @@ lifecycle.MapPost("/rebalance", async (
     LifecycleRebalanceRequest request,
     AccountsManagerDbContext dbContext,
     IRouteRegistryClient routeRegistryClient,
+    IDockerWorkerRuntimeClient dockerWorkerRuntimeClient,
+    IOptions<AccountManagerAutospawnOptions> autospawnOptions,
     IdempotencyExecutor idempotency,
     CancellationToken cancellationToken) =>
 {
@@ -512,6 +782,14 @@ lifecycle.MapPost("/rebalance", async (
                 .OrderBy(x => x.UpdatedAtUtc)
                 .ToListAsync(ct);
             var servers = await dbContext.WorkerServers.ToListAsync(ct);
+            var activeAccountTypes = await dbContext.AccountTypes
+                .AsNoTracking()
+                .Where(x => x.Enabled)
+                .OrderBy(x => x.SortOrder)
+                .ToListAsync(ct);
+            var accountTypeByPlatform = activeAccountTypes
+                .GroupBy(x => x.Platform, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(x => x.Key, x => x.First(), StringComparer.OrdinalIgnoreCase);
 
             var maxMoves = request.MaxMoves is null or <= 0
                 ? 25
@@ -532,18 +810,59 @@ lifecycle.MapPost("/rebalance", async (
                 }
 
                 var nextRouteVersion = placement.RouteVersion + 1;
+                var previousWorkerId = placement.WorkerId;
+                var targetWorkerId = previousWorkerId;
                 var targetPodId = $"pod-{Guid.NewGuid():N}"[..16];
+                var spawnEnabled = false;
+                if (accountTypeByPlatform.TryGetValue(placement.Platform, out var platformAccountType))
+                {
+                    var runtimeConfig = ResolveRuntimeConfig(platformAccountType, placement.Platform);
+                    spawnEnabled = dockerWorkerRuntimeClient.Enabled && runtimeConfig.AutospawnEnabled;
+                    if (spawnEnabled)
+                    {
+                        var workerPort = ResolveWorkerPort(runtimeConfig, autospawnOptions.Value.WorkerInternalPort);
+                        var spawnResult = await dockerWorkerRuntimeClient.SpawnWorkerAsync(
+                            new DockerSpawnRequest(
+                                BuildSpawnWorkerId(placement.AccountId),
+                                placement.Platform,
+                                runtimeConfig.WorkerImage,
+                                workerPort,
+                                targetServer.DockerNetwork,
+                                targetServer.DockerHost,
+                                BuildWorkerSpawnEnvironment(runtimeConfig, placement.Platform, placement.AccountId),
+                                runtimeConfig.HealthPath,
+                                ResolveRegistryAuth(targetServer, registrySecretEncryptionKey)),
+                            ct);
+                        targetWorkerId = spawnResult.WorkerId;
+                        targetPodId = spawnResult.PodId;
+                    }
+                }
 
-                await routeRegistryClient.SwitchAsync(
-                    placement.AccountId,
-                    new RouteSwitchRequestDto(
-                        new WorkerBindingDto(targetServer.ServerId, placement.WorkerId, targetPodId),
-                        nextRouteVersion),
-                    idempotencyKey,
-                    ct);
+                try
+                {
+                    await routeRegistryClient.SwitchAsync(
+                        placement.AccountId,
+                        new RouteSwitchRequestDto(
+                            new WorkerBindingDto(targetServer.ServerId, targetWorkerId, targetPodId),
+                            nextRouteVersion),
+                        idempotencyKey,
+                        ct);
+                }
+                catch
+                {
+                    if (spawnEnabled)
+                    {
+                        await dockerWorkerRuntimeClient.RemoveWorkerAsync(
+                            new DockerRemoveRequest(targetWorkerId, targetServer.DockerHost),
+                            ct);
+                    }
+
+                    throw;
+                }
 
                 var sourceServerId = placement.ServerId;
                 placement.ServerId = targetServer.ServerId;
+                placement.WorkerId = targetWorkerId;
                 placement.PodId = targetPodId;
                 placement.RouteVersion = nextRouteVersion;
                 placement.UpdatedAtUtc = DateTimeOffset.UtcNow;
@@ -553,6 +872,14 @@ lifecycle.MapPost("/rebalance", async (
 
                 dbContext.LifecycleAudits.Add(CreateAudit(placement, "rebalance", "accounts-manager", $"rebalanced to {targetServer.ServerId}"));
                 migrations.Add(new LifecycleRebalanceMove(placement.AccountId, sourceServerId, targetServer.ServerId, nextRouteVersion));
+
+                if (spawnEnabled && IsManagedWorker(previousWorkerId))
+                {
+                    var sourceServer = FindServer(servers, sourceServerId);
+                    await dockerWorkerRuntimeClient.RemoveWorkerAsync(
+                        new DockerRemoveRequest(previousWorkerId, sourceServer?.DockerHost),
+                        ct);
+                }
             }
 
             if (migrations.Count > 0)
@@ -576,29 +903,111 @@ app.Run();
 
 static async Task EnsureDefaultAccountTypesAsync(AccountsManagerDbContext dbContext)
 {
-    if (await dbContext.AccountTypes.AnyAsync())
+    var now = DateTimeOffset.UtcNow;
+    var defaults = CreateDefaultAccountTypes(now);
+    var existing = await dbContext.AccountTypes.ToListAsync();
+    var existingById = existing.ToDictionary(x => x.AccountTypeId, StringComparer.OrdinalIgnoreCase);
+
+    var hasChanges = false;
+    foreach (var accountType in defaults)
     {
-        return;
+        if (!existingById.TryGetValue(accountType.AccountTypeId, out var current))
+        {
+            dbContext.AccountTypes.Add(accountType);
+            hasChanges = true;
+            continue;
+        }
+
+        if (ApplyAccountTypeDefaults(current, accountType, now))
+        {
+            hasChanges = true;
+        }
     }
 
-    var now = DateTimeOffset.UtcNow;
-    dbContext.AccountTypes.AddRange(
-        CreateDefaultAccountTypes(now));
-    await dbContext.SaveChangesAsync();
+    if (hasChanges)
+    {
+        await dbContext.SaveChangesAsync();
+    }
 }
 
 static IReadOnlyList<AccountTypeEntity> CreateDefaultAccountTypes(DateTimeOffset now)
 {
-    var fields = new List<AccountTypeFieldDto>
+    return
+    [
+        CreateDefaultAccountType(
+            accountTypeId: "test-worker.funpay",
+            platform: "funpay",
+            displayName: "Тестовый worker: FunPay",
+            description: "Тестовый профиль для аккаунта FunPay.",
+            sortOrder: 10,
+            defaultDisplayName: "FunPay Test Account",
+            now),
+        CreateDefaultAccountType(
+            accountTypeId: "test-worker.playerok",
+            platform: "playerok",
+            displayName: "Тестовый worker: Playerok",
+            description: "Тестовый профиль для аккаунта Playerok.",
+            sortOrder: 20,
+            defaultDisplayName: "Playerok Test Account",
+            now),
+        CreateDefaultAccountType(
+            accountTypeId: "test-worker.ggsell",
+            platform: "ggsell",
+            displayName: "Тестовый worker: GGSell",
+            description: "Тестовый профиль для аккаунта GGSell.",
+            sortOrder: 30,
+            defaultDisplayName: "GGSell Test Account",
+            now),
+        CreateDefaultAccountType(
+            accountTypeId: "test-worker.platimarket",
+            platform: "platimarket",
+            displayName: "Тестовый worker: PlatiMarket",
+            description: "Тестовый профиль для аккаунта PlatiMarket.",
+            sortOrder: 40,
+            defaultDisplayName: "PlatiMarket Test Account",
+            now),
+    ];
+}
+
+static AccountTypeEntity CreateDefaultAccountType(
+    string accountTypeId,
+    string platform,
+    string displayName,
+    string description,
+    int sortOrder,
+    string defaultDisplayName,
+    DateTimeOffset now)
+{
+    var fields = CreateDefaultAccountTypeFields(defaultDisplayName);
+    var runtime = CreateDefaultAccountTypeRuntime(platform);
+
+    return new AccountTypeEntity
     {
+        AccountTypeId = accountTypeId,
+        Platform = platform,
+        DisplayName = displayName,
+        Description = description,
+        WorkerProfileId = "test-worker",
+        Enabled = true,
+        SortOrder = sortOrder,
+        FormFieldsJson = JsonSerializer.Serialize(fields),
+        RuntimeConfigJson = JsonSerializer.Serialize(runtime),
+        UpdatedAtUtc = now,
+    };
+}
+
+static IReadOnlyList<AccountTypeFieldDto> CreateDefaultAccountTypeFields(string defaultDisplayName)
+{
+    return
+    [
         new(
             "displayName",
             "Название аккаунта",
             "text",
             true,
             false,
-            "Например, FunPay Test Account",
-            "FunPay Test Account"),
+            $"Например, {defaultDisplayName}",
+            defaultDisplayName),
         new(
             "proxyHost",
             "Proxy host",
@@ -631,23 +1040,97 @@ static IReadOnlyList<AccountTypeEntity> CreateDefaultAccountTypes(DateTimeOffset
             true,
             "Введите пароль",
             null),
-    };
-
-    return
-    [
-        new AccountTypeEntity
-        {
-            AccountTypeId = "test-worker.funpay",
-            Platform = "funpay",
-            DisplayName = "Тестовый worker: FunPay",
-            Description = "Единственный доступный тип аккаунта на текущем этапе.",
-            WorkerProfileId = "test-worker",
-            Enabled = true,
-            SortOrder = 10,
-            FormFieldsJson = JsonSerializer.Serialize(fields),
-            UpdatedAtUtc = now,
-        },
     ];
+}
+
+static AccountTypeRuntimeConfigDto CreateDefaultAccountTypeRuntime(string platform)
+{
+    return new AccountTypeRuntimeConfigDto(
+        AutospawnEnabled: true,
+        WorkerImage: "ddcrm/worker-api:local",
+        WorkerPathPrefix: "/internal/v2/worker",
+        HealthPath: "/health",
+        ContainerPort: 8080,
+        EnvironmentVariables: new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["ASPNETCORE_ENVIRONMENT"] = "Development",
+            ["ASPNETCORE_URLS"] = "http://+:8080",
+            ["TEST_USE_INMEMORY_DB"] = "true",
+            ["TEST_WORKER_ENABLED"] = "true",
+            ["TEST_WORKER_DEFAULT_VISIBILITY"] = "hidden",
+            ["TEST_WORKER_ALLOWED_ENVIRONMENTS"] = "development,local,ci,staging",
+            ["TEST_WORKER_BLOCK_IN_PRODUCTION"] = "true",
+            ["TEST_WORKER_SCENARIO"] = "TW-SCN-HAPPY-PATH",
+            ["TEST_WORKER_CAPABILITY_PROFILE"] = "TW-CAP-CORE-V1",
+            ["TEST_WORKER_EXT_ACTIONS_ENABLED"] = "true",
+            ["TEST_WORKER_PROVIDER"] = platform,
+            ["WORKER_PROXY_CREDENTIALS_ENCRYPTION_KEY"] = "replace-with-long-random-worker-key",
+            ["WORKER_API_SERVICE_AUTH_ENABLED"] = "true",
+            ["WORKER_API_SERVICE_AUTH_ACCEPTED_TOKENS"] = "worker-token-a,worker-token-b",
+        });
+}
+
+static bool ApplyAccountTypeDefaults(
+    AccountTypeEntity current,
+    AccountTypeEntity defaults,
+    DateTimeOffset now)
+{
+    var hasChanges = false;
+
+    if (!string.Equals(current.Platform, defaults.Platform, StringComparison.Ordinal))
+    {
+        current.Platform = defaults.Platform;
+        hasChanges = true;
+    }
+
+    if (!string.Equals(current.DisplayName, defaults.DisplayName, StringComparison.Ordinal))
+    {
+        current.DisplayName = defaults.DisplayName;
+        hasChanges = true;
+    }
+
+    if (!string.Equals(current.Description, defaults.Description, StringComparison.Ordinal))
+    {
+        current.Description = defaults.Description;
+        hasChanges = true;
+    }
+
+    if (!string.Equals(current.WorkerProfileId, defaults.WorkerProfileId, StringComparison.Ordinal))
+    {
+        current.WorkerProfileId = defaults.WorkerProfileId;
+        hasChanges = true;
+    }
+
+    if (current.Enabled != defaults.Enabled)
+    {
+        current.Enabled = defaults.Enabled;
+        hasChanges = true;
+    }
+
+    if (current.SortOrder != defaults.SortOrder)
+    {
+        current.SortOrder = defaults.SortOrder;
+        hasChanges = true;
+    }
+
+    if (!string.Equals(current.FormFieldsJson, defaults.FormFieldsJson, StringComparison.Ordinal))
+    {
+        current.FormFieldsJson = defaults.FormFieldsJson;
+        hasChanges = true;
+    }
+
+    if (!string.Equals(current.RuntimeConfigJson, defaults.RuntimeConfigJson, StringComparison.Ordinal))
+    {
+        current.RuntimeConfigJson = defaults.RuntimeConfigJson;
+        hasChanges = true;
+    }
+
+    if (hasChanges)
+    {
+        current.UpdatedAtUtc = now;
+    }
+
+    return hasChanges;
 }
 
 static LifecycleAuditEntity CreateAudit(WorkerPlacementEntity placement, string operation, string actor, string notes)
@@ -666,8 +1149,322 @@ static LifecycleAuditEntity CreateAudit(WorkerPlacementEntity placement, string 
 
 static string BuildRouteKey(Guid accountId) => $"rk.{accountId:N}";
 
+static string NormalizeAccountTypeId(string accountTypeId)
+{
+    var normalized = accountTypeId.Trim();
+    if (string.IsNullOrWhiteSpace(normalized))
+    {
+        throw new ApiErrorException(
+            StatusCodes.Status400BadRequest,
+            ApiErrorCodes.ValidationError,
+            "accountTypeId обязателен.");
+    }
+
+    if (normalized.Length > 120)
+    {
+        throw new ApiErrorException(
+            StatusCodes.Status400BadRequest,
+            ApiErrorCodes.ValidationError,
+            "accountTypeId превышает лимит длины.");
+    }
+
+    return normalized;
+}
+
+static string NormalizePlatform(string? platform, AccountTypeEntity? existing)
+{
+    var normalized = (platform ?? existing?.Platform)?.Trim().ToLowerInvariant();
+    if (string.IsNullOrWhiteSpace(normalized))
+    {
+        throw new ApiErrorException(
+            StatusCodes.Status400BadRequest,
+            ApiErrorCodes.ValidationError,
+            "platform обязателен.");
+    }
+
+    if (normalized.Length > 80)
+    {
+        throw new ApiErrorException(
+            StatusCodes.Status400BadRequest,
+            ApiErrorCodes.ValidationError,
+            "platform превышает лимит длины.");
+    }
+
+    return normalized;
+}
+
+static string NormalizeAccountTypeDisplayName(string? displayName, AccountTypeEntity? existing)
+{
+    var normalized = (displayName ?? existing?.DisplayName)?.Trim();
+    if (string.IsNullOrWhiteSpace(normalized))
+    {
+        throw new ApiErrorException(
+            StatusCodes.Status400BadRequest,
+            ApiErrorCodes.ValidationError,
+            "displayName обязателен.");
+    }
+
+    if (normalized.Length > 160)
+    {
+        throw new ApiErrorException(
+            StatusCodes.Status400BadRequest,
+            ApiErrorCodes.ValidationError,
+            "displayName превышает лимит длины.");
+    }
+
+    return normalized;
+}
+
+static string NormalizeWorkerProfileId(string? workerProfileId, AccountTypeEntity? existing)
+{
+    var normalized = (workerProfileId ?? existing?.WorkerProfileId)?.Trim();
+    if (string.IsNullOrWhiteSpace(normalized))
+    {
+        throw new ApiErrorException(
+            StatusCodes.Status400BadRequest,
+            ApiErrorCodes.ValidationError,
+            "workerProfileId обязателен.");
+    }
+
+    if (normalized.Length > 80)
+    {
+        throw new ApiErrorException(
+            StatusCodes.Status400BadRequest,
+            ApiErrorCodes.ValidationError,
+            "workerProfileId превышает лимит длины.");
+    }
+
+    return normalized;
+}
+
+static IReadOnlyList<AccountTypeFieldDto> NormalizeFormFields(
+    IReadOnlyList<AccountTypeFieldDto>? formFields,
+    AccountTypeEntity? existing)
+{
+    if (formFields is { Count: > 0 })
+    {
+        return formFields;
+    }
+
+    if (!string.IsNullOrWhiteSpace(existing?.FormFieldsJson))
+    {
+        return DeserializeFormFields(existing.FormFieldsJson);
+    }
+
+    throw new ApiErrorException(
+        StatusCodes.Status400BadRequest,
+        ApiErrorCodes.ValidationError,
+        "formFields обязателен и должен содержать минимум одно поле.");
+}
+
+static AccountTypeRuntimeConfigDto NormalizeRuntimeConfig(
+    AccountTypeRuntimeConfigDto? runtime,
+    AccountTypeEntity? existing,
+    string platform)
+{
+    var candidate = runtime;
+    if (candidate is null && !string.IsNullOrWhiteSpace(existing?.RuntimeConfigJson))
+    {
+        candidate = DeserializeRuntimeConfig(existing.RuntimeConfigJson, platform);
+    }
+
+    candidate ??= CreateDefaultAccountTypeRuntime(platform);
+
+    var image = candidate.WorkerImage?.Trim();
+    if (string.IsNullOrWhiteSpace(image))
+    {
+        throw new ApiErrorException(
+            StatusCodes.Status400BadRequest,
+            ApiErrorCodes.ValidationError,
+            "runtime.workerImage обязателен.");
+    }
+
+    var pathPrefix = string.IsNullOrWhiteSpace(candidate.WorkerPathPrefix)
+        ? "/internal/v2/worker"
+        : candidate.WorkerPathPrefix.Trim();
+    if (!pathPrefix.StartsWith('/'))
+    {
+        pathPrefix = $"/{pathPrefix}";
+    }
+
+    var healthPath = string.IsNullOrWhiteSpace(candidate.HealthPath)
+        ? "/health"
+        : candidate.HealthPath.Trim();
+    if (!healthPath.StartsWith('/'))
+    {
+        healthPath = $"/{healthPath}";
+    }
+
+    var containerPort = candidate.ContainerPort is < 1 or > 65535
+        ? 8080
+        : candidate.ContainerPort;
+    var env = candidate.EnvironmentVariables is null
+        ? new Dictionary<string, string>(StringComparer.Ordinal)
+        : new Dictionary<string, string>(candidate.EnvironmentVariables, StringComparer.Ordinal);
+
+    return new AccountTypeRuntimeConfigDto(
+        candidate.AutospawnEnabled,
+        image,
+        pathPrefix,
+        healthPath,
+        containerPort,
+        env);
+}
+
+static string SerializeFormFields(IReadOnlyList<AccountTypeFieldDto> formFields)
+{
+    return JsonSerializer.Serialize(formFields);
+}
+
+static string SerializeRuntimeConfig(AccountTypeRuntimeConfigDto runtime)
+{
+    return JsonSerializer.Serialize(runtime);
+}
+
+static AccountTypeRuntimeConfigDto DeserializeRuntimeConfig(string? json, string platform)
+{
+    if (string.IsNullOrWhiteSpace(json))
+    {
+        return CreateDefaultAccountTypeRuntime(platform);
+    }
+
+    try
+    {
+        return JsonSerializer.Deserialize<AccountTypeRuntimeConfigDto>(json)
+               ?? CreateDefaultAccountTypeRuntime(platform);
+    }
+    catch
+    {
+        return CreateDefaultAccountTypeRuntime(platform);
+    }
+}
+
+static AccountTypeRuntimeConfigDto ResolveRuntimeConfig(AccountTypeEntity entity, string platform)
+{
+    return NormalizeRuntimeConfig(
+        DeserializeRuntimeConfig(entity.RuntimeConfigJson, platform),
+        existing: null,
+        platform);
+}
+
+static async Task<AccountTypeEntity> ResolveActiveAccountTypeForPlatformAsync(
+    AccountsManagerDbContext dbContext,
+    string platform,
+    CancellationToken cancellationToken)
+{
+    var normalizedPlatform = platform.Trim().ToLowerInvariant();
+    if (string.IsNullOrWhiteSpace(normalizedPlatform))
+    {
+        throw new ApiErrorException(
+            StatusCodes.Status400BadRequest,
+            ApiErrorCodes.ValidationError,
+            "platform обязателен для поиска account-type.");
+    }
+
+    var match = await dbContext.AccountTypes
+        .AsNoTracking()
+        .Where(x => x.Enabled)
+        .Where(x => x.Platform == normalizedPlatform)
+        .OrderBy(x => x.SortOrder)
+        .ThenBy(x => x.AccountTypeId)
+        .FirstOrDefaultAsync(cancellationToken);
+    if (match is null)
+    {
+        throw new ApiErrorException(
+            StatusCodes.Status409Conflict,
+            ApiErrorCodes.Conflict,
+            $"Нет активного account-type для платформы `{platform}`.");
+    }
+
+    return match;
+}
+
+static string BuildSpawnWorkerId(Guid accountId)
+{
+    return $"ddcrm-wk-{accountId:N}";
+}
+
+static string NormalizeFallbackWorkerId(string fallbackWorkerId)
+{
+    var normalized = fallbackWorkerId.Trim();
+    if (string.IsNullOrWhiteSpace(normalized))
+    {
+        return "worker-api";
+    }
+
+    return normalized.Length > 63
+        ? normalized[..63]
+        : normalized;
+}
+
+static bool IsManagedWorker(string workerId)
+{
+    return workerId.StartsWith("ddcrm-wk-", StringComparison.OrdinalIgnoreCase);
+}
+
+static Dictionary<string, string> BuildWorkerSpawnEnvironment(
+    AccountTypeRuntimeConfigDto runtimeConfig,
+    string platform,
+    Guid accountId)
+{
+    var env = new Dictionary<string, string>(runtimeConfig.EnvironmentVariables, StringComparer.Ordinal)
+    {
+        ["TEST_WORKER_PROVIDER"] = platform,
+        ["TEST_INMEMORY_DB_NAME"] = $"worker-{accountId:N}",
+    };
+
+    if (!env.ContainsKey("ASPNETCORE_URLS"))
+    {
+        env["ASPNETCORE_URLS"] = $"http://+:{runtimeConfig.ContainerPort}";
+    }
+
+    return env;
+}
+
+static string ResolveWorkerControlBaseUrlTemplate(
+    string workerId,
+    WorkerServerEntity? server,
+    int workerPort,
+    string? preferredBaseUrlTemplate)
+{
+    if (!string.IsNullOrWhiteSpace(preferredBaseUrlTemplate))
+    {
+        return ApplyWorkerTemplatePlaceholders(preferredBaseUrlTemplate, workerId, workerPort);
+    }
+
+    if (!string.IsNullOrWhiteSpace(server?.BaseUrlTemplate))
+    {
+        return ApplyWorkerTemplatePlaceholders(server.BaseUrlTemplate, workerId, workerPort);
+    }
+
+    return $"http://{workerId}:{workerPort}";
+}
+
+static string ApplyWorkerTemplatePlaceholders(string template, string workerId, int workerPort)
+{
+    return template
+        .Replace("{workerId}", workerId, StringComparison.OrdinalIgnoreCase)
+        .Replace("{workerPort}", workerPort.ToString(CultureInfo.InvariantCulture), StringComparison.OrdinalIgnoreCase);
+}
+
+static int ResolveWorkerPort(AccountTypeRuntimeConfigDto runtimeConfig, int fallbackPort)
+{
+    if (runtimeConfig.ContainerPort is >= 1 and <= 65535)
+    {
+        return runtimeConfig.ContainerPort;
+    }
+
+    if (fallbackPort is >= 1 and <= 65535)
+    {
+        return fallbackPort;
+    }
+
+    return 8080;
+}
+
 static AccountTypeDto ToAccountTypeDto(AccountTypeEntity entity)
 {
+    var runtime = DeserializeRuntimeConfig(entity.RuntimeConfigJson, entity.Platform);
     return new AccountTypeDto(
         entity.AccountTypeId,
         entity.Platform,
@@ -676,7 +1473,8 @@ static AccountTypeDto ToAccountTypeDto(AccountTypeEntity entity)
         entity.WorkerProfileId,
         entity.Enabled,
         entity.SortOrder,
-        DeserializeFormFields(entity.FormFieldsJson));
+        DeserializeFormFields(entity.FormFieldsJson),
+        runtime);
 }
 
 static IReadOnlyList<AccountTypeFieldDto> DeserializeFormFields(string? json)
@@ -970,6 +1768,266 @@ static int NormalizeCurrentLoad(int? currentLoad, WorkerServerEntity? existing, 
     return normalized;
 }
 
+static string? NormalizeDockerHost(string? dockerHost, WorkerServerEntity? existing)
+{
+    var normalized = dockerHost?.Trim();
+    if (string.IsNullOrWhiteSpace(normalized))
+    {
+        return existing?.DockerHost;
+    }
+
+    if (!normalized.StartsWith("unix://", StringComparison.OrdinalIgnoreCase)
+        && !normalized.StartsWith("npipe://", StringComparison.OrdinalIgnoreCase)
+        && !normalized.StartsWith("tcp://", StringComparison.OrdinalIgnoreCase))
+    {
+        throw new ApiErrorException(
+            StatusCodes.Status400BadRequest,
+            ApiErrorCodes.ValidationError,
+            "dockerHost должен начинаться с unix://, npipe:// или tcp://.");
+    }
+
+    if (normalized.Length > 512)
+    {
+        throw new ApiErrorException(
+            StatusCodes.Status400BadRequest,
+            ApiErrorCodes.ValidationError,
+            "dockerHost превышает лимит длины.");
+    }
+
+    return normalized;
+}
+
+static string? NormalizeDockerNetwork(string? dockerNetwork, WorkerServerEntity? existing)
+{
+    var normalized = dockerNetwork?.Trim();
+    if (string.IsNullOrWhiteSpace(normalized))
+    {
+        return existing?.DockerNetwork;
+    }
+
+    if (normalized.Length > 160)
+    {
+        throw new ApiErrorException(
+            StatusCodes.Status400BadRequest,
+            ApiErrorCodes.ValidationError,
+            "dockerNetwork превышает лимит длины.");
+    }
+
+    return normalized;
+}
+
+static byte[] ResolveRegistrySecretsEncryptionKey(string? rawKey)
+{
+    var source = string.IsNullOrWhiteSpace(rawKey)
+        ? "ddcrm-local-account-manager-registry-secrets-key"
+        : rawKey.Trim();
+
+    if (source.Length < 32)
+    {
+        throw new InvalidOperationException(
+            "ACCOUNT_MANAGER_AUTOSPAWN_REGISTRY_SECRET_ENCRYPTION_KEY должен содержать минимум 32 символа.");
+    }
+
+    return SHA256.HashData(Encoding.UTF8.GetBytes(source));
+}
+
+static WorkerServerRegistryState NormalizeWorkerServerRegistry(
+    WorkerServerRegistryUpsertRequest? registry,
+    WorkerServerEntity? existing,
+    byte[] encryptionKey,
+    DateTimeOffset now)
+{
+    var existingHost = string.IsNullOrWhiteSpace(existing?.RegistryHost)
+        ? "ghcr.io"
+        : existing.RegistryHost;
+
+    var enabled = registry?.Enabled ?? existing?.RegistryEnabled ?? false;
+    var host = NormalizeRegistryHost(registry?.Host, existingHost, enabled);
+    var username = NormalizeRegistryUsername(registry?.Username, existing?.RegistryUsername, enabled);
+
+    var clearToken = registry?.ClearToken ?? false;
+    var rawToken = registry?.Token;
+    if (clearToken && !string.IsNullOrWhiteSpace(rawToken))
+    {
+        throw new ApiErrorException(
+            StatusCodes.Status400BadRequest,
+            ApiErrorCodes.ValidationError,
+            "Нельзя одновременно передавать registry token и clearToken=true.");
+    }
+
+    var tokenEncrypted = existing?.RegistryTokenEncrypted;
+    var tokenUpdatedAt = existing?.RegistryTokenUpdatedAtUtc;
+
+    if (clearToken)
+    {
+        tokenEncrypted = null;
+        tokenUpdatedAt = now;
+    }
+    else if (rawToken is not null)
+    {
+        var normalizedToken = rawToken.Trim();
+        if (string.IsNullOrWhiteSpace(normalizedToken))
+        {
+            throw new ApiErrorException(
+                StatusCodes.Status400BadRequest,
+                ApiErrorCodes.ValidationError,
+                "registry token не может быть пустым.");
+        }
+
+        if (string.IsNullOrWhiteSpace(username))
+        {
+            throw new ApiErrorException(
+                StatusCodes.Status400BadRequest,
+                ApiErrorCodes.ValidationError,
+                "Для сохранения registry token требуется username.");
+        }
+
+        tokenEncrypted = EncryptRegistrySecret(normalizedToken, encryptionKey);
+        tokenUpdatedAt = now;
+    }
+
+    return new WorkerServerRegistryState(enabled, host, username, tokenEncrypted, tokenUpdatedAt);
+}
+
+static string NormalizeRegistryHost(string? host, string? existingHost, bool enabled)
+{
+    var normalized = string.IsNullOrWhiteSpace(host)
+        ? (string.IsNullOrWhiteSpace(existingHost) ? "ghcr.io" : existingHost.Trim())
+        : host.Trim();
+
+    if (normalized.Length > 160)
+    {
+        throw new ApiErrorException(
+            StatusCodes.Status400BadRequest,
+            ApiErrorCodes.ValidationError,
+            "registry host превышает лимит длины.");
+    }
+
+    if (!string.Equals(normalized, "ghcr.io", StringComparison.OrdinalIgnoreCase))
+    {
+        throw new ApiErrorException(
+            StatusCodes.Status400BadRequest,
+            ApiErrorCodes.ValidationError,
+            "В v1 поддерживается только registry host `ghcr.io`.");
+    }
+
+    if (enabled && string.IsNullOrWhiteSpace(normalized))
+    {
+        throw new ApiErrorException(
+            StatusCodes.Status400BadRequest,
+            ApiErrorCodes.ValidationError,
+            "Для enabled registry обязателен host.");
+    }
+
+    return normalized.ToLowerInvariant();
+}
+
+static string? NormalizeRegistryUsername(string? username, string? existingUsername, bool enabled)
+{
+    var normalized = username is null
+        ? existingUsername?.Trim()
+        : username.Trim();
+
+    if (string.IsNullOrWhiteSpace(normalized))
+    {
+        return null;
+    }
+
+    if (normalized.Length > 160)
+    {
+        throw new ApiErrorException(
+            StatusCodes.Status400BadRequest,
+            ApiErrorCodes.ValidationError,
+            "registry username превышает лимит длины.");
+    }
+
+    if (enabled && string.IsNullOrWhiteSpace(normalized))
+    {
+        throw new ApiErrorException(
+            StatusCodes.Status400BadRequest,
+            ApiErrorCodes.ValidationError,
+            "Для enabled registry обязателен username.");
+    }
+
+    return normalized;
+}
+
+static DockerRegistryAuthConfig? ResolveRegistryAuth(WorkerServerEntity? server, byte[] encryptionKey)
+{
+    if (server is null || !server.RegistryEnabled)
+    {
+        return null;
+    }
+
+    var host = string.IsNullOrWhiteSpace(server.RegistryHost)
+        ? "ghcr.io"
+        : server.RegistryHost.Trim().ToLowerInvariant();
+    var username = server.RegistryUsername?.Trim();
+    var token = string.IsNullOrWhiteSpace(server.RegistryTokenEncrypted)
+        ? null
+        : DecryptRegistrySecret(server.RegistryTokenEncrypted, encryptionKey);
+
+    return new DockerRegistryAuthConfig(
+        server.RegistryEnabled,
+        host,
+        username,
+        token);
+}
+
+static string EncryptRegistrySecret(string plaintext, byte[] key)
+{
+    var nonce = RandomNumberGenerator.GetBytes(12);
+    var plainBytes = Encoding.UTF8.GetBytes(plaintext);
+    var cipherBytes = new byte[plainBytes.Length];
+    var tag = new byte[16];
+
+    using var aes = new AesGcm(key, tag.Length);
+    aes.Encrypt(nonce, plainBytes, cipherBytes, tag);
+
+    var output = new byte[nonce.Length + tag.Length + cipherBytes.Length];
+    Buffer.BlockCopy(nonce, 0, output, 0, nonce.Length);
+    Buffer.BlockCopy(tag, 0, output, nonce.Length, tag.Length);
+    Buffer.BlockCopy(cipherBytes, 0, output, nonce.Length + tag.Length, cipherBytes.Length);
+
+    return Convert.ToBase64String(output);
+}
+
+static string DecryptRegistrySecret(string encodedCiphertext, byte[] key)
+{
+    try
+    {
+        var input = Convert.FromBase64String(encodedCiphertext);
+        if (input.Length < 29)
+        {
+            throw new ApiErrorException(
+                StatusCodes.Status500InternalServerError,
+                ApiErrorCodes.InternalError,
+                "Повреждённое registry credential значение в worker_servers.");
+        }
+
+        var nonce = input.AsSpan(0, 12).ToArray();
+        var tag = input.AsSpan(12, 16).ToArray();
+        var cipher = input.AsSpan(28).ToArray();
+        var plain = new byte[cipher.Length];
+
+        using var aes = new AesGcm(key, tag.Length);
+        aes.Decrypt(nonce, cipher, tag, plain);
+
+        return Encoding.UTF8.GetString(plain);
+    }
+    catch (ApiErrorException)
+    {
+        throw;
+    }
+    catch (Exception)
+    {
+        throw new ApiErrorException(
+            StatusCodes.Status500InternalServerError,
+            ApiErrorCodes.InternalError,
+            "Не удалось расшифровать registry token для worker server.");
+    }
+}
+
 static Dictionary<string, object?> NormalizeMetadata(
     Dictionary<string, object?>? metadata,
     WorkerServerEntity? existing)
@@ -1020,6 +2078,16 @@ static WorkerServerDto ToWorkerServerDto(WorkerServerEntity entity)
         }
     }
 
+    var registryHost = string.IsNullOrWhiteSpace(entity.RegistryHost)
+        ? "ghcr.io"
+        : entity.RegistryHost;
+    var registry = new WorkerServerRegistrySummaryDto(
+        entity.RegistryEnabled,
+        registryHost,
+        entity.RegistryUsername,
+        !string.IsNullOrWhiteSpace(entity.RegistryTokenEncrypted),
+        entity.RegistryTokenUpdatedAtUtc);
+
     return new WorkerServerDto(
         entity.ServerId,
         entity.BaseUrlTemplate,
@@ -1027,7 +2095,10 @@ static WorkerServerDto ToWorkerServerDto(WorkerServerEntity entity)
         entity.Health,
         entity.Capacity,
         entity.CurrentLoad,
+        entity.DockerHost,
+        entity.DockerNetwork,
         entity.LastHeartbeatAtUtc,
+        registry,
         metadata);
 }
 
@@ -1061,6 +2132,14 @@ public sealed record AccountTypeFieldDto(
     string? Placeholder,
     string? DefaultValue);
 
+public sealed record AccountTypeRuntimeConfigDto(
+    bool AutospawnEnabled,
+    string WorkerImage,
+    string WorkerPathPrefix,
+    string HealthPath,
+    int ContainerPort,
+    IReadOnlyDictionary<string, string> EnvironmentVariables);
+
 public sealed record AccountTypeDto(
     string AccountTypeId,
     string Platform,
@@ -1069,9 +2148,22 @@ public sealed record AccountTypeDto(
     string WorkerProfileId,
     bool Enabled,
     int SortOrder,
-    IReadOnlyList<AccountTypeFieldDto> FormFields);
+    IReadOnlyList<AccountTypeFieldDto> FormFields,
+    AccountTypeRuntimeConfigDto Runtime);
+
+public sealed record AccountTypeUpsertRequest(
+    string? Platform,
+    string? DisplayName,
+    string? Description,
+    string? WorkerProfileId,
+    bool? Enabled,
+    int? SortOrder,
+    IReadOnlyList<AccountTypeFieldDto>? FormFields,
+    AccountTypeRuntimeConfigDto? Runtime);
 
 public sealed record AccountTypeListResponse(string RequestId, IReadOnlyList<AccountTypeDto> Items);
+
+public sealed record AccountTypeResponse(string RequestId, AccountTypeDto AccountType);
 
 public sealed record WorkerServerUpsertRequest(
     string? BaseUrlTemplate,
@@ -1079,13 +2171,25 @@ public sealed record WorkerServerUpsertRequest(
     int? Capacity,
     int? CurrentLoad,
     string? Health,
+    string? DockerHost,
+    string? DockerNetwork,
+    WorkerServerRegistryUpsertRequest? Registry,
     Dictionary<string, object?>? Metadata);
+
+public sealed record WorkerServerRegistryUpsertRequest(
+    bool? Enabled,
+    string? Host,
+    string? Username,
+    string? Token,
+    bool? ClearToken);
 
 public sealed record WorkerServerHeartbeatRequest(
     string? Status,
     int? Capacity,
     int? CurrentLoad,
     string? Health,
+    string? DockerHost,
+    string? DockerNetwork,
     Dictionary<string, object?>? Metadata);
 
 public sealed record WorkerServerDto(
@@ -1095,13 +2199,30 @@ public sealed record WorkerServerDto(
     string Health,
     int Capacity,
     int CurrentLoad,
+    string? DockerHost,
+    string? DockerNetwork,
     DateTimeOffset? LastHeartbeatAtUtc,
+    WorkerServerRegistrySummaryDto Registry,
     IReadOnlyDictionary<string, object?> Metadata);
+
+public sealed record WorkerServerRegistrySummaryDto(
+    bool Enabled,
+    string Host,
+    string? Username,
+    bool HasToken,
+    DateTimeOffset? TokenUpdatedAtUtc);
 
 public sealed record WorkerServerResponse(string RequestId, WorkerServerDto WorkerServer);
 
 public sealed record WorkerServerListResponse(string RequestId, IReadOnlyList<WorkerServerDto> Items);
 
 public sealed record WorkerServerSelection(string ServerId, string? BaseUrlTemplate, WorkerServerEntity? Server);
+
+public sealed record WorkerServerRegistryState(
+    bool Enabled,
+    string Host,
+    string? Username,
+    string? TokenEncrypted,
+    DateTimeOffset? TokenUpdatedAtUtc);
 
 public partial class Program;

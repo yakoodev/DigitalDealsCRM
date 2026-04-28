@@ -70,6 +70,7 @@
 - `TEST_WORKER_INSTANCE_ID` задаёт диагностический идентификатор конкретного инстанса симулятора (если не задан, используется `MachineName`);
 - выбранный provider должен согласовываться с данными `/internal/v2/worker/account`, `/internal/v2/worker/capabilities` и `/internal/v2/worker/schemas/products`;
 - при смене provider-профиля contract-tests должны проверять provider-специфичные product schema (`*.item.v1`) и совместимость feature-map.
+- операции `account/conversations/products`, помеченные как `false` в `features`, должны отклоняться runtime-ом с `WORKER_RUNTIME_CONFLICT` (`409`), чтобы поведение было консистентно с опубликованным provider feature-map.
 
 ## 7. Политика `ext.test.*`
 - namespace `ext.test.*` зарезервирован только для симуляторных действий;

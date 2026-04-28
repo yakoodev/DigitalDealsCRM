@@ -105,6 +105,143 @@ export interface AccountType {
   formFields: AccountTypeField[];
 }
 
+export type AdminAccountTypeRuntimeEnvironmentVariables = {[key: string]: string};
+
+export interface AdminAccountTypeRuntime {
+  autospawnEnabled: boolean;
+  workerImage: string;
+  workerPathPrefix: string;
+  healthPath: string;
+  /**
+     * @minimum 1
+     * @maximum 65535
+     */
+  containerPort: number;
+  environmentVariables: AdminAccountTypeRuntimeEnvironmentVariables;
+}
+
+export type AdminAccountType = AccountType & {
+  runtime: AdminAccountTypeRuntime;
+};
+
+export interface AdminAccountTypeUpsertRequest {
+  platform?: string;
+  displayName?: string;
+  description?: string;
+  workerProfileId?: string;
+  enabled?: boolean;
+  sortOrder?: number;
+  formFields?: AccountTypeField[];
+  runtime?: AdminAccountTypeRuntime;
+}
+
+export type AdminAccountTypeResponse = RequestMeta & {
+  accountType: AdminAccountType;
+};
+
+export type AdminAccountTypeListResponse = RequestMeta & {
+  items: AdminAccountType[];
+};
+
+export type AdminWorkerServerStatus = typeof AdminWorkerServerStatus[keyof typeof AdminWorkerServerStatus];
+
+
+export const AdminWorkerServerStatus = {
+  active: 'active',
+  draining: 'draining',
+  inactive: 'inactive',
+} as const;
+
+export type AdminWorkerServerHealth = typeof AdminWorkerServerHealth[keyof typeof AdminWorkerServerHealth];
+
+
+export const AdminWorkerServerHealth = {
+  healthy: 'healthy',
+  degraded: 'degraded',
+  unhealthy: 'unhealthy',
+} as const;
+
+export type AdminWorkerServerMetadata = { [key: string]: unknown };
+
+export interface AdminWorkerServerRegistrySummary {
+  enabled: boolean;
+  host: string;
+  /** @nullable */
+  username?: string | null;
+  hasToken: boolean;
+  /** @nullable */
+  tokenUpdatedAtUtc?: string | null;
+}
+
+export interface AdminWorkerServer {
+  serverId: string;
+  baseUrlTemplate: string;
+  status: AdminWorkerServerStatus;
+  health: AdminWorkerServerHealth;
+  /** @minimum 0 */
+  capacity: number;
+  /** @minimum 0 */
+  currentLoad: number;
+  /** @nullable */
+  dockerHost?: string | null;
+  /** @nullable */
+  dockerNetwork?: string | null;
+  /** @nullable */
+  lastHeartbeatAtUtc?: string | null;
+  registry: AdminWorkerServerRegistrySummary;
+  metadata: AdminWorkerServerMetadata;
+}
+
+export interface AdminWorkerServerRegistryUpsertRequest {
+  enabled?: boolean;
+  host?: string;
+  username?: string;
+  token?: string;
+  clearToken?: boolean;
+}
+
+export type AdminWorkerServerUpsertRequestStatus = typeof AdminWorkerServerUpsertRequestStatus[keyof typeof AdminWorkerServerUpsertRequestStatus];
+
+
+export const AdminWorkerServerUpsertRequestStatus = {
+  active: 'active',
+  draining: 'draining',
+  inactive: 'inactive',
+} as const;
+
+export type AdminWorkerServerUpsertRequestHealth = typeof AdminWorkerServerUpsertRequestHealth[keyof typeof AdminWorkerServerUpsertRequestHealth];
+
+
+export const AdminWorkerServerUpsertRequestHealth = {
+  healthy: 'healthy',
+  degraded: 'degraded',
+  unhealthy: 'unhealthy',
+} as const;
+
+export type AdminWorkerServerUpsertRequestMetadata = { [key: string]: unknown };
+
+export interface AdminWorkerServerUpsertRequest {
+  baseUrlTemplate?: string;
+  status?: AdminWorkerServerUpsertRequestStatus;
+  health?: AdminWorkerServerUpsertRequestHealth;
+  /** @minimum 0 */
+  capacity?: number;
+  /** @minimum 0 */
+  currentLoad?: number;
+  dockerHost?: string;
+  dockerNetwork?: string;
+  registry?: AdminWorkerServerRegistryUpsertRequest;
+  metadata?: AdminWorkerServerUpsertRequestMetadata;
+}
+
+export type AdminWorkerServerResponse = RequestMeta & {
+  workerServer: AdminWorkerServer;
+};
+
+export type AdminWorkerServerListResponse = RequestMeta & {
+  items: AdminWorkerServer[];
+};
+
 export interface Account {
   id: string;
   projectId: string;
@@ -697,6 +834,198 @@ export const listProjectAccountTypes = async (projectId: string, options?: Reque
 
   const data: listProjectAccountTypesResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as listProjectAccountTypesResponse
+}
+
+
+
+export type adminListWorkerServersResponse200 = {
+  data: AdminWorkerServerListResponse
+  status: 200
+}
+
+export type adminListWorkerServersResponseDefault = {
+  data: ErrorResponse
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type adminListWorkerServersResponseSuccess = (adminListWorkerServersResponse200) & {
+  headers: Headers;
+};
+export type adminListWorkerServersResponseError = (adminListWorkerServersResponseDefault) & {
+  headers: Headers;
+};
+
+export type adminListWorkerServersResponse = (adminListWorkerServersResponseSuccess | adminListWorkerServersResponseError)
+
+export const getAdminListWorkerServersUrl = () => {
+
+
+
+
+  return `/v1/admin/account-manager/worker-servers`
+}
+
+export const adminListWorkerServers = async ( options?: RequestInit, fetchFn?: typeof globalThis.fetch): Promise<adminListWorkerServersResponse> => {
+
+  const res = await (fetchFn ?? fetch)(getAdminListWorkerServersUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: adminListWorkerServersResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as adminListWorkerServersResponse
+}
+
+
+
+export type adminUpsertWorkerServerResponse200 = {
+  data: AdminWorkerServerResponse
+  status: 200
+}
+
+export type adminUpsertWorkerServerResponseDefault = {
+  data: ErrorResponse
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type adminUpsertWorkerServerResponseSuccess = (adminUpsertWorkerServerResponse200) & {
+  headers: Headers;
+};
+export type adminUpsertWorkerServerResponseError = (adminUpsertWorkerServerResponseDefault) & {
+  headers: Headers;
+};
+
+export type adminUpsertWorkerServerResponse = (adminUpsertWorkerServerResponseSuccess | adminUpsertWorkerServerResponseError)
+
+export const getAdminUpsertWorkerServerUrl = (serverId: string,) => {
+
+
+
+
+  return `/v1/admin/account-manager/worker-servers/${serverId}`
+}
+
+export const adminUpsertWorkerServer = async (serverId: string,
+    adminWorkerServerUpsertRequest: AdminWorkerServerUpsertRequest, options?: RequestInit, fetchFn?: typeof globalThis.fetch): Promise<adminUpsertWorkerServerResponse> => {
+
+  const res = await (fetchFn ?? fetch)(getAdminUpsertWorkerServerUrl(serverId),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      adminWorkerServerUpsertRequest,)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: adminUpsertWorkerServerResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as adminUpsertWorkerServerResponse
+}
+
+
+
+export type adminListAccountTypesResponse200 = {
+  data: AdminAccountTypeListResponse
+  status: 200
+}
+
+export type adminListAccountTypesResponseDefault = {
+  data: ErrorResponse
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type adminListAccountTypesResponseSuccess = (adminListAccountTypesResponse200) & {
+  headers: Headers;
+};
+export type adminListAccountTypesResponseError = (adminListAccountTypesResponseDefault) & {
+  headers: Headers;
+};
+
+export type adminListAccountTypesResponse = (adminListAccountTypesResponseSuccess | adminListAccountTypesResponseError)
+
+export const getAdminListAccountTypesUrl = () => {
+
+
+
+
+  return `/v1/admin/account-manager/account-types`
+}
+
+export const adminListAccountTypes = async ( options?: RequestInit, fetchFn?: typeof globalThis.fetch): Promise<adminListAccountTypesResponse> => {
+
+  const res = await (fetchFn ?? fetch)(getAdminListAccountTypesUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: adminListAccountTypesResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as adminListAccountTypesResponse
+}
+
+
+
+export type adminUpsertAccountTypeResponse200 = {
+  data: AdminAccountTypeResponse
+  status: 200
+}
+
+export type adminUpsertAccountTypeResponseDefault = {
+  data: ErrorResponse
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type adminUpsertAccountTypeResponseSuccess = (adminUpsertAccountTypeResponse200) & {
+  headers: Headers;
+};
+export type adminUpsertAccountTypeResponseError = (adminUpsertAccountTypeResponseDefault) & {
+  headers: Headers;
+};
+
+export type adminUpsertAccountTypeResponse = (adminUpsertAccountTypeResponseSuccess | adminUpsertAccountTypeResponseError)
+
+export const getAdminUpsertAccountTypeUrl = (accountTypeId: string,) => {
+
+
+
+
+  return `/v1/admin/account-manager/account-types/${accountTypeId}`
+}
+
+export const adminUpsertAccountType = async (accountTypeId: string,
+    adminAccountTypeUpsertRequest: AdminAccountTypeUpsertRequest, options?: RequestInit, fetchFn?: typeof globalThis.fetch): Promise<adminUpsertAccountTypeResponse> => {
+
+  const res = await (fetchFn ?? fetch)(getAdminUpsertAccountTypeUrl(accountTypeId),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      adminAccountTypeUpsertRequest,)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: adminUpsertAccountTypeResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as adminUpsertAccountTypeResponse
 }
 
 

@@ -25,6 +25,7 @@
 ## 3. Capability и extension проверки
 - `/internal/v2/worker/capabilities` публикует актуальный capability-набор;
 - provider-профиль (`funpay/playerok/ggsell/platimarket`) консистентен между `/capabilities`, `/account` и `/schemas/products`;
+- resource endpoint-ы `account/conversations/products` отклоняют операции с `features=false` через `409/WORKER_RUNTIME_CONFLICT`;
 - extension endpoint принимает только `ext.*` action-key;
 - Gateway не вызывает extension action без соответствующего capability.
 

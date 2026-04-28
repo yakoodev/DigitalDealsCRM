@@ -27,5 +27,8 @@ public sealed class AccountTypeEntity
     [MaxLength(8000)]
     public string? FormFieldsJson { get; set; }
 
+    [MaxLength(12000)]
+    public string? RuntimeConfigJson { get; set; }
+
     public DateTimeOffset UpdatedAtUtc { get; set; }
 }

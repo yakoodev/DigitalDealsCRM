@@ -131,6 +131,35 @@ paths:
         default:
           $ref: '#/components/responses/Error'
 
+  /internal/v1/account-types/{accountTypeId}:
+    put:
+      tags: [worker-control]
+      operationId: accountTypeUpsert
+      parameters:
+        - name: accountTypeId
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 120
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AccountTypeUpsertRequest'
+      responses:
+        '200':
+          description: Account type upserted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountTypeResponse'
+        default:
+          $ref: '#/components/responses/Error'
+
   /internal/v1/worker-servers/{serverId}:
     put:
       tags: [worker-control]
@@ -736,6 +765,7 @@ components:
         - enabled
         - sortOrder
         - formFields
+        - runtime
       properties:
         accountTypeId:
           type: string
@@ -755,6 +785,8 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/AccountTypeField'
+        runtime:
+          $ref: '#/components/schemas/AccountTypeRuntime'
 
     AccountTypeListResponse:
       allOf:
@@ -767,9 +799,100 @@ components:
               items:
                 $ref: '#/components/schemas/AccountType'
 
+    AccountTypeResponse:
+      allOf:
+        - $ref: '#/components/schemas/RequestMeta'
+        - type: object
+          required: [accountType]
+          properties:
+            accountType:
+              $ref: '#/components/schemas/AccountType'
+
+    AccountTypeRuntime:
+      type: object
+      required:
+        - autospawnEnabled
+        - workerImage
+        - workerPathPrefix
+        - healthPath
+        - containerPort
+        - environmentVariables
+      properties:
+        autospawnEnabled:
+          type: boolean
+        workerImage:
+          type: string
+        workerPathPrefix:
+          type: string
+        healthPath:
+          type: string
+        containerPort:
+          type: integer
+          minimum: 1
+          maximum: 65535
+        environmentVariables:
+          type: object
+          additionalProperties:
+            type: string
+
+    AccountTypeUpsertRequest:
+      type: object
+      properties:
+        platform:
+          type: string
+        displayName:
+          type: string
+        description:
+          type: string
+        workerProfileId:
+          type: string
+        enabled:
+          type: boolean
+        sortOrder:
+          type: integer
+        formFields:
+          type: array
+          items:
+            $ref: '#/components/schemas/AccountTypeField'
+        runtime:
+          $ref: '#/components/schemas/AccountTypeRuntime'
+
     WorkerServerMetadata:
       type: object
       additionalProperties: true
+
+    WorkerServerRegistrySummary:
+      type: object
+      required: [enabled, host, hasToken]
+      properties:
+        enabled:
+          type: boolean
+        host:
+          type: string
+          example: ghcr.io
+        username:
+          type: [string, 'null']
+        hasToken:
+          type: boolean
+        tokenUpdatedAtUtc:
+          type: [string, 'null']
+          format: date-time
+
+    WorkerServerRegistryUpsertRequest:
+      type: object
+      properties:
+        enabled:
+          type: boolean
+        host:
+          type: string
+          example: ghcr.io
+        username:
+          type: string
+        token:
+          type: string
+          writeOnly: true
+        clearToken:
+          type: boolean
 
     WorkerServer:
       type: object
@@ -780,6 +903,7 @@ components:
         - health
         - capacity
         - currentLoad
+        - registry
         - metadata
       properties:
         serverId:
@@ -798,9 +922,15 @@ components:
         currentLoad:
           type: integer
           minimum: 0
+        dockerHost:
+          type: [string, 'null']
+        dockerNetwork:
+          type: [string, 'null']
         lastHeartbeatAtUtc:
           type: [string, 'null']
           format: date-time
+        registry:
+          $ref: '#/components/schemas/WorkerServerRegistrySummary'
         metadata:
           $ref: '#/components/schemas/WorkerServerMetadata'
 
@@ -841,6 +971,12 @@ components:
         currentLoad:
           type: integer
           minimum: 0
+        dockerHost:
+          type: string
+        dockerNetwork:
+          type: string
+        registry:
+          $ref: '#/components/schemas/WorkerServerRegistryUpsertRequest'
         metadata:
           $ref: '#/components/schemas/WorkerServerMetadata'
 
@@ -859,6 +995,10 @@ components:
         currentLoad:
           type: integer
           minimum: 0
+        dockerHost:
+          type: string
+        dockerNetwork:
+          type: string
         metadata:
           $ref: '#/components/schemas/WorkerServerMetadata'
 

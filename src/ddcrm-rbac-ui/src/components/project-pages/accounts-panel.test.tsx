@@ -5,6 +5,19 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ProjectAccountsPanel } from "@/components/project-pages/accounts-panel";
 import { runAccountActionRequest } from "@/lib/api-client";
 
+const openModalMock = vi.fn();
+
+vi.mock("@/hooks/use-route-modal", () => ({
+  useRouteModal: () => ({
+    modal: null,
+    accountId: "",
+    productId: "",
+    conversationId: "",
+    openModal: openModalMock,
+    closeModal: vi.fn(),
+  }),
+}));
+
 vi.mock("@/hooks/use-project-accounts", () => ({
   useProjectAccounts: () => ({
     accounts: [
@@ -38,11 +51,10 @@ vi.mock("@/lib/api-client", async () => {
   return {
     ...actual,
     runAccountActionRequest: vi.fn(),
-    createAccountRequest: vi.fn(),
   };
 });
 
-function renderPanel() {
+function renderPanel(activeRole: "owner" | "admin" | "moderator" = "owner") {
   const queryClient = new QueryClient({
     defaultOptions: {
       queries: {
@@ -59,6 +71,7 @@ function renderPanel() {
       <ProjectAccountsPanel
         apiSession={{ baseUrl: "http://localhost:5073", token: "token" }}
         projectId="project-1"
+        activeRole={activeRole}
       />
     </QueryClientProvider>,
   );
@@ -66,6 +79,7 @@ function renderPanel() {
 
 describe("ProjectAccountsPanel", () => {
   beforeEach(() => {
+    openModalMock.mockReset();
     vi.mocked(runAccountActionRequest).mockReset();
     vi.mocked(runAccountActionRequest).mockResolvedValue({
       accountId: "acc-1",
@@ -87,10 +101,7 @@ describe("ProjectAccountsPanel", () => {
       );
     });
 
-    const refreshButtons = screen.getAllByRole("button", {
-      name: "Обновить",
-    });
-    await userEvent.click(refreshButtons[0]);
+    await userEvent.click(screen.getByRole("button", { name: "Обновить" }));
 
     await waitFor(() => {
       const accountInfoCalls = vi
@@ -111,5 +122,17 @@ describe("ProjectAccountsPanel", () => {
       "UNAUTHORIZED: Сессия истекла или JWT невалиден.",
     );
     expect(errors.length).toBeGreaterThan(0);
+  });
+
+  it("для moderator скрывает lifecycle-операции аккаунта", async () => {
+    renderPanel("moderator");
+
+    expect(
+      await screen.findByText("`moderator` работает только в режиме просмотра без lifecycle-операций."),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Управлять выбранным аккаунтом" }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Добавить аккаунт" })).not.toBeInTheDocument();
   });
 });

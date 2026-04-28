@@ -777,7 +777,7 @@
 - `WP`: `WP-RBAC-UI`, `WP-WORKER-CONTRACT`
 - `Status`: `completed`
 - `Operations`: UI-модули проекта работают в `v2` action namespace (`conversations.*`, `products.*`, `products.schemas.*`); пользовательские материалы обновлены под вкладку `Схемы`; канонические и зависимые документы синхронизированы на `account/conversations/products` как единый worker baseline без `v1`-терминологии
-- `Gates`: `npm run lint`, `npm run test:run`, `npm run build` (зелёные локальные прогоны)
+- `Gates`: `npm run lint`, `npm run test:run`, `npm run build`, `docker compose down`, `docker compose up -d --build`, `docker compose ps` (зелёные локальные прогоны)
 - `Exception`: n/a
 - `Changed files`: `src/ddcrm-rbac-ui/src/components/platform-console.tsx`, `src/ddcrm-rbac-ui/README.md`, `docs/standards/worker-action-conventions.md`, `docs/api-contracts/api-contracts.md`, `docs/spec/technical-specification.md`, `docs/architecture_draft/07-account-worker.md`, `docs/testing/worker-contract-checklist.md`, `docs/implementation/patchnotes.md`
 - `Date`: `2026-04-25`
@@ -1030,3 +1030,402 @@
 - `Exception`: n/a
 - `Changed files`: `docs/api-contracts/openapi-internal.yaml`, `docs/api-contracts/openapi-external.yaml`, `docs/api-contracts/api-contracts.md`, `docs/testing/internal-contract-checklist.md`, `src/DDCRM.AccountsManager.Api/Program.cs`, `src/DDCRM.AccountsManager.Persistence/AccountsManagerDbContext.cs`, `src/DDCRM.AccountsManager.Persistence/Entities/AccountTypeEntity.cs`, `src/DDCRM.AccountsManager.Persistence/Migrations/20260425180506_AccountTypesCatalogV1*`, `src/DDCRM.AccountsManager.Persistence/Migrations/AccountsManagerDbContextModelSnapshot.cs`, `src/DDCRM.Core.Api/Program.cs`, `src/DDCRM.Core.Api/AccountsManager/IAccountsManagerClient.cs`, `src/DDCRM.Core.Api/AccountsManager/AccountsManagerHttpClient.cs`, `tests/DDCRM.AccountsManager.Api.Tests/AccountsManagerApiIntegrationTests.cs`, `tests/DDCRM.Core.Api.Tests/CoreApiIntegrationTests.cs`, `tests/DDCRM.Core.Api.Tests/Infrastructure/FakeAccountsManagerClient.cs`, `src/ddcrm-rbac-ui/src/app/projects/[projectId]/accounts/new/page.tsx`, `src/ddcrm-rbac-ui/src/components/project-pages/accounts-panel.tsx`, `src/ddcrm-rbac-ui/src/components/project-pages/account-create-panel.tsx`, `src/ddcrm-rbac-ui/src/components/project-pages/account-create-panel.test.tsx`, `src/ddcrm-rbac-ui/src/app/projects/project-routes.test.tsx`, `src/ddcrm-rbac-ui/src/lib/api-client.ts`, `src/ddcrm-rbac-ui/src/generated/external-api.ts`, `src/ddcrm-rbac-ui/src/app/globals.css`, `docs/implementation/patchnotes.md`
 - `Date`: `2026-04-25`
+
+### W8-T12
+- `Task ID`: `W8-T12`
+- `WP`: `WP-RBAC-UI`
+- `Status`: `started`
+- `Operations`: убрать вкладку `Схемы` из пользовательского project-workflow, оставить legacy-route `/projects/[projectId]/schemas` как redirect на `/products` и синхронизировать пользовательскую документацию
+- `Gates`: `frontend:test`, `frontend:lint`, `frontend:build`
+- `Exception`: n/a
+- `Changed files`: `src/ddcrm-rbac-ui/src/components/project-shell.tsx`, `src/ddcrm-rbac-ui/src/app/projects/[projectId]/schemas/page.tsx`, `src/ddcrm-rbac-ui/src/app/projects/project-routes.test.tsx`, `src/ddcrm-rbac-ui/src/components/auth-screen.tsx`, `src/ddcrm-rbac-ui/README.md`, `docs/implementation/patchnotes.md`
+- `Date`: `2026-04-25`
+
+### W8-T18
+- `Task ID`: `W8-T18`
+- `WP`: `WP-RBAC-UI`
+- `Status`: `started`
+- `Operations`: внедрить role-aware UI guard в route-driven account-flow: скрыть lifecycle и чувствительные proxy-операции для `moderator`, оставить owner/admin полный доступ
+- `Gates`: `frontend:lint`, `frontend:test`, `frontend:build`, `docker:compose-up`
+- `Exception`: n/a
+- `Changed files`: `src/ddcrm-rbac-ui/src/components/project-pages/account-create-panel.tsx`, `src/ddcrm-rbac-ui/src/components/project-pages/account-manage-panel.tsx`, `src/ddcrm-rbac-ui/src/components/project-pages/accounts-panel.tsx`, `src/ddcrm-rbac-ui/src/app/projects/[projectId]/accounts/page.tsx`, `src/ddcrm-rbac-ui/src/app/projects/[projectId]/accounts/new/page.tsx`, `src/ddcrm-rbac-ui/src/app/projects/[projectId]/accounts/manage/page.tsx`, `src/ddcrm-rbac-ui/src/components/project-pages/account-create-panel.test.tsx`, `src/ddcrm-rbac-ui/src/components/project-pages/account-manage-panel.test.tsx`, `src/ddcrm-rbac-ui/src/components/project-pages/accounts-panel.test.tsx`, `src/ddcrm-rbac-ui/README.md`, `docs/implementation/patchnotes.md`
+- `Date`: `2026-04-26`
+
+- `Task ID`: `W8-T18`
+- `WP`: `WP-RBAC-UI`
+- `Status`: `completed`
+- `Operations`: route-driven account UI переведён на явный role guard по матрице permission: для `moderator` скрыты lifecycle-операции (`accounts/new`, `accounts/manage`, manage-links, add-account CTA), страницы `accounts/new` и `accounts/manage` показывают forbidden state при прямом входе; в `accounts/manage` чувствительные proxy-действия (`update/reveal`) дополнительно ограничены permission-флагами; расширены unit-тесты на forbidden/visibility сценарии роли `moderator`
+- `Gates`: `npm run lint`, `npm run test:run`, `npm run build` (зелёные локальные прогоны)
+- `Exception`: n/a
+- `Changed files`: `src/ddcrm-rbac-ui/src/components/project-pages/account-create-panel.tsx`, `src/ddcrm-rbac-ui/src/components/project-pages/account-manage-panel.tsx`, `src/ddcrm-rbac-ui/src/components/project-pages/accounts-panel.tsx`, `src/ddcrm-rbac-ui/src/app/projects/[projectId]/accounts/page.tsx`, `src/ddcrm-rbac-ui/src/app/projects/[projectId]/accounts/new/page.tsx`, `src/ddcrm-rbac-ui/src/app/projects/[projectId]/accounts/manage/page.tsx`, `src/ddcrm-rbac-ui/src/components/project-pages/account-create-panel.test.tsx`, `src/ddcrm-rbac-ui/src/components/project-pages/account-manage-panel.test.tsx`, `src/ddcrm-rbac-ui/src/components/project-pages/accounts-panel.test.tsx`, `src/ddcrm-rbac-ui/README.md`, `docs/implementation/patchnotes.md`
+- `Date`: `2026-04-26`
+
+### W8-T17
+- `Task ID`: `W8-T17`
+- `WP`: `WP-RBAC-UI`, `WP-WORKER-CONTRACT`
+- `Status`: `started`
+- `Operations`: убрать блокирующее поведение UI при частичных сбоях воркеров в агрегированных списках `products/messages`: показывать данные доступных аккаунтов и отдельно предупреждения по ошибочным worker-route
+- `Gates`: `frontend:lint`, `frontend:test`, `frontend:build`, `docker:compose-up`
+- `Exception`: n/a
+- `Changed files`: `src/ddcrm-rbac-ui/src/components/project-pages/products-panel.tsx`, `src/ddcrm-rbac-ui/src/components/project-pages/messages-panel.tsx`, `src/ddcrm-rbac-ui/src/components/project-pages/products-panel.test.tsx`, `src/ddcrm-rbac-ui/src/components/project-pages/messages-panel.test.tsx`, `docs/implementation/patchnotes.md`
+- `Date`: `2026-04-25`
+
+- `Task ID`: `W8-T17`
+- `WP`: `WP-RBAC-UI`, `WP-WORKER-CONTRACT`
+- `Status`: `completed`
+- `Operations`: `products` и `messages` переведены в partial-failure режим: при ошибке одного/нескольких worker-route UI больше не скрывает успешные данные остальных аккаунтов; добавлен блок `Предупреждения воркеров` с привязкой ошибки к аккаунту, а фатальная ошибка остаётся только если не удалось загрузить данные ни по одному аккаунту; добавлены регрессионные тесты для обоих модулей на сценарий “один воркер упал, второй отдал данные”
+- `Gates`: `npm run lint`, `npm run test:run`, `npm run build` (зелёные локальные прогоны)
+- `Exception`: n/a
+- `Changed files`: `src/ddcrm-rbac-ui/src/components/project-pages/products-panel.tsx`, `src/ddcrm-rbac-ui/src/components/project-pages/messages-panel.tsx`, `src/ddcrm-rbac-ui/src/components/project-pages/products-panel.test.tsx`, `src/ddcrm-rbac-ui/src/components/project-pages/messages-panel.test.tsx`, `docs/implementation/patchnotes.md`
+- `Date`: `2026-04-25`
+
+### W8-T16
+- `Task ID`: `W8-T16`
+- `WP`: `WP-RBAC-UI`
+- `Status`: `started`
+- `Operations`: вынести ключевые account-операции в отдельный route управления аккаунтом (`rename/status/proxy credentials/reveal/delete`) и связать его с обзорной страницей аккаунтов
+- `Gates`: `frontend:lint`, `frontend:test`, `frontend:build`, `docker:compose-up`
+- `Exception`: n/a
+- `Changed files`: `src/ddcrm-rbac-ui/src/lib/api-client.ts`, `src/ddcrm-rbac-ui/src/components/project-pages/accounts-panel.tsx`, `src/ddcrm-rbac-ui/src/components/project-pages/account-manage-panel.tsx`, `src/ddcrm-rbac-ui/src/app/projects/[projectId]/accounts/manage/page.tsx`, `src/ddcrm-rbac-ui/src/components/project-pages/account-manage-panel.test.tsx`, `src/ddcrm-rbac-ui/src/components/project-pages/accounts-panel.test.tsx`, `src/ddcrm-rbac-ui/src/app/projects/project-routes.test.tsx`, `src/ddcrm-rbac-ui/README.md`, `docs/implementation/patchnotes.md`
+- `Date`: `2026-04-25`
+
+- `Task ID`: `W8-T16`
+- `WP`: `WP-RBAC-UI`
+- `Status`: `completed`
+- `Operations`: добавлен отдельный route `/projects/[projectId]/accounts/manage?accountId=<...>` для account lifecycle-операций: `updateAccount` (displayName/businessStatus), `get/update/reveal proxy credentials`, `deleteAccount`; обзорная вкладка аккаунтов теперь даёт deeplink `Управлять` для каждого аккаунта и для выбранного аккаунта; API-client расширен обёртками `updateAccountRequest/deleteAccountRequest`; добавлены route/unit тесты на новый flow и ключевые mutation-сценарии
+- `Gates`: `npm run lint`, `npm run test:run`, `npm run build` (зелёные локальные прогоны)
+- `Exception`: n/a
+- `Changed files`: `src/ddcrm-rbac-ui/src/lib/api-client.ts`, `src/ddcrm-rbac-ui/src/components/project-pages/accounts-panel.tsx`, `src/ddcrm-rbac-ui/src/components/project-pages/account-manage-panel.tsx`, `src/ddcrm-rbac-ui/src/app/projects/[projectId]/accounts/manage/page.tsx`, `src/ddcrm-rbac-ui/src/components/project-pages/account-manage-panel.test.tsx`, `src/ddcrm-rbac-ui/src/components/project-pages/accounts-panel.test.tsx`, `src/ddcrm-rbac-ui/src/app/projects/project-routes.test.tsx`, `src/ddcrm-rbac-ui/README.md`, `docs/implementation/patchnotes.md`
+- `Date`: `2026-04-25`
+
+### W8-T15
+- `Task ID`: `W8-T15`
+- `WP`: `WP-RBAC-UI`
+- `Status`: `started`
+- `Operations`: вынести ключевое изменение в модуле сообщений на отдельный route: оставить `/messages` обзором переписок, добавить `/messages/thread` для истории и отправки сообщения, синхронизировать тесты и UX-тексты
+- `Gates`: `frontend:lint`, `frontend:test`, `frontend:build`, `docker:compose-up`
+- `Exception`: n/a
+- `Changed files`: `src/ddcrm-rbac-ui/src/components/project-pages/messages-panel.tsx`, `src/ddcrm-rbac-ui/src/components/project-pages/message-thread-panel.tsx`, `src/ddcrm-rbac-ui/src/app/projects/[projectId]/messages/thread/page.tsx`, `src/ddcrm-rbac-ui/src/components/project-pages/messages-panel.test.tsx`, `src/ddcrm-rbac-ui/src/components/project-pages/message-thread-panel.test.tsx`, `src/ddcrm-rbac-ui/src/app/projects/project-routes.test.tsx`, `src/ddcrm-rbac-ui/src/app/projects/page.tsx`, `src/ddcrm-rbac-ui/README.md`, `docs/implementation/patchnotes.md`
+- `Date`: `2026-04-25`
+
+- `Task ID`: `W8-T15`
+- `WP`: `WP-RBAC-UI`
+- `Status`: `completed`
+- `Operations`: `messages` переработан в двухэкранный flow: обзорная страница `/projects/[projectId]/messages` автоматически загружает только `conversations.list` по всем аккаунтам и строит deeplink в отдельный чат-route; добавлен `/projects/[projectId]/messages/thread?accountId=<...>&conversationId=<...>` с автозагрузкой `conversations.messages.list`, отдельной формой `conversations.messages.send`, инвалидацией чата и списка переписок после отправки; обновлены route/unit-тесты и текстовые подсказки UI/README без устаревших упоминаний схем в основном workflow
+- `Gates`: `npm run lint`, `npm run test:run`, `npm run build` (зелёные локальные прогоны)
+- `Exception`: n/a
+- `Changed files`: `src/ddcrm-rbac-ui/src/components/project-pages/messages-panel.tsx`, `src/ddcrm-rbac-ui/src/components/project-pages/message-thread-panel.tsx`, `src/ddcrm-rbac-ui/src/app/projects/[projectId]/messages/thread/page.tsx`, `src/ddcrm-rbac-ui/src/components/project-pages/messages-panel.test.tsx`, `src/ddcrm-rbac-ui/src/components/project-pages/message-thread-panel.test.tsx`, `src/ddcrm-rbac-ui/src/app/projects/project-routes.test.tsx`, `src/ddcrm-rbac-ui/src/app/projects/page.tsx`, `src/ddcrm-rbac-ui/README.md`, `docs/implementation/patchnotes.md`
+- `Date`: `2026-04-25`
+
+### W8-T13
+- `Task ID`: `W8-T13`
+- `WP`: `WP-RBAC-UI`
+- `Status`: `started`
+- `Operations`: убрать сырые JSON-строки из project workflow UI (`accounts/products/messages`), заменить на человекочитаемые значения и улучшить карточку `account.info`
+- `Gates`: `frontend:lint`, `frontend:test`, `frontend:build`, `docker:compose-up`
+- `Exception`: n/a
+- `Changed files`: `src/ddcrm-rbac-ui/src/lib/worker-result.ts`, `src/ddcrm-rbac-ui/src/components/project-pages/accounts-panel.tsx`, `src/ddcrm-rbac-ui/src/components/project-pages/products-panel.tsx`, `src/ddcrm-rbac-ui/src/components/project-pages/messages-panel.tsx`, `docs/implementation/patchnotes.md`
+- `Date`: `2026-04-25`
+
+### W8-T14
+- `Task ID`: `W8-T14`
+- `WP`: `WP-RBAC-UI`, `WP-WORKER-CONTRACT`
+- `Status`: `started`
+- `Operations`: устранить `INTERNAL_ERROR` при `products.create` (несовместимый payload UI vs worker v2) и вынести ключевые изменения товаров в отдельные route-страницы
+- `Gates`: `frontend:lint`, `frontend:test`, `frontend:build`, `docker:compose-up`
+- `Exception`: n/a
+- `Changed files`: `src/ddcrm-rbac-ui/src/components/project-pages/products-panel.tsx`, `src/ddcrm-rbac-ui/src/components/project-pages/product-create-panel.tsx`, `src/ddcrm-rbac-ui/src/components/project-pages/product-edit-panel.tsx`, `src/ddcrm-rbac-ui/src/app/projects/[projectId]/products/new/page.tsx`, `src/ddcrm-rbac-ui/src/app/projects/[projectId]/products/edit/page.tsx`, `src/ddcrm-rbac-ui/src/app/projects/project-routes.test.tsx`, `src/ddcrm-rbac-ui/src/components/project-pages/product-create-panel.test.tsx`, `src/ddcrm-rbac-ui/src/components/project-pages/product-edit-panel.test.tsx`, `src/ddcrm-rbac-ui/README.md`, `docs/implementation/patchnotes.md`
+- `Date`: `2026-04-25`
+
+- `Task ID`: `W8-T14`
+- `WP`: `WP-RBAC-UI`, `WP-WORKER-CONTRACT`
+- `Status`: `completed`
+- `Operations`: диагностирован и исправлен сбой `products.create`: UI теперь отправляет worker v2-совместимый payload (`schemaId`, `price.amount`, `price.currency`), что убирает `502/INTERNAL_ERROR` из gateway-потока; в product workflow добавлены отдельные страницы `/projects/[projectId]/products/new` и `/projects/[projectId]/products/edit`, а обзорная страница `/products` оставлена для листинга/фильтрации/удаления; добавлены регрессионные тесты на create/update payload-формат и route-дееплинки
+- `Gates`: `npm run lint`, `npm run test:run`, `npm run build`, `docker compose down && docker compose up -d --build` (зелёные локальные прогоны)
+- `Exception`: n/a
+- `Changed files`: `src/ddcrm-rbac-ui/src/components/project-pages/products-panel.tsx`, `src/ddcrm-rbac-ui/src/components/project-pages/product-create-panel.tsx`, `src/ddcrm-rbac-ui/src/components/project-pages/product-edit-panel.tsx`, `src/ddcrm-rbac-ui/src/app/projects/[projectId]/products/new/page.tsx`, `src/ddcrm-rbac-ui/src/app/projects/[projectId]/products/edit/page.tsx`, `src/ddcrm-rbac-ui/src/app/projects/project-routes.test.tsx`, `src/ddcrm-rbac-ui/src/components/project-pages/product-create-panel.test.tsx`, `src/ddcrm-rbac-ui/src/components/project-pages/product-edit-panel.test.tsx`, `src/ddcrm-rbac-ui/README.md`, `docs/implementation/patchnotes.md`
+- `Date`: `2026-04-25`
+
+- `Task ID`: `W8-T13`
+- `WP`: `WP-RBAC-UI`
+- `Status`: `completed`
+- `Operations`: `toReadableValue` переработан с безопасной человекочитаемой сериализацией (без `JSON.stringify` для UI), `accounts` теперь нормализует `account.info` (`account/profile/raw`) в явные поля и выводит операционные/диагностические данные без raw-json, `products` показывает цену в формате суммы/валюты и корректно подставляет числовую цену в редактор, `messages` извлекает preview/text/timestamp из разных форматов payload без вывода json-строк; удалён дублирующий список аккаунтов в `accounts` для более чистого layout
+- `Gates`: `npm run lint`, `npm run test:run`, `npm run build` (зелёные локальные прогоны)
+- `Exception`: n/a
+- `Changed files`: `src/ddcrm-rbac-ui/src/lib/worker-result.ts`, `src/ddcrm-rbac-ui/src/components/project-pages/accounts-panel.tsx`, `src/ddcrm-rbac-ui/src/components/project-pages/products-panel.tsx`, `src/ddcrm-rbac-ui/src/components/project-pages/messages-panel.tsx`, `docs/implementation/patchnotes.md`
+- `Date`: `2026-04-25`
+
+- `Task ID`: `W8-T12`
+- `WP`: `WP-RBAC-UI`
+- `Status`: `completed`
+- `Operations`: вкладка `Схемы` удалена из `project-shell` и onboarding-текста, основной UX теперь фокусируется на `accounts/products/messages`; legacy-route `/projects/[projectId]/schemas` переведён на мягкий redirect к `/projects/[projectId]/products`; route-тесты обновлены (deeplink без schemas + проверка redirect), README синхронизирован с новым UX
+- `Gates`: `npm run test:run`, `npm run lint`, `npm run build` (зелёные локальные прогоны)
+- `Exception`: n/a
+- `Changed files`: `src/ddcrm-rbac-ui/src/components/project-shell.tsx`, `src/ddcrm-rbac-ui/src/app/projects/[projectId]/schemas/page.tsx`, `src/ddcrm-rbac-ui/src/app/projects/project-routes.test.tsx`, `src/ddcrm-rbac-ui/src/components/auth-screen.tsx`, `src/ddcrm-rbac-ui/README.md`, `docs/implementation/patchnotes.md`
+- `Date`: `2026-04-25`
+
+### W8-T19
+- `Task ID`: `W8-T19`
+- `WP`: `WP-RBAC-UI`
+- `Status`: `started`
+- `Operations`: полный restyle route-driven UI в стиле teal glass + внедрение темы `system/light/dark` с `ThemeToggle` и сохранением выбора в `localStorage`
+- `Gates`: `frontend:lint`, `frontend:test`, `frontend:build`
+- `Exception`: n/a
+- `Changed files`: `src/ddcrm-rbac-ui/src/app/layout.tsx`, `src/ddcrm-rbac-ui/src/app/globals.css`, `src/ddcrm-rbac-ui/src/components/auth-screen.tsx`, `src/ddcrm-rbac-ui/src/components/project-shell.tsx`, `src/ddcrm-rbac-ui/src/app/projects/page.tsx`, `src/ddcrm-rbac-ui/src/components/theme-toggle.tsx`, `src/ddcrm-rbac-ui/src/hooks/use-theme.ts`, `src/ddcrm-rbac-ui/src/lib/theme.ts`, `src/ddcrm-rbac-ui/src/test/setup.ts`, `src/ddcrm-rbac-ui/src/components/theme-toggle.test.tsx`, `src/ddcrm-rbac-ui/src/components/project-shell.test.tsx`, `src/ddcrm-rbac-ui/src/components/auth-screen.test.tsx`, `docs/implementation/patchnotes.md`
+- `Date`: `2026-04-26`
+
+- `Task ID`: `W8-T19`
+- `WP`: `WP-RBAC-UI`
+- `Status`: `completed`
+- `Operations`: весь route-driven UI (`/login`, `/projects`, `/projects/[projectId]/*`) переведён на новый visual language `teal glass`: обновлены глобальные semantic-токены, surfaces/cards/navigation/forms/states; реализована полноценная тема `system/light/dark` через `data-theme`, безопасная pre-hydration инициализация в `layout`, переиспользуемый `ThemeToggle` на login/projects/project-shell, персист выбора в `localStorage`; добавлены unit/component-тесты на theme-switching и присутствие тумблера в project workflow
+- `Gates`: `npm run lint`, `npm run test:run`, `npm run build` (зелёные локальные прогоны)
+- `Exception`: n/a
+- `Changed files`: `src/ddcrm-rbac-ui/src/app/layout.tsx`, `src/ddcrm-rbac-ui/src/app/globals.css`, `src/ddcrm-rbac-ui/src/components/auth-screen.tsx`, `src/ddcrm-rbac-ui/src/components/project-shell.tsx`, `src/ddcrm-rbac-ui/src/app/projects/page.tsx`, `src/ddcrm-rbac-ui/src/components/theme-toggle.tsx`, `src/ddcrm-rbac-ui/src/components/theme-toggle.test.tsx`, `src/ddcrm-rbac-ui/src/components/project-shell.test.tsx`, `src/ddcrm-rbac-ui/src/components/auth-screen.test.tsx`, `src/ddcrm-rbac-ui/src/hooks/use-theme.ts`, `src/ddcrm-rbac-ui/src/lib/theme.ts`, `src/ddcrm-rbac-ui/src/test/setup.ts`, `docs/implementation/patchnotes.md`
+- `Date`: `2026-04-26`
+
+### W8-T20
+- `Task ID`: `W8-T20`
+- `WP`: `WP-RBAC-UI`
+- `Status`: `started`
+- `Operations`: visual-polish iteration для route-driven UI: переработка композиции блоков (hero-зоны, статусные карточки, витрины действий), усиление glass-стиля карточек/листингов и улучшение визуальной иерархии на `/login`, `/projects`, `/projects/[projectId]/*`
+- `Gates`: `frontend:lint`, `frontend:test`, `frontend:build`
+- `Exception`: n/a
+- `Changed files`: `src/ddcrm-rbac-ui/src/app/globals.css`, `src/ddcrm-rbac-ui/src/components/project-shell.tsx`, `src/ddcrm-rbac-ui/src/app/projects/page.tsx`, `src/ddcrm-rbac-ui/src/components/auth-screen.tsx`, `docs/implementation/patchnotes.md`
+- `Date`: `2026-04-26`
+
+- `Task ID`: `W8-T20`
+- `WP`: `WP-RBAC-UI`
+- `Status`: `completed`
+- `Operations`: в `projects` и `project-shell` добавлены новые hero-блоки с фокусом сценария/статуса, витринные side-card панели и более выразительная KPI-зона; в `auth` добавлена stat-strip секция; в глобальных стилях усилены panel/list блоки (accent-line, hover-depth, refined cards), добавлены адаптивные правила для новых блоков; UI стал визуально более «платформенным» без изменения бизнес-логики и API-flow
+- `Gates`: `npm run lint`, `npm run test:run`, `npm run build` (зелёные локальные прогоны)
+- `Exception`: n/a
+- `Changed files`: `src/ddcrm-rbac-ui/src/app/globals.css`, `src/ddcrm-rbac-ui/src/components/project-shell.tsx`, `src/ddcrm-rbac-ui/src/app/projects/page.tsx`, `src/ddcrm-rbac-ui/src/components/auth-screen.tsx`, `docs/implementation/patchnotes.md`
+- `Date`: `2026-04-26`
+
+### W8-T21
+- `Task ID`: `W8-T21`
+- `WP`: `WP-RBAC-UI`
+- `Status`: `started`
+- `Operations`: next-level polish project-workflow UI: добавить унифицированный операционный banner для `accounts/products/messages`, усилить карточки списков чипами метаданных и выровнять визуальную иерархию модулей
+- `Gates`: `frontend:lint`, `frontend:test`, `frontend:build`
+- `Exception`: n/a
+- `Changed files`: `src/ddcrm-rbac-ui/src/components/project-pages/operations-banner.tsx`, `src/ddcrm-rbac-ui/src/components/project-pages/accounts-panel.tsx`, `src/ddcrm-rbac-ui/src/components/project-pages/products-panel.tsx`, `src/ddcrm-rbac-ui/src/components/project-pages/messages-panel.tsx`, `src/ddcrm-rbac-ui/src/app/globals.css`, `docs/implementation/patchnotes.md`
+- `Date`: `2026-04-26`
+
+### W8-T22
+- `Task ID`: `W8-T22`
+- `WP`: `WP-RBAC-UI`
+- `Status`: `started`
+- `Operations`: визуально переразложить ключевые project-модули (`accounts/products/messages`) в более чистый board-layout: основной контент слева, контекст/фильтры/действия справа, без изменения API-flow и контрактов
+- `Gates`: `frontend:lint`, `frontend:test`, `frontend:build`
+- `Exception`: n/a
+- `Changed files`: `src/ddcrm-rbac-ui/src/components/project-pages/accounts-panel.tsx`, `src/ddcrm-rbac-ui/src/components/project-pages/products-panel.tsx`, `src/ddcrm-rbac-ui/src/components/project-pages/messages-panel.tsx`, `src/ddcrm-rbac-ui/src/app/globals.css`, `docs/implementation/patchnotes.md`
+- `Date`: `2026-04-26`
+
+- `Task ID`: `W8-T22`
+- `WP`: `WP-RBAC-UI`
+- `Status`: `completed`
+- `Operations`: `accounts/products/messages` переведены на единый `module-board` UX-шаблон (main-column + sticky side-column) для более понятного сценария работы; в `accounts` вынесены отдельные зоны списка/карточки аккаунта/health-сводки, в `products` и `messages` фильтры и выборка перенесены в отдельную правую колонку, а левые панели сфокусированы на листингах и предупреждениях воркеров; обновлены стили (`module-board`, `panel-card-sticky`) без изменения бизнес-логики, маршрутов и OpenAPI-контрактов
+- `Gates`: `npm run lint`, `npm run test:run`, `npm run build` (зелёные локальные прогоны)
+- `Exception`: n/a
+- `Changed files`: `src/ddcrm-rbac-ui/src/components/project-pages/accounts-panel.tsx`, `src/ddcrm-rbac-ui/src/components/project-pages/products-panel.tsx`, `src/ddcrm-rbac-ui/src/components/project-pages/messages-panel.tsx`, `src/ddcrm-rbac-ui/src/app/globals.css`, `docs/implementation/patchnotes.md`
+- `Date`: `2026-04-26`
+
+- `Task ID`: `W8-T21`
+- `WP`: `WP-RBAC-UI`
+- `Status`: `completed`
+- `Operations`: в `accounts/products/messages` внедрён новый `OperationsBanner` (модульный headline, ключевые метрики, action-slot); карточки сущностей переведены на более читаемый формат с мета-chip'ами (`entity-pill`) и улучшенным hover/readability; добавлены адаптивные правила для новых баннеров/метрик без изменений API/бизнес-логики
+- `Gates`: `npm run lint`, `npm run test:run`, `npm run build` (зелёные локальные прогоны)
+- `Exception`: n/a
+- `Changed files`: `src/ddcrm-rbac-ui/src/components/project-pages/operations-banner.tsx`, `src/ddcrm-rbac-ui/src/components/project-pages/accounts-panel.tsx`, `src/ddcrm-rbac-ui/src/components/project-pages/products-panel.tsx`, `src/ddcrm-rbac-ui/src/components/project-pages/messages-panel.tsx`, `src/ddcrm-rbac-ui/src/app/globals.css`, `docs/implementation/patchnotes.md`
+- `Date`: `2026-04-26`
+
+### W8-T23
+- `Task ID`: `W8-T23`
+- `WP`: `WP-ACCOUNTS-MANAGER`, `WP-PLATFORM-CORE`, `WP-RBAC-UI`
+- `Status`: `started`
+- `Operations`: расширить каталог account types тестового воркера до `funpay/playerok/ggsell/platimarket`, чтобы onboarding аккаунта в проекте шёл через единый multi-platform catalog Accounts Manager
+- `Gates`: `accounts-manager:test`, `core:test`
+- `Exception`: n/a
+- `Changed files`: `src/DDCRM.AccountsManager.Api/Program.cs`, `tests/DDCRM.AccountsManager.Api.Tests/AccountsManagerApiIntegrationTests.cs`, `tests/DDCRM.Core.Api.Tests/Infrastructure/FakeAccountsManagerClient.cs`, `tests/DDCRM.Core.Api.Tests/CoreApiIntegrationTests.cs`, `src/ddcrm-rbac-ui/README.md`, `docs/implementation/patchnotes.md`
+- `Date`: `2026-04-26`
+
+- `Task ID`: `W8-T23`
+- `WP`: `WP-ACCOUNTS-MANAGER`, `WP-PLATFORM-CORE`, `WP-RBAC-UI`
+- `Status`: `completed`
+- `Operations`: в Accounts Manager seed account-types переведён на idempotent upsert (добавляет недостающие и обновляет встроенные профили даже в уже инициализированной БД), каталог расширен до 4 платформ (`test-worker.funpay`, `test-worker.playerok`, `test-worker.ggsell`, `test-worker.platimarket`) с единым worker profile и platform-specific display defaults; интеграционные тесты Accounts Manager/Core и fake-client синхронизированы под multi-platform catalog; UI README обновлён описанием `/accounts/new` с выбором платформы из каталога
+- `Gates`: `dotnet test tests/DDCRM.AccountsManager.Api.Tests/DDCRM.AccountsManager.Api.Tests.csproj`, `dotnet test tests/DDCRM.Core.Api.Tests/DDCRM.Core.Api.Tests.csproj`, `docker compose down`, `docker compose up -d --build`, `docker compose ps` (зелёные локальные прогоны)
+- `Exception`: n/a
+- `Changed files`: `src/DDCRM.AccountsManager.Api/Program.cs`, `tests/DDCRM.AccountsManager.Api.Tests/AccountsManagerApiIntegrationTests.cs`, `tests/DDCRM.Core.Api.Tests/Infrastructure/FakeAccountsManagerClient.cs`, `tests/DDCRM.Core.Api.Tests/CoreApiIntegrationTests.cs`, `src/ddcrm-rbac-ui/README.md`, `docs/implementation/patchnotes.md`
+- `Date`: `2026-04-26`
+
+### W9-T01
+- `Task ID`: `W9-T01`
+- `WP`: `WP-RBAC-UI`
+- `Status`: `started`
+- `Operations`: полный route-driven UI рефакторинг в стиле clean soft-glass: новый `dashboard` root, modal-first сценарии `accounts/products/messages`, route-bound URL-контракт модалок и legacy redirects операций
+- `Gates`: `frontend:lint`, `frontend:test`, `frontend:build`
+- `Exception`: n/a
+- `Changed files`: `src/ddcrm-rbac-ui/src/app/*`, `src/ddcrm-rbac-ui/src/components/*`, `src/ddcrm-rbac-ui/src/hooks/*`, `src/ddcrm-rbac-ui/src/lib/use-session-guard.ts`, `src/ddcrm-rbac-ui/src/app/projects/project-routes.test.tsx`, `src/ddcrm-rbac-ui/src/components/project-pages/*.test.tsx`, `src/ddcrm-rbac-ui/README.md`, `docs/implementation/patchnotes.md`
+- `Date`: `2026-04-26`
+
+- `Task ID`: `W9-T01`
+- `WP`: `WP-RBAC-UI`
+- `Status`: `completed`
+- `Operations`: реализован dashboard-first UX (`/dashboard` после login), проектные экраны переведены на чистую двухпанельную структуру через `DashboardLayout` + `ProjectLayout` + `ModulePageShell`; внедрён modal-first поток с URL-состоянием (`modal/accountId/productId/conversationId`) и host-компонентом `RouteModalHost`; legacy route-ы операций (`accounts/new|manage`, `products/new|edit`, `messages/thread`) переведены в redirects к modal URL; обновлены `accounts/products/messages` с авто-загрузкой данных и `Details`-блоками для техполей; полностью пересобран `globals.css` в стиле `graphite soft-glass + orange accents` с поддержкой `system/light/dark`; README и unit/route/component тесты синхронизированы
+- `Gates`: `npm run lint`, `npm run test:run`, `npm run build` (зелёные локальные прогоны)
+- `Exception`: n/a
+- `Changed files`: `src/ddcrm-rbac-ui/src/app/globals.css`, `src/ddcrm-rbac-ui/src/app/page.tsx`, `src/ddcrm-rbac-ui/src/app/login/page.tsx`, `src/ddcrm-rbac-ui/src/app/dashboard/page.tsx`, `src/ddcrm-rbac-ui/src/app/projects/page.tsx`, `src/ddcrm-rbac-ui/src/app/projects/[projectId]/accounts/page.tsx`, `src/ddcrm-rbac-ui/src/app/projects/[projectId]/products/page.tsx`, `src/ddcrm-rbac-ui/src/app/projects/[projectId]/messages/page.tsx`, `src/ddcrm-rbac-ui/src/app/projects/[projectId]/accounts/new/page.tsx`, `src/ddcrm-rbac-ui/src/app/projects/[projectId]/accounts/manage/page.tsx`, `src/ddcrm-rbac-ui/src/app/projects/[projectId]/products/new/page.tsx`, `src/ddcrm-rbac-ui/src/app/projects/[projectId]/products/edit/page.tsx`, `src/ddcrm-rbac-ui/src/app/projects/[projectId]/messages/thread/page.tsx`, `src/ddcrm-rbac-ui/src/components/auth-screen.tsx`, `src/ddcrm-rbac-ui/src/components/login-page-client.tsx`, `src/ddcrm-rbac-ui/src/components/project-shell.tsx`, `src/ddcrm-rbac-ui/src/components/layout/dashboard-layout.tsx`, `src/ddcrm-rbac-ui/src/components/layout/project-layout.tsx`, `src/ddcrm-rbac-ui/src/components/layout/module-page-shell.tsx`, `src/ddcrm-rbac-ui/src/components/layout/route-modal-host.tsx`, `src/ddcrm-rbac-ui/src/components/project-pages/accounts-panel.tsx`, `src/ddcrm-rbac-ui/src/components/project-pages/products-panel.tsx`, `src/ddcrm-rbac-ui/src/components/project-pages/messages-panel.tsx`, `src/ddcrm-rbac-ui/src/components/project-pages/account-create-panel.tsx`, `src/ddcrm-rbac-ui/src/components/project-pages/account-manage-panel.tsx`, `src/ddcrm-rbac-ui/src/components/project-pages/product-create-panel.tsx`, `src/ddcrm-rbac-ui/src/components/project-pages/product-edit-panel.tsx`, `src/ddcrm-rbac-ui/src/components/project-pages/message-thread-panel.tsx`, `src/ddcrm-rbac-ui/src/hooks/use-route-modal.ts`, `src/ddcrm-rbac-ui/src/lib/use-session-guard.ts`, `src/ddcrm-rbac-ui/src/app/projects/project-routes.test.tsx`, `src/ddcrm-rbac-ui/src/components/project-pages/accounts-panel.test.tsx`, `src/ddcrm-rbac-ui/src/components/project-pages/products-panel.test.tsx`, `src/ddcrm-rbac-ui/src/components/project-pages/messages-panel.test.tsx`, `src/ddcrm-rbac-ui/src/lib/use-session-guard.test.tsx`, `src/ddcrm-rbac-ui/README.md`, `docs/implementation/patchnotes.md`
+- `Date`: `2026-04-26`
+
+### W9-T02
+- `Task ID`: `W9-T02`
+- `WP`: `WP-RBAC-UI`
+- `Status`: `started`
+- `Operations`: устранить runtime-гидратационный сбой `React #418` в production-сборке и переразложить sidebar-политику: убрать дубли выбора проекта из боковой панели, сделать sidebar контекстным для `dashboard/projects` и `project`-экранов
+- `Gates`: `frontend:lint`, `frontend:test`, `frontend:build`
+- `Exception`: n/a
+- `Changed files`: `src/ddcrm-rbac-ui/src/hooks/use-theme.ts`, `src/ddcrm-rbac-ui/src/components/layout/project-layout.tsx`, `src/ddcrm-rbac-ui/src/app/dashboard/page.tsx`, `src/ddcrm-rbac-ui/src/app/projects/page.tsx`, `src/ddcrm-rbac-ui/src/app/globals.css`, `src/ddcrm-rbac-ui/README.md`, `docs/implementation/patchnotes.md`
+- `Date`: `2026-04-26`
+
+- `Task ID`: `W9-T02`
+- `WP`: `WP-RBAC-UI`
+- `Status`: `completed`
+- `Operations`: стабилизирована инициализация темы для SSR/CSR (убран гидратационный drift, провоцировавший `Minified React error #418`), сохранена поддержка `system/light/dark`; sidebar-поведение обновлено: выбор/создание проектов убраны из боковой панели, на `/dashboard` и `/projects` sidebar теперь про профиль/настройки/навигацию, а на `/projects/[projectId]/*` sidebar показывает контекст проекта (статус, статистика аккаунтов, навигация по вкладкам и подсказки), при этом управление проектами оставлено в центральной области страниц
+- `Gates`: `npm run lint`, `npm run test:run`, `npm run build` (зелёные локальные прогоны)
+- `Exception`: n/a
+- `Changed files`: `src/ddcrm-rbac-ui/src/hooks/use-theme.ts`, `src/ddcrm-rbac-ui/src/components/layout/project-layout.tsx`, `src/ddcrm-rbac-ui/src/app/dashboard/page.tsx`, `src/ddcrm-rbac-ui/src/app/projects/page.tsx`, `src/ddcrm-rbac-ui/src/app/globals.css`, `src/ddcrm-rbac-ui/README.md`, `docs/implementation/patchnotes.md`
+- `Date`: `2026-04-26`
+
+### W9-T03
+- `Task ID`: `W9-T03`
+- `WP`: `WP-RBAC-UI`
+- `Status`: `started`
+- `Operations`: устранить дополнительный источник hydration mismatch (`React #418`) в guard сессии: убрать чтение `localStorage` из pre-hydration рендера и стабилизировать redirect-flow после инициализации клиента
+- `Gates`: `frontend:lint`, `frontend:test`, `frontend:build`, `docker:compose-up`
+- `Exception`: n/a
+- `Changed files`: `src/ddcrm-rbac-ui/src/lib/use-session-guard.ts`, `docs/implementation/patchnotes.md`
+- `Date`: `2026-04-26`
+
+### W10-T01
+- `Task ID`: `W10-T01`
+- `WP`: `WP-PLATFORM-CORE`, `WP-ACCOUNTS-MANAGER`, `WP-RBAC-UI`
+- `Status`: `started`
+- `Operations`: реализовать CRM-admin контур для AccountManager (`/v1/admin/account-manager/*` + `/admin/account-manager/*`), добавить system-claim guard `system.accountManager.manage`, расширить control-plane шаблонами платформ и включить Docker autospawn в lifecycle (`create/delete/migrate/rebalance`) с fallback на pre-provisioned worker
+- `Gates`: `contracts:validate`, `contracts:lint`, `contracts:test:services`, `contracts:test:security`, `frontend:lint`, `frontend:test`, `frontend:build`, `docker:compose-smoke`
+- `Exception`: n/a
+- `Changed files`: `docs/standards/access-control-matrix.md`, `docs/standards/runtime-configuration.md`, `docs/spec/technical-specification.md`, `docs/implementation/delivery-work-packages.md`, `docs/testing/internal-contract-checklist.md`, `docs/testing/test-strategy.md`, `docs/api-contracts/openapi-external.yaml`, `docs/api-contracts/openapi-internal.yaml`, `src/DDCRM.AccountsManager.Api/*`, `src/DDCRM.AccountsManager.Persistence/*`, `src/DDCRM.Core.Api/Program.cs`, `src/DDCRM.Core.Api/AccountsManager/*`, `src/ddcrm-rbac-ui/src/app/admin/account-manager/*`, `src/ddcrm-rbac-ui/src/lib/auth.ts`, `src/ddcrm-rbac-ui/src/lib/api-client.ts`, `.env.external-api.example`, `.env.internal-api.example`, `docker-compose.yml`, `docs/implementation/patchnotes.md`
+- `Date`: `2026-04-27`
+
+- `Task ID`: `W10-T01`
+- `WP`: `WP-PLATFORM-CORE`, `WP-ACCOUNTS-MANAGER`, `WP-RBAC-UI`
+- `Status`: `completed`
+- `Operations`: добавлен system admin доступ к настройке AccountManager: external admin endpoint-ы (`GET/PUT worker-servers`, `GET/PUT account-types`) и frontend-модуль `/admin/account-manager` (overview/servers/templates) с guard по JWT system-claim. В AccountsManager внедрён runtime template upsert (`PUT /internal/v1/account-types/{accountTypeId}`), расширены `account_types`/`worker_servers` docker/runtime полями, lifecycle переведён на `placement -> docker spawn -> health -> route upsert -> proxy apply` и `delete/migrate/rebalance` с cleanup. Исправлены критические runtime-дефекты smoke: EF translation в запросах account-type (убраны `StringComparison` в SQL LINQ) и автоспавн-команда контейнера (`Cmd = DDCRM.Worker.Api.dll` + cleanup при health timeout). Добавлены frontend route/component тесты admin-контура (`admin-routes.test.tsx`) для guard + CRUD-form flows. Docker smoke пройден: `create project -> create account -> route resolve -> spawned worker health=ok -> account.info proxy call`.
+- `Gates`: `dotnet test tests/DDCRM.AccountsManager.Api.Tests/DDCRM.AccountsManager.Api.Tests.csproj`, `dotnet test tests/DDCRM.Core.Api.Tests/DDCRM.Core.Api.Tests.csproj`, `dotnet test tests/DDCRM.Worker.Api.Tests/DDCRM.Worker.Api.Tests.csproj`, `npm run lint`, `npm run test:run`, `npm run build`, `./eng/contracts.ps1 contracts:validate`, `./eng/contracts.ps1 contracts:lint`, `./eng/contracts.ps1 contracts:diff:external`, `./eng/contracts.ps1 contracts:diff:worker`, `./eng/contracts.ps1 contracts:test:services`, `./eng/contracts.ps1 contracts:test:security`, `docker compose down`, `docker compose up -d --build`, `docker compose up -d --build accounts-manager-api`, `docker compose ps`, `docker smoke (autospawn)`
+- `Exception`: n/a
+- `Changed files`: `.env.external-api.example`, `.env.internal-api.example`, `docker-compose.yml`, `docs/api-contracts/api-contracts.md`, `docs/api-contracts/openapi-external.yaml`, `docs/api-contracts/openapi-internal.yaml`, `docs/implementation/delivery-work-packages.md`, `docs/implementation/patchnotes.md`, `docs/spec/technical-specification.md`, `docs/standards/access-control-matrix.md`, `docs/standards/runtime-configuration.md`, `docs/testing/internal-contract-checklist.md`, `docs/testing/test-strategy.md`, `src/DDCRM.AccountsManager.Api/DDCRM.AccountsManager.Api.csproj`, `src/DDCRM.AccountsManager.Api/Program.cs`, `src/DDCRM.AccountsManager.Api/Worker/AccountManagerAutospawnOptions.cs`, `src/DDCRM.AccountsManager.Api/Worker/IDockerWorkerRuntimeClient.cs`, `src/DDCRM.AccountsManager.Api/Worker/DockerWorkerRuntimeClient.cs`, `src/DDCRM.AccountsManager.Persistence/AccountsManagerDbContext.cs`, `src/DDCRM.AccountsManager.Persistence/Entities/AccountTypeEntity.cs`, `src/DDCRM.AccountsManager.Persistence/Entities/WorkerServerEntity.cs`, `src/DDCRM.AccountsManager.Persistence/Migrations/20260427072942_W10AccountManagerAutospawnV1.cs`, `src/DDCRM.AccountsManager.Persistence/Migrations/20260427072942_W10AccountManagerAutospawnV1.Designer.cs`, `src/DDCRM.AccountsManager.Persistence/Migrations/AccountsManagerDbContextModelSnapshot.cs`, `src/DDCRM.Core.Api/AccountsManager/IAccountsManagerClient.cs`, `src/DDCRM.Core.Api/AccountsManager/AccountsManagerHttpClient.cs`, `src/DDCRM.Core.Api/Program.cs`, `src/ddcrm-rbac-ui/src/app/admin/account-manager/page.tsx`, `src/ddcrm-rbac-ui/src/app/admin/account-manager/servers/page.tsx`, `src/ddcrm-rbac-ui/src/app/admin/account-manager/templates/page.tsx`, `src/ddcrm-rbac-ui/src/app/admin/account-manager/admin-routes.test.tsx`, `src/ddcrm-rbac-ui/src/components/layout/admin-layout.tsx`, `src/ddcrm-rbac-ui/src/lib/auth.ts`, `src/ddcrm-rbac-ui/src/lib/api-client.ts`, `src/ddcrm-rbac-ui/src/app/dashboard/page.tsx`, `src/ddcrm-rbac-ui/src/app/projects/page.tsx`, `src/ddcrm-rbac-ui/src/components/layout/project-layout.tsx`, `src/ddcrm-rbac-ui/README.md`
+- `Date`: `2026-04-27`
+
+### W9-T06
+- `Task ID`: `W9-T06`
+- `WP`: `WP-WORKER-CONTRACT`
+- `Status`: `started`
+- `Operations`: синхронизировать provider `features` и runtime test-worker-а: отключённые в feature-map операции `account/conversations/products` должны отклоняться на уровне worker API, а не только декларироваться в `/capabilities`
+- `Gates`: `contracts:validate`, `contracts:lint`, `contracts:diff:worker`, `contracts:test:worker`
+- `Exception`: n/a
+- `Changed files`: `src/DDCRM.Worker.Api/Program.cs`, `tests/DDCRM.Worker.Api.Tests/WorkerApiIntegrationTests.cs`, `docs/standards/test-worker-governance.md`, `docs/testing/test-worker-checklist.md`, `docs/testing/worker-contract-checklist.md`, `docs/implementation/patchnotes.md`
+- `Date`: `2026-04-26`
+
+- `Task ID`: `W9-T06`
+- `WP`: `WP-WORKER-CONTRACT`
+- `Status`: `completed`
+- `Operations`: в `DDCRM.Worker.Api` добавлен runtime-gate `EnsureWorkerV2FeatureEnabled` для ресурсных endpoint-ов `account/conversations/products`; при `features=false` операция возвращает `409/WORKER_RUNTIME_CONFLICT` и не исполняется. Для provider-профиля `ggsell` добавлен интеграционный тест на блокировку `conversations.list` и `products.create` при сохранении доступа к `account.info`/`products.list`; каноника test-worker governance и зависимые checklist-ы синхронизированы под новое правило feature-map enforcement
+- `Gates`: `dotnet test tests/DDCRM.Worker.Api.Tests/DDCRM.Worker.Api.Tests.csproj`, `./eng/contracts.ps1 contracts:validate`, `./eng/contracts.ps1 contracts:lint`, `./eng/contracts.ps1 contracts:diff:worker`, `./eng/contracts.ps1 contracts:test:worker` (зелёные локальные прогоны)
+- `Exception`: n/a
+- `Changed files`: `src/DDCRM.Worker.Api/Program.cs`, `tests/DDCRM.Worker.Api.Tests/WorkerApiIntegrationTests.cs`, `docs/standards/test-worker-governance.md`, `docs/testing/test-worker-checklist.md`, `docs/testing/worker-contract-checklist.md`, `docs/implementation/patchnotes.md`
+- `Date`: `2026-04-26`
+
+### W9-T05
+- `Task ID`: `W9-T05`
+- `WP`: `WP-RBAC-UI`, `WP-WORKER-CONTRACT`
+- `Status`: `started`
+- `Operations`: расширить `project overview` живыми cross-worker KPI: автосбор `products.list` и `conversations.list` по аккаунтам проекта, агрегаты по товарам/перепискам/unread, частичные warning-состояния и ручной refresh без изменения backend-контрактов
+- `Gates`: `frontend:lint`, `frontend:test`, `frontend:build`
+- `Exception`: n/a
+- `Changed files`: `src/ddcrm-rbac-ui/src/components/project-pages/project-overview-panel.tsx`, `src/ddcrm-rbac-ui/src/components/project-pages/project-overview-panel.test.tsx`, `src/ddcrm-rbac-ui/README.md`, `docs/implementation/patchnotes.md`
+- `Date`: `2026-04-26`
+
+- `Task ID`: `W9-T05`
+- `WP`: `WP-RBAC-UI`, `WP-WORKER-CONTRACT`
+- `Status`: `completed`
+- `Operations`: `ProjectOverviewPanel` переведён на live-агрегацию worker-данных: добавлены auto-fetch `products.list` + `conversations.list` для всех аккаунтов проекта, вычисление KPI (`products/conversations/unread`), `healthy/degraded workers`, warning-блок при частичных ошибках воркеров и кнопка ручного `Обновить данные`; сохранён non-blocking сценарий (ошибки части воркеров не скрывают успешные данные); добавлены unit-тесты overview-панели на агрегацию, partial failure и refresh-flow
+- `Gates`: `npm run lint`, `npm run test:run`, `npm run build` (зелёные локальные прогоны)
+- `Exception`: n/a
+- `Changed files`: `src/ddcrm-rbac-ui/src/components/project-pages/project-overview-panel.tsx`, `src/ddcrm-rbac-ui/src/components/project-pages/project-overview-panel.test.tsx`, `src/ddcrm-rbac-ui/README.md`, `docs/implementation/patchnotes.md`
+- `Date`: `2026-04-26`
+
+### W9-T04
+- `Task ID`: `W9-T04`
+- `WP`: `WP-RBAC-UI`
+- `Status`: `started`
+- `Operations`: убрать редирект с `/projects/[projectId]` и сделать его полноценным обзором проекта (статистика + быстрые действия + переходы в модули), синхронизировать sidebar-навигацию с вкладкой `overview`
+- `Gates`: `frontend:lint`, `frontend:test`, `frontend:build`
+- `Exception`: n/a
+- `Changed files`: `src/ddcrm-rbac-ui/src/components/layout/project-layout.tsx`, `src/ddcrm-rbac-ui/src/components/project-pages/project-overview-panel.tsx`, `src/ddcrm-rbac-ui/src/app/projects/[projectId]/page.tsx`, `src/ddcrm-rbac-ui/src/app/dashboard/page.tsx`, `src/ddcrm-rbac-ui/src/app/projects/page.tsx`, `src/ddcrm-rbac-ui/src/app/projects/project-routes.test.tsx`, `src/ddcrm-rbac-ui/README.md`, `docs/implementation/patchnotes.md`
+- `Date`: `2026-04-26`
+
+- `Task ID`: `W9-T04`
+- `WP`: `WP-RBAC-UI`
+- `Status`: `completed`
+- `Operations`: route `/projects/[projectId]` переведён из redirect в рабочий `overview` экран: добавлен `ProjectOverviewPanel` с KPI-статистикой аккаунтов, платформенным срезом, списком последних аккаунтов и быстрыми CTA в `accounts/products/messages`; в `ProjectLayout` добавлена вкладка `overview` и корректный href на корневой route проекта; переходы на проект из `dashboard/projects` теперь ведут в overview; route-тесты обновлены на новый root-flow
+- `Gates`: `npm run lint`, `npm run test:run`, `npm run build` (зелёные локальные прогоны)
+- `Exception`: n/a
+- `Changed files`: `src/ddcrm-rbac-ui/src/components/layout/project-layout.tsx`, `src/ddcrm-rbac-ui/src/components/project-pages/project-overview-panel.tsx`, `src/ddcrm-rbac-ui/src/app/projects/[projectId]/page.tsx`, `src/ddcrm-rbac-ui/src/app/dashboard/page.tsx`, `src/ddcrm-rbac-ui/src/app/projects/page.tsx`, `src/ddcrm-rbac-ui/src/app/projects/project-routes.test.tsx`, `src/ddcrm-rbac-ui/README.md`, `docs/implementation/patchnotes.md`
+- `Date`: `2026-04-26`
+
+- `Task ID`: `W9-T03`
+- `WP`: `WP-RBAC-UI`
+- `Status`: `completed`
+- `Operations`: `useSessionGuard` переведён на hydration-safe init: состояние сессии теперь загружается только после mount (через отложенную инициализацию), а редирект на `/login` выполняется только после завершения client-init; это устраняет SSR/CSR рассинхрон текста и исключает повторное появление `Minified React error #418` при открытии защищённых route-ов с активной сессией
+- `Gates`: `npm run lint`, `npm run test:run`, `npm run build`, `docker compose down && docker compose up -d --build`, `docker compose ps` (зелёные локальные прогоны)
+- `Exception`: n/a
+- `Changed files`: `src/ddcrm-rbac-ui/src/lib/use-session-guard.ts`, `docs/implementation/patchnotes.md`
+- `Date`: `2026-04-26`
+
+### W10-T02
+- `Task ID`: `W10-T02`
+- `WP`: `WP-ACCOUNTS-MANAGER`, `WP-PLATFORM-CORE`, `WP-RBAC-UI`
+- `Status`: `started`
+- `Operations`: убрать ручную настройку `workerPort` в админ-контуре и перевести выбор порта worker runtime на auto-resolution внутри Accounts Manager (runtime template `containerPort` + fallback env)
+- `Gates`: `accounts-manager:test`, `core:test`, `frontend:lint`, `frontend:test`, `frontend:build`
+- `Exception`: n/a
+- `Changed files`: `src/DDCRM.AccountsManager.Api/Program.cs`, `src/DDCRM.AccountsManager.Persistence/Entities/WorkerServerEntity.cs`, `src/DDCRM.AccountsManager.Persistence/AccountsManagerDbContext.cs`, `src/DDCRM.Core.Api/AccountsManager/IAccountsManagerClient.cs`, `src/DDCRM.Core.Api/AccountsManager/AccountsManagerHttpClient.cs`, `src/DDCRM.Core.Api/Program.cs`, `src/ddcrm-rbac-ui/src/app/admin/account-manager/servers/page.tsx`, `src/ddcrm-rbac-ui/src/app/admin/account-manager/templates/page.tsx`, `src/ddcrm-rbac-ui/src/lib/api-client.ts`, `docs/api-contracts/openapi-internal.yaml`, `docs/api-contracts/openapi-external.yaml`, `docs/standards/runtime-configuration.md`, `docs/spec/technical-specification.md`, `docs/implementation/patchnotes.md`
+- `Date`: `2026-04-27`
+
+- `Task ID`: `W10-T02`
+- `WP`: `WP-ACCOUNTS-MANAGER`, `WP-PLATFORM-CORE`, `WP-RBAC-UI`
+- `Status`: `completed`
+- `Operations`: `workerPort` удалён из internal/external worker-server DTO и из admin UI формы серверов; lifecycle `create/update/migrate/rebalance` больше не читает порт из `worker-servers` и вычисляет его внутри Accounts Manager (`account-type runtime.containerPort` с fallback `ACCOUNT_MANAGER_AUTOSPAWN_WORKER_INTERNAL_PORT`); в `baseUrlTemplate` добавлена поддержка placeholder `{workerPort}`; в админке шаблонов скрыт ручной ввод порта (runtime порт определяется сервисом автоматически), контрактные YAML и тесты синхронизированы
+- `Gates`: `dotnet test tests/DDCRM.AccountsManager.Api.Tests/DDCRM.AccountsManager.Api.Tests.csproj`, `dotnet test tests/DDCRM.Core.Api.Tests/DDCRM.Core.Api.Tests.csproj`, `npm run lint`, `npm run test:run`, `npm run build`, `./eng/contracts.ps1 contracts:validate`, `./eng/contracts.ps1 contracts:lint`, `./eng/contracts.ps1 contracts:test:services`, `./eng/contracts.ps1 contracts:test:security`, `docker compose down`, `docker compose up -d --build`, `docker compose up -d --build accounts-manager-api`, `docker compose ps` (зелёные локальные прогоны)
+- `Exception`: n/a
+- `Changed files`: `src/DDCRM.AccountsManager.Api/Program.cs`, `src/DDCRM.AccountsManager.Persistence/Entities/WorkerServerEntity.cs`, `src/DDCRM.AccountsManager.Persistence/AccountsManagerDbContext.cs`, `src/DDCRM.AccountsManager.Persistence/Migrations/20260427092044_W10RemoveWorkerPortFromWorkerServers.cs`, `src/DDCRM.AccountsManager.Persistence/Migrations/20260427092044_W10RemoveWorkerPortFromWorkerServers.Designer.cs`, `src/DDCRM.AccountsManager.Persistence/Migrations/AccountsManagerDbContextModelSnapshot.cs`, `src/DDCRM.Core.Api/AccountsManager/IAccountsManagerClient.cs`, `src/DDCRM.Core.Api/AccountsManager/AccountsManagerHttpClient.cs`, `src/DDCRM.Core.Api/Program.cs`, `tests/DDCRM.AccountsManager.Api.Tests/AccountsManagerApiIntegrationTests.cs`, `tests/DDCRM.Core.Api.Tests/CoreApiIntegrationTests.cs`, `tests/DDCRM.Core.Api.Tests/Infrastructure/FakeAccountsManagerClient.cs`, `src/ddcrm-rbac-ui/src/app/admin/account-manager/servers/page.tsx`, `src/ddcrm-rbac-ui/src/app/admin/account-manager/templates/page.tsx`, `src/ddcrm-rbac-ui/src/app/admin/account-manager/admin-routes.test.tsx`, `src/ddcrm-rbac-ui/src/lib/api-client.ts`, `src/ddcrm-rbac-ui/src/generated/external-api.ts`, `docs/api-contracts/openapi-internal.yaml`, `docs/api-contracts/openapi-external.yaml`, `docs/standards/runtime-configuration.md`, `docs/spec/technical-specification.md`, `docs/implementation/patchnotes.md`
+- `Date`: `2026-04-27`
+
+### W10-T03
+- `Task ID`: `W10-T03`
+- `WP`: `WP-ACCOUNTS-MANAGER`, `WP-PLATFORM-CORE`, `WP-RBAC-UI`
+- `Status`: `started`
+- `Operations`: добавить GHCR registry credentials в `worker-servers` (write-only token), включить `pull-if-missing` в Docker autospawn runtime и синхронизировать system admin UI `/admin/account-manager/servers`
+- `Gates`: `contracts:validate`, `contracts:lint`, `contracts:test:services`, `contracts:test:security`, `frontend:lint`, `frontend:test`, `frontend:build`, `accounts-manager:test`, `core:test`
+- `Exception`: n/a
+- `Changed files`: `docs/standards/runtime-configuration.md`, `docs/spec/technical-specification.md`, `docs/testing/internal-contract-checklist.md`, `docs/testing/test-strategy.md`, `docs/implementation/delivery-work-packages.md`, `docs/implementation/patchnotes.md`, `docs/api-contracts/openapi-internal.yaml`, `docs/api-contracts/openapi-external.yaml`, `.env.internal-api.example`, `src/DDCRM.AccountsManager.Api/Program.cs`, `src/DDCRM.AccountsManager.Api/Worker/IDockerWorkerRuntimeClient.cs`, `src/DDCRM.AccountsManager.Api/Worker/DockerWorkerRuntimeClient.cs`, `src/DDCRM.AccountsManager.Persistence/Entities/WorkerServerEntity.cs`, `src/DDCRM.AccountsManager.Persistence/AccountsManagerDbContext.cs`, `src/DDCRM.AccountsManager.Persistence/Migrations/20260428085842_W10T03WorkerServerGhcrRegistry.cs`, `src/DDCRM.AccountsManager.Persistence/Migrations/20260428085842_W10T03WorkerServerGhcrRegistry.Designer.cs`, `src/DDCRM.AccountsManager.Persistence/Migrations/AccountsManagerDbContextModelSnapshot.cs`, `src/DDCRM.Core.Api/AccountsManager/IAccountsManagerClient.cs`, `src/DDCRM.Core.Api/AccountsManager/AccountsManagerHttpClient.cs`, `src/DDCRM.Core.Api/Program.cs`, `src/ddcrm-rbac-ui/src/lib/api-client.ts`, `src/ddcrm-rbac-ui/src/app/admin/account-manager/servers/page.tsx`, `src/ddcrm-rbac-ui/src/app/admin/account-manager/admin-routes.test.tsx`, `src/ddcrm-rbac-ui/src/app/globals.css`, `src/ddcrm-rbac-ui/src/generated/external-api.ts`, `tests/DDCRM.AccountsManager.Api.Tests/AccountsManagerApiIntegrationTests.cs`, `tests/DDCRM.Core.Api.Tests/CoreApiIntegrationTests.cs`, `tests/DDCRM.Core.Api.Tests/Infrastructure/FakeAccountsManagerClient.cs`
+- `Date`: `2026-04-28`
+
+- `Task ID`: `W10-T03`
+- `WP`: `WP-ACCOUNTS-MANAGER`, `WP-PLATFORM-CORE`, `WP-RBAC-UI`
+- `Status`: `completed`
+- `Operations`: `worker-servers` расширен typed registry-моделью GHCR (`enabled/host/username/hasToken/tokenUpdatedAtUtc`) и write-only token update/clear с AES-GCM шифрованием в storage; internal/external admin contracts синхронизированы и токен исключён из response envelope. `DockerWorkerRuntimeClient` переведён на `pull-if-missing`: при отсутствии локального image выполняется pull через Docker Engine, для `ghcr.io` требуется валидный per-server credential config, при отсутствии credentials возвращается детерминированная validation/configuration error. UI `/admin/account-manager/servers` получил структурный блок `Registry (GHCR)` (`enabled`, `host`, `username`, `token`, `clear token`) и индикацию `configured/not configured` без отображения токена.
+- `Gates`: `dotnet test tests/DDCRM.AccountsManager.Api.Tests/DDCRM.AccountsManager.Api.Tests.csproj`, `dotnet test tests/DDCRM.Core.Api.Tests/DDCRM.Core.Api.Tests.csproj`, `npm run generate:api`, `npm run lint`, `npm run test:run`, `npm run build`, `./eng/contracts.ps1 contracts:validate`, `./eng/contracts.ps1 contracts:lint`, `./eng/contracts.ps1 contracts:test:services`, `./eng/contracts.ps1 contracts:test:security`
+- `Exception`: n/a
+- `Changed files`: `docs/standards/runtime-configuration.md`, `docs/spec/technical-specification.md`, `docs/testing/internal-contract-checklist.md`, `docs/testing/test-strategy.md`, `docs/implementation/delivery-work-packages.md`, `docs/implementation/patchnotes.md`, `docs/api-contracts/openapi-internal.yaml`, `docs/api-contracts/openapi-external.yaml`, `.env.internal-api.example`, `src/DDCRM.AccountsManager.Api/Program.cs`, `src/DDCRM.AccountsManager.Api/Worker/IDockerWorkerRuntimeClient.cs`, `src/DDCRM.AccountsManager.Api/Worker/DockerWorkerRuntimeClient.cs`, `src/DDCRM.AccountsManager.Persistence/Entities/WorkerServerEntity.cs`, `src/DDCRM.AccountsManager.Persistence/AccountsManagerDbContext.cs`, `src/DDCRM.AccountsManager.Persistence/Migrations/20260428085842_W10T03WorkerServerGhcrRegistry.cs`, `src/DDCRM.AccountsManager.Persistence/Migrations/20260428085842_W10T03WorkerServerGhcrRegistry.Designer.cs`, `src/DDCRM.AccountsManager.Persistence/Migrations/AccountsManagerDbContextModelSnapshot.cs`, `src/DDCRM.Core.Api/AccountsManager/IAccountsManagerClient.cs`, `src/DDCRM.Core.Api/AccountsManager/AccountsManagerHttpClient.cs`, `src/DDCRM.Core.Api/Program.cs`, `src/ddcrm-rbac-ui/src/lib/api-client.ts`, `src/ddcrm-rbac-ui/src/app/admin/account-manager/servers/page.tsx`, `src/ddcrm-rbac-ui/src/app/admin/account-manager/admin-routes.test.tsx`, `src/ddcrm-rbac-ui/src/app/globals.css`, `src/ddcrm-rbac-ui/src/generated/external-api.ts`, `tests/DDCRM.AccountsManager.Api.Tests/AccountsManagerApiIntegrationTests.cs`, `tests/DDCRM.Core.Api.Tests/CoreApiIntegrationTests.cs`, `tests/DDCRM.Core.Api.Tests/Infrastructure/FakeAccountsManagerClient.cs`
+- `Date`: `2026-04-28`

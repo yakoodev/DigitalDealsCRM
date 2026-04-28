@@ -207,6 +207,13 @@ builder.Services.AddCors(options =>
     });
 });
 
+var systemPermissionClaimType =
+    builder.Configuration["EXTERNAL_API_SYSTEM_PERMISSION_CLAIM_TYPE"]
+    ?? "ddcrm.system.permissions";
+var systemPermissionClaimValue =
+    builder.Configuration["EXTERNAL_API_SYSTEM_PERMISSION_CLAIM_VALUE"]
+    ?? "system.accountManager.manage";
+
 var app = builder.Build();
 
 using (var scope = app.Services.CreateScope())
@@ -584,6 +591,124 @@ external.MapGet("/projects/{projectId:guid}/account-types", async (
         .ToList();
 
     return Results.Ok(new AccountTypeListResponse(httpContext.GetOrCreateRequestId(), items));
+});
+
+external.MapGet("/admin/account-manager/worker-servers", async (
+    HttpContext httpContext,
+    IAccountsManagerClient accountsManagerClient,
+    CancellationToken cancellationToken) =>
+{
+    EnsureSystemPermission(httpContext, systemPermissionClaimType, systemPermissionClaimValue);
+
+    var workerServers = await accountsManagerClient.ListWorkerServersAsync(cancellationToken);
+    var items = workerServers
+        .OrderBy(x => x.ServerId, StringComparer.Ordinal)
+        .Select(ToAdminWorkerServerDto)
+        .ToList();
+
+    return Results.Ok(new AdminWorkerServerListResponse(httpContext.GetOrCreateRequestId(), items));
+});
+
+external.MapPut("/admin/account-manager/worker-servers/{serverId}", async (
+    HttpContext httpContext,
+    string serverId,
+    AdminWorkerServerUpsertRequest request,
+    IAccountsManagerClient accountsManagerClient,
+    CancellationToken cancellationToken) =>
+{
+    EnsureSystemPermission(httpContext, systemPermissionClaimType, systemPermissionClaimValue);
+    var idempotencyKey = httpContext.RequireIdempotencyKey();
+
+    var input = new AccountsManagerWorkerServerUpsertInput(
+        request.BaseUrlTemplate,
+        request.Status,
+        request.Capacity,
+        request.CurrentLoad,
+        request.Health,
+        request.DockerHost,
+        request.DockerNetwork,
+        request.Registry is null
+            ? null
+            : new AccountsManagerWorkerServerRegistryUpsertInput(
+                request.Registry.Enabled,
+                request.Registry.Host,
+                request.Registry.Username,
+                request.Registry.Token,
+                request.Registry.ClearToken),
+        request.Metadata);
+    var upserted = await accountsManagerClient.UpsertWorkerServerAsync(
+        serverId,
+        input,
+        idempotencyKey,
+        cancellationToken);
+
+    return Results.Ok(new AdminWorkerServerResponse(
+        httpContext.GetOrCreateRequestId(),
+        ToAdminWorkerServerDto(upserted)));
+});
+
+external.MapGet("/admin/account-manager/account-types", async (
+    HttpContext httpContext,
+    IAccountsManagerClient accountsManagerClient,
+    CancellationToken cancellationToken) =>
+{
+    EnsureSystemPermission(httpContext, systemPermissionClaimType, systemPermissionClaimValue);
+
+    var accountTypes = await accountsManagerClient.ListAccountTypesAsync(cancellationToken);
+    var items = accountTypes
+        .OrderBy(x => x.Platform, StringComparer.Ordinal)
+        .ThenBy(x => x.SortOrder)
+        .Select(ToAdminAccountTypeDto)
+        .ToList();
+
+    return Results.Ok(new AdminAccountTypeListResponse(httpContext.GetOrCreateRequestId(), items));
+});
+
+external.MapPut("/admin/account-manager/account-types/{accountTypeId}", async (
+    HttpContext httpContext,
+    string accountTypeId,
+    AdminAccountTypeUpsertRequest request,
+    IAccountsManagerClient accountsManagerClient,
+    CancellationToken cancellationToken) =>
+{
+    EnsureSystemPermission(httpContext, systemPermissionClaimType, systemPermissionClaimValue);
+    var idempotencyKey = httpContext.RequireIdempotencyKey();
+
+    var runtime = request.Runtime is null
+        ? null
+        : new AccountsManagerAccountTypeRuntime(
+            request.Runtime.AutospawnEnabled,
+            request.Runtime.WorkerImage,
+            request.Runtime.WorkerPathPrefix,
+            request.Runtime.HealthPath,
+            request.Runtime.ContainerPort,
+            request.Runtime.EnvironmentVariables);
+    var formFields = request.FormFields?.Select(field => new AccountsManagerAccountTypeField(
+        field.Key,
+        field.Label,
+        field.InputType,
+        field.Required,
+        field.Secret,
+        field.Placeholder,
+        field.DefaultValue)).ToList();
+    var input = new AccountsManagerAccountTypeUpsertInput(
+        request.Platform,
+        request.DisplayName,
+        request.Description,
+        request.WorkerProfileId,
+        request.Enabled,
+        request.SortOrder,
+        formFields,
+        runtime);
+    var upserted = await accountsManagerClient.UpsertAccountTypeAsync(
+        accountTypeId,
+        input,
+        idempotencyKey,
+        cancellationToken);
+
+    return Results.Ok(new AdminAccountTypeResponse(
+        httpContext.GetOrCreateRequestId(),
+        ToAdminAccountTypeDto(upserted)));
 });
 
 external.MapGet("/projects/{projectId:guid}/accounts", async (
@@ -1154,6 +1279,44 @@ static Guid GetCurrentUserId(HttpContext httpContext)
     return userId;
 }
 
+static void EnsureSystemPermission(HttpContext httpContext, string claimType, string requiredPermission)
+{
+    if (HasSystemPermission(httpContext.User, claimType, requiredPermission))
+    {
+        return;
+    }
+
+    throw new ApiErrorException(
+        StatusCodes.Status403Forbidden,
+        ApiErrorCodes.Forbidden,
+        "Недостаточно системных прав для admin endpoint.");
+}
+
+static bool HasSystemPermission(ClaimsPrincipal principal, string claimType, string requiredPermission)
+{
+    var normalizedRequired = requiredPermission.Trim();
+    if (string.IsNullOrWhiteSpace(normalizedRequired))
+    {
+        return false;
+    }
+
+    foreach (var claim in principal.FindAll(claimType))
+    {
+        if (string.Equals(claim.Value, normalizedRequired, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        var split = claim.Value.Split([',', ';', ' '], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (split.Any(value => string.Equals(value, normalizedRequired, StringComparison.OrdinalIgnoreCase)))
+        {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 static async Task EnsureProjectMembershipAsync(CoreDbContext dbContext, Guid projectId, Guid userId, CancellationToken cancellationToken)
 {
     var exists = await dbContext.ProjectMembers.AnyAsync(
@@ -1359,6 +1522,56 @@ static AccountTypeDto ToAccountTypeDto(AccountsManagerAccountTypeDefinition defi
             .ToList());
 }
 
+static AdminAccountTypeDto ToAdminAccountTypeDto(AccountsManagerAccountTypeDefinition definition)
+{
+    return new AdminAccountTypeDto(
+        definition.AccountTypeId,
+        definition.Platform,
+        definition.DisplayName,
+        definition.Description,
+        definition.WorkerProfileId,
+        definition.Enabled,
+        definition.SortOrder,
+        definition.FormFields
+            .Select(field => new AccountTypeFieldDto(
+                field.Key,
+                field.Label,
+                field.InputType,
+                field.Required,
+                field.Secret,
+                field.Placeholder,
+                field.DefaultValue))
+            .ToList(),
+        new AdminAccountTypeRuntimeDto(
+            definition.Runtime.AutospawnEnabled,
+            definition.Runtime.WorkerImage,
+            definition.Runtime.WorkerPathPrefix,
+            definition.Runtime.HealthPath,
+            definition.Runtime.ContainerPort,
+            definition.Runtime.EnvironmentVariables));
+}
+
+static AdminWorkerServerDto ToAdminWorkerServerDto(AccountsManagerWorkerServerDefinition server)
+{
+    return new AdminWorkerServerDto(
+        server.ServerId,
+        server.BaseUrlTemplate,
+        server.Status,
+        server.Health,
+        server.Capacity,
+        server.CurrentLoad,
+        server.DockerHost,
+        server.DockerNetwork,
+        server.LastHeartbeatAtUtc,
+        new AdminWorkerServerRegistryDto(
+            server.Registry.Enabled,
+            server.Registry.Host,
+            server.Registry.Username,
+            server.Registry.HasToken,
+            server.Registry.TokenUpdatedAtUtc),
+        server.Metadata);
+}
+
 static Guid CreateDeterministicGuid(string input)
 {
     var hash = MD5.HashData(Encoding.UTF8.GetBytes(input));
@@ -1427,6 +1640,89 @@ public sealed record AccountTypeDto(
     IReadOnlyCollection<AccountTypeFieldDto> FormFields);
 
 public sealed record AccountTypeListResponse(string RequestId, IReadOnlyCollection<AccountTypeDto> Items);
+
+public sealed record AdminAccountTypeRuntimeDto(
+    bool AutospawnEnabled,
+    string WorkerImage,
+    string WorkerPathPrefix,
+    string HealthPath,
+    int ContainerPort,
+    IReadOnlyDictionary<string, string> EnvironmentVariables);
+
+public sealed record AdminAccountTypeDto(
+    string AccountTypeId,
+    string Platform,
+    string DisplayName,
+    string? Description,
+    string WorkerProfileId,
+    bool Enabled,
+    int SortOrder,
+    IReadOnlyCollection<AccountTypeFieldDto> FormFields,
+    AdminAccountTypeRuntimeDto Runtime);
+
+public sealed record AdminAccountTypeListResponse(
+    string RequestId,
+    IReadOnlyCollection<AdminAccountTypeDto> Items);
+
+public sealed record AdminAccountTypeResponse(
+    string RequestId,
+    AdminAccountTypeDto AccountType);
+
+public sealed record AdminAccountTypeUpsertRequest(
+    string? Platform,
+    string? DisplayName,
+    string? Description,
+    string? WorkerProfileId,
+    bool? Enabled,
+    int? SortOrder,
+    IReadOnlyCollection<AccountTypeFieldDto>? FormFields,
+    AdminAccountTypeRuntimeDto? Runtime);
+
+public sealed record AdminWorkerServerDto(
+    string ServerId,
+    string BaseUrlTemplate,
+    string Status,
+    string Health,
+    int Capacity,
+    int CurrentLoad,
+    string? DockerHost,
+    string? DockerNetwork,
+    DateTimeOffset? LastHeartbeatAtUtc,
+    AdminWorkerServerRegistryDto Registry,
+    IReadOnlyDictionary<string, object?> Metadata);
+
+public sealed record AdminWorkerServerRegistryDto(
+    bool Enabled,
+    string Host,
+    string? Username,
+    bool HasToken,
+    DateTimeOffset? TokenUpdatedAtUtc);
+
+public sealed record AdminWorkerServerListResponse(
+    string RequestId,
+    IReadOnlyCollection<AdminWorkerServerDto> Items);
+
+public sealed record AdminWorkerServerResponse(
+    string RequestId,
+    AdminWorkerServerDto WorkerServer);
+
+public sealed record AdminWorkerServerUpsertRequest(
+    string? BaseUrlTemplate,
+    string? Status,
+    int? Capacity,
+    int? CurrentLoad,
+    string? Health,
+    string? DockerHost,
+    string? DockerNetwork,
+    AdminWorkerServerRegistryUpsertRequest? Registry,
+    Dictionary<string, object?>? Metadata);
+
+public sealed record AdminWorkerServerRegistryUpsertRequest(
+    bool? Enabled,
+    string? Host,
+    string? Username,
+    string? Token,
+    bool? ClearToken);
 
 public sealed record ProxyCredentialsMaskedDto(bool Configured, string? HostMasked, string? LoginMasked);
 

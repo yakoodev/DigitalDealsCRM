@@ -52,9 +52,13 @@
   - lifecycle create/update/delete/migrate с idempotency
   - orchestration worker provisioning
   - worker control-plane registry (`worker-servers`, `heartbeat`, placement/rebalance policy)
+  - platform runtime templates (`account-types`) и Docker autospawn orchestration
+  - per-server GHCR registry credentials (write-only secret storage) и `pull-if-missing` политика образов
 - Done:
   - e2e lifecycle сценарии зелёные
   - placement использует least-loaded healthy `active` server с fallback `srv-default` при пустом registry
+  - при включённом `ACCOUNT_MANAGER_AUTOSPAWN_ENABLED` lifecycle create/migrate/rebalance выполняют cold-migration (`spawn -> route switch -> cleanup source`)
+  - Docker runtime умеет подтягивать отсутствующий образ через GHCR (`pull-if-missing`) с per-server credentials из control-plane registry
   - удаление аккаунта гарантированно убирает route
 
 ### 2.5 `WP-GATEWAY`
@@ -98,6 +102,7 @@
   - frontend stack: `React + Next.js (App Router) + TypeScript`
   - API/data слой: `TanStack Query v5 + Orval` (клиенты из OpenAPI)
   - role-aware UI guards
+  - системная admin зона `/admin/account-manager/*` для настройки control-plane AccountManager
   - скрытие финансовых/чувствительных операций для moderator
 - Done:
   - регрессионные RBAC-сценарии из test strategy зелёные

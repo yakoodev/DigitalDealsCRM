@@ -12,8 +12,8 @@ export default function ProjectProductsRoute() {
 
   if (!session) {
     return (
-      <main className="workspace-layout">
-        <section className="workspace-main-card">
+      <main className="loading-shell">
+        <section className="glass-card">
           <h1>Проверяем сессию...</h1>
         </section>
       </main>

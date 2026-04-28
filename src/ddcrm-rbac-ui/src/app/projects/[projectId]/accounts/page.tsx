@@ -12,8 +12,8 @@ export default function ProjectAccountsRoute() {
 
   if (!session) {
     return (
-      <main className="workspace-layout">
-        <section className="workspace-main-card">
+      <main className="loading-shell">
+        <section className="glass-card">
           <h1>Проверяем сессию...</h1>
         </section>
       </main>
@@ -28,7 +28,11 @@ export default function ProjectAccountsRoute() {
       onLogout={logout}
     >
       {({ apiSession, project }) => (
-        <ProjectAccountsPanel apiSession={apiSession} projectId={project.id} />
+        <ProjectAccountsPanel
+          apiSession={apiSession}
+          projectId={project.id}
+          activeRole={session.profile.role}
+        />
       )}
     </ProjectShell>
   );

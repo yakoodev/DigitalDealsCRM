@@ -1,19 +1,26 @@
 "use client";
 
-import { useParams } from "next/navigation";
-import { ProjectSchemasPanel } from "@/components/project-pages/schemas-panel";
-import { ProjectShell } from "@/components/project-shell";
+import { useEffect } from "react";
+import { useParams, useRouter } from "next/navigation";
 import { useSessionGuard } from "@/lib/use-session-guard";
 
 export default function ProjectSchemasRoute() {
   const params = useParams<{ projectId: string }>();
-  const projectId = params.projectId;
-  const { session, logout } = useSessionGuard();
+  const router = useRouter();
+  const { session } = useSessionGuard();
+
+  useEffect(() => {
+    if (!session) {
+      return;
+    }
+
+    router.replace(`/projects/${params.projectId}/products`);
+  }, [params.projectId, router, session]);
 
   if (!session) {
     return (
-      <main className="workspace-layout">
-        <section className="workspace-main-card">
+      <main className="loading-shell">
+        <section className="glass-card">
           <h1>Проверяем сессию...</h1>
         </section>
       </main>
@@ -21,15 +28,10 @@ export default function ProjectSchemasRoute() {
   }
 
   return (
-    <ProjectShell
-      session={session}
-      projectId={projectId}
-      activeTab="schemas"
-      onLogout={logout}
-    >
-      {({ apiSession, project }) => (
-        <ProjectSchemasPanel apiSession={apiSession} projectId={project.id} />
-      )}
-    </ProjectShell>
+    <main className="loading-shell">
+      <section className="glass-card">
+        <h1>Открываем товары проекта...</h1>
+      </section>
+    </main>
   );
 }

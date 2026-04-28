@@ -45,9 +45,14 @@
 ### 5.2 Подключение аккаунтов площадок
 - один worker обслуживает ровно один аккаунт
 - Accounts Manager ведёт реестр worker server-ов (`status/health/capacity/currentLoad/heartbeat`) и использует его как control-plane для placement
+- выбор runtime-порта worker выполняется автоматически в Accounts Manager (из `account-type runtime.containerPort` с fallback на сервисный env), без ручной настройки порта в реестре `worker-servers`
+- в реестре `worker-servers` хранятся per-server registry настройки для GHCR (host/username + write-only token в зашифрованном storage) для Docker autospawn
+- системная админка DDCRM управляет реестром `worker-servers` и платформенными `account-types` (runtime templates) через отдельный `/v1/admin/account-manager/*` контур
 - создание/изменение аккаунта требует proxy-конфиг
 - при create/update/delete/migrate операции должны быть идемпотентны
 - `lifecycle/create` выбирает least-loaded healthy `active` server, `lifecycle/migrate` (без target) выбирает лучший доступный server, `lifecycle/rebalance` выполняет балансировку размещений между доступными server-ами
+- при включённом `ACCOUNT_MANAGER_AUTOSPAWN_ENABLED` lifecycle create/migrate/rebalance выполняют cold-migration orchestration через Docker Engine (`spawn -> route switch -> cleanup source`)
+- Docker autospawn использует политику `pull-if-missing`: при отсутствии локального `workerImage` выполняется pull через Docker Engine с per-server GHCR credentials
 - при пустом registry сохраняется backward-compatible fallback на `srv-default`
 - удаление аккаунта удаляет route и останавливает worker
 - политика доступа к proxy credentials (masked by default, reveal/update, активная сессия, аудит) определяется канонически в `docs/standards/access-control-matrix.md`
@@ -111,6 +116,7 @@
 - role/membership проверяются по claims и membership cache
 - cache должен инвалидироваться при изменении ролей
 - ограничения UI и API по ролям определяются в `docs/standards/access-control-matrix.md`
+- системные admin endpoint-ы `/v1/admin/*` защищены отдельным JWT system-claim (`system.accountManager.manage`) и не наследуют доступ от проектных ролей
 - доступ к proxy credentials регулируется `project.accounts.proxyCredentials.reveal` и `project.accounts.proxyCredentials.update`
 - CORS для browser-доступа к external API определяется канонически в `docs/standards/openapi-governance.md`, runtime-значения задаются по `docs/standards/runtime-configuration.md`
 - service-auth internal API через `X-Service-Token` обязателен, runtime-значения задаются по `docs/standards/runtime-configuration.md`
