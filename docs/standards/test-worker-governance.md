@@ -1,0 +1,95 @@
+# DDCRM — Test Worker Governance (канонический)
+
+## Назначение
+Единый источник правил для тестового воркера (симулятора площадок), который используется как эталон контрактного поведения worker API в non-production контурах.
+
+Правило:
+- детальная спецификация тестового воркера определяется только здесь;
+- остальные документы ссылаются на этот стандарт без копирования полного каталога сценариев и профилей.
+
+## 1. Роль и границы
+### 1.1 In scope
+- контрактная совместимость с `docs/api-contracts/openapi-worker.yaml`;
+- детерминированная симуляция поведения площадки для `local/CI/staging`;
+- воспроизводимые позитивные и негативные сценарии;
+- поддержка contract-testing, regression и диагностики.
+
+### 1.2 Out of scope
+- production-интеграция с реальной площадкой;
+- замена боевых worker-ов в runtime production маршрутах;
+- расширение production API paths/schemas ради симуляции.
+
+## 2. Контрактная совместимость
+- тестовый воркер реализует существующий контракт `openapi-worker` без добавления новых production endpoint-ов;
+- для симуляции используются только существующие точки расширения `actions/{action}` и `capabilities`;
+- расширения `ext.test.*` разрешены только в non-production профиле;
+- в production-профиле вызовы `ext.test.*` должны отклоняться как неподдерживаемые.
+
+## 3. Контуры запуска и доступность
+- допустимые контуры: `local`, `ci`, `staging`;
+- по умолчанию тестовый воркер скрыт и выключен;
+- включение выполняется только через env-профиль `.env.test-worker.example`;
+- в production включение тестового воркера запрещено политикой `TEST_WORKER_BLOCK_IN_PRODUCTION=true`.
+
+## 4. Архитектура симулятора
+- детерминированный движок сценариев: один и тот же `scenario + fixture-set + idempotency key` даёт повторяемый результат;
+- фикстуры являются версионируемыми входными данными, источник задаётся через env;
+- ответы симулятора формируются так, чтобы воспроизводить типовые коды/ошибки реальных площадок;
+- реализация тестового воркера в DDCRM выполняется на `C#/.NET` (по `docs/standards/technology-stack.md`);
+- симулятор не хранит production-состояние и не является источником бизнес-истины.
+
+## 5. Каталог обязательных сценариев
+Сценарии версионируются и идентифицируются по `TW-SCN-*`.
+
+| Scenario ID | Назначение |
+|---|---|
+| `TW-SCN-HAPPY-PATH` | базовый успешный проход основных операций worker-контракта |
+| `TW-SCN-AUTH-FAIL` | ошибка авторизации площадки / невалидные upstream credentials |
+| `TW-SCN-TIMEOUT` | timeout внешней площадки и ожидаемая retry/diagnostics реакция |
+| `TW-SCN-RATE-LIMIT` | ограничение запросов (429-подобное поведение) |
+| `TW-SCN-MALFORMED-PAYLOAD` | невалидный payload/response для проверки контрактной диагностики |
+| `TW-SCN-CAPABILITY-MISMATCH` | запрос действия, которого нет в capability-наборе |
+| `TW-SCN-IDEMPOTENCY-REPLAY` | повтор mutating-запроса с тем же `Idempotency-Key` |
+| `TW-SCN-TRANSIENT-ERROR` | временная ошибка площадки с последующим восстановлением |
+| `TW-SCN-CONTRACT-DRIFT` | намеренное расхождение со схемой для проверки drift-детектора |
+
+## 6. Capability-профили тестового воркера
+- capability-профили фиксированы и версионируемы (идентификаторы `TW-CAP-*`);
+- активный профиль публикуется через `/internal/v2/worker/capabilities`;
+- Gateway и contract-tests обязаны проверять соответствие выбранного `TW-SCN-*` и активного `TW-CAP-*` профиля;
+- изменение capability-профилей допускается только с новой версией профиля, без silent-изменений существующей версии.
+
+Минимальные профили:
+- `TW-CAP-CORE-V1` — happy-path и базовые ресурсные операции;
+- `TW-CAP-FAILURES-V1` — сценарии отказов и диагностики (`timeout/rate-limit/transient`);
+- `TW-CAP-CONTRACT-V1` — сценарии валидации контракта (`malformed-payload/contract-drift`).
+
+## 6.1 Provider-профиль тестового воркера
+- активная симулируемая площадка задаётся env-переменной `TEST_WORKER_PROVIDER`;
+- допустимые значения: `funpay`, `playerok`, `ggsell`, `platimarket`;
+- `TEST_WORKER_INSTANCE_ID` задаёт диагностический идентификатор конкретного инстанса симулятора (если не задан, используется `MachineName`);
+- выбранный provider должен согласовываться с данными `/internal/v2/worker/account`, `/internal/v2/worker/capabilities` и `/internal/v2/worker/schemas/products`;
+- при смене provider-профиля contract-tests должны проверять provider-специфичные product schema (`*.item.v1`) и совместимость feature-map.
+- операции `account/conversations/products`, помеченные как `false` в `features`, должны отклоняться runtime-ом с `WORKER_RUNTIME_CONFLICT` (`409`), чтобы поведение было консистентно с опубликованным provider feature-map.
+
+## 7. Политика `ext.test.*`
+- namespace `ext.test.*` зарезервирован только для симуляторных действий;
+- `ext.test.*` не используется в production-маршрутах и не является частью продуктовой бизнес-функциональности;
+- при отсутствии capability для `ext.test.*` действие отклоняется как capability mismatch;
+- все `ext.test.*` действия должны иметь явную трассировку в тестовых отчётах (scenario ID, capability profile, fixture revision).
+
+## 8. Обязательные правила качества
+- релизное качество требует прогонов как на тестовом воркере, так и минимум на одной реальной интеграции;
+- негативные сценарии "ошибка площадки" и "контрактный дрейф" обязательны в CI;
+- изменение сценария/фикстуры должно сопровождаться обновлением тестов и ссылочных документов.
+
+## 9. Связанные документы
+- `docs/standards/source-of-truth-map.md`
+- `docs/standards/openapi-governance.md`
+- `docs/standards/worker-action-conventions.md`
+- `docs/standards/runtime-configuration.md`
+- `docs/standards/technology-stack.md`
+- `docs/testing/test-strategy.md`
+- `docs/testing/contract-gates-execution.md`
+- `docs/testing/test-worker-checklist.md`
+- `.env.test-worker.example`

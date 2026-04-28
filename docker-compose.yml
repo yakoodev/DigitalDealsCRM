@@ -1,0 +1,239 @@
+name: ddcrm
+
+x-service-auth-env: &service-auth-env
+  ASPNETCORE_ENVIRONMENT: Development
+  ASPNETCORE_URLS: http://+:8080
+  INTERNAL_API_SERVICE_AUTH_ENABLED: "true"
+  INTERNAL_API_SERVICE_AUTH_ACCEPTED_TOKENS: internal-token-a,internal-token-b
+  INTERNAL_API_SERVICE_AUTH_CLIENT_TOKEN: internal-token-a
+  WORKER_API_SERVICE_AUTH_ACCEPTED_TOKENS: worker-token-a,worker-token-b
+  WORKER_API_SERVICE_AUTH_CLIENT_TOKEN: worker-token-a
+
+x-external-api-env: &external-api-env
+  EXTERNAL_API_CORS_ENABLED: "true"
+  EXTERNAL_API_CORS_ALLOW_CREDENTIALS: "true"
+  EXTERNAL_API_CORS_ALLOW_ORIGINS: http://localhost:3000,http://localhost:3400
+  EXTERNAL_API_CORS_ALLOW_METHODS: GET,POST,PATCH,DELETE,OPTIONS
+  EXTERNAL_API_CORS_ALLOW_HEADERS: Authorization,Content-Type,Idempotency-Key,X-Request-Id
+  EXTERNAL_API_CORS_EXPOSE_HEADERS: X-Request-Id
+  EXTERNAL_API_CORS_MAX_AGE_SECONDS: "600"
+  EXTERNAL_API_JWT_ISSUER: ddcrm-local
+  EXTERNAL_API_JWT_AUDIENCE: ddcrm-api
+  EXTERNAL_API_JWT_SIGNING_KEY: replace-with-long-random-signing-key
+  EXTERNAL_API_SYSTEM_PERMISSION_CLAIM_TYPE: ddcrm.system.permissions
+  EXTERNAL_API_SYSTEM_PERMISSION_CLAIM_VALUE: system.accountManager.manage
+
+x-dotnet-service: &dotnet-service
+  build:
+    context: .
+    dockerfile: docker/api.Dockerfile
+  restart: unless-stopped
+  depends_on:
+    postgres:
+      condition: service_healthy
+  healthcheck:
+    test: ["CMD-SHELL", "curl -fsS -H \"X-Service-Token: $$INTERNAL_API_SERVICE_AUTH_CLIENT_TOKEN\" http://localhost:8080/health > /dev/null || exit 1"]
+    interval: 15s
+    timeout: 5s
+    retries: 5
+    start_period: 30s
+  networks:
+    - ddcrm
+
+services:
+  postgres:
+    image: postgres:17
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - ddcrm_postgres:/var/lib/postgresql/data
+      - ./docker/postgres/init/01-create-ddcrm-databases.sql:/docker-entrypoint-initdb.d/01-create-ddcrm-databases.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    networks:
+      - ddcrm
+
+  core-api:
+    <<: *dotnet-service
+    build:
+      context: .
+      dockerfile: docker/api.Dockerfile
+      args:
+        SERVICE_PROJECT: src/DDCRM.Core.Api/DDCRM.Core.Api.csproj
+    command: ["DDCRM.Core.Api.dll"]
+    environment:
+      <<: [*service-auth-env, *external-api-env]
+      CORE_DB_CONNECTION: Host=postgres;Port=5432;Database=ddcrm_core;Username=postgres;Password=postgres
+      AccountsManagerClient__BaseUrl: http://accounts-manager-api:8080
+      BillingClient__BaseUrl: http://billing-api:8080
+      GatewayProxyClient__BaseUrl: http://gateway-api:8080
+    ports:
+      - "5073:8080"
+
+  iam-api:
+    <<: *dotnet-service
+    build:
+      context: .
+      dockerfile: docker/api.Dockerfile
+      args:
+        SERVICE_PROJECT: src/DDCRM.Iam.Api/DDCRM.Iam.Api.csproj
+    command: ["DDCRM.Iam.Api.dll"]
+    environment:
+      <<: *service-auth-env
+      CORE_DB_CONNECTION: Host=postgres;Port=5432;Database=ddcrm_core;Username=postgres;Password=postgres
+    ports:
+      - "5120:8080"
+
+  route-registry-api:
+    <<: *dotnet-service
+    build:
+      context: .
+      dockerfile: docker/api.Dockerfile
+      args:
+        SERVICE_PROJECT: src/DDCRM.RouteRegistry.Api/DDCRM.RouteRegistry.Api.csproj
+    command: ["DDCRM.RouteRegistry.Api.dll"]
+    environment:
+      <<: *service-auth-env
+      ROUTE_REGISTRY_DB_CONNECTION: Host=postgres;Port=5432;Database=ddcrm_route_registry;Username=postgres;Password=postgres
+    ports:
+      - "5110:8080"
+
+  accounts-manager-api:
+    <<: *dotnet-service
+    build:
+      context: .
+      dockerfile: docker/api.Dockerfile
+      args:
+        SERVICE_PROJECT: src/DDCRM.AccountsManager.Api/DDCRM.AccountsManager.Api.csproj
+    command: ["DDCRM.AccountsManager.Api.dll"]
+    environment:
+      <<: *service-auth-env
+      ACCOUNTS_MANAGER_DB_CONNECTION: Host=postgres;Port=5432;Database=ddcrm_accounts_manager;Username=postgres;Password=postgres
+      ROUTE_REGISTRY_CLIENT_ENABLED: "true"
+      ROUTE_REGISTRY_CLIENT_BASE_URL: http://route-registry-api:8080
+      WORKER_CONTROL_CLIENT_ENABLED: "true"
+      WORKER_CONTROL_CLIENT_BASE_URL_TEMPLATE: http://worker-api:8080
+      WORKER_CONTROL_CLIENT_PATH_PREFIX: /internal/v2/worker
+      ACCOUNT_MANAGER_AUTOSPAWN_ENABLED: "true"
+      ACCOUNT_MANAGER_AUTOSPAWN_DOCKER_ENDPOINT: unix:///var/run/docker.sock
+      ACCOUNT_MANAGER_AUTOSPAWN_DOCKER_NETWORK: ddcrm_ddcrm
+      ACCOUNT_MANAGER_AUTOSPAWN_WORKER_INTERNAL_PORT: "8080"
+      ACCOUNT_MANAGER_AUTOSPAWN_HEALTH_TIMEOUT_SECONDS: "45"
+      ACCOUNT_MANAGER_AUTOSPAWN_HEALTH_POLL_INTERVAL_MS: "800"
+      ACCOUNT_MANAGER_AUTOSPAWN_FALLBACK_WORKER_ID: worker-api
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    ports:
+      - "5137:8080"
+
+  billing-api:
+    <<: *dotnet-service
+    build:
+      context: .
+      dockerfile: docker/api.Dockerfile
+      args:
+        SERVICE_PROJECT: src/DDCRM.Billing.Api/DDCRM.Billing.Api.csproj
+    command: ["DDCRM.Billing.Api.dll"]
+    environment:
+      <<: *service-auth-env
+      BILLING_DB_CONNECTION: Host=postgres;Port=5432;Database=ddcrm_billing;Username=postgres;Password=postgres
+      EntitlementClient__BaseUrl: http://entitlement-api:8080
+    ports:
+      - "5122:8080"
+
+  entitlement-api:
+    <<: *dotnet-service
+    build:
+      context: .
+      dockerfile: docker/api.Dockerfile
+      args:
+        SERVICE_PROJECT: src/DDCRM.Entitlement.Api/DDCRM.Entitlement.Api.csproj
+    command: ["DDCRM.Entitlement.Api.dll"]
+    environment:
+      <<: *service-auth-env
+      ENTITLEMENT_DB_CONNECTION: Host=postgres;Port=5432;Database=ddcrm_entitlement;Username=postgres;Password=postgres
+    ports:
+      - "5221:8080"
+
+  gateway-api:
+    <<: *dotnet-service
+    build:
+      context: .
+      dockerfile: docker/api.Dockerfile
+      args:
+        SERVICE_PROJECT: src/DDCRM.Gateway.Api/DDCRM.Gateway.Api.csproj
+    command: ["DDCRM.Gateway.Api.dll"]
+    environment:
+      <<: [*service-auth-env, *external-api-env]
+      RouteRegistryClient__BaseUrl: http://route-registry-api:8080
+      IamClient__BaseUrl: http://iam-api:8080
+      EntitlementClient__BaseUrl: http://entitlement-api:8080
+      WorkerProxyClient__BaseUrlTemplate: http://{workerId}:8080
+      WorkerProxyClient__PathPrefix: /internal/v2/worker
+      TEST_WORKER_EXT_ACTIONS_ENABLED: "true"
+    ports:
+      - "5068:8080"
+
+  worker-api:
+    <<: *dotnet-service
+    build:
+      context: .
+      dockerfile: docker/api.Dockerfile
+      args:
+        SERVICE_PROJECT: src/DDCRM.Worker.Api/DDCRM.Worker.Api.csproj
+    image: ddcrm/worker-api:local
+    command: ["DDCRM.Worker.Api.dll"]
+    environment:
+      <<: *service-auth-env
+      WORKER_DB_CONNECTION: Host=postgres;Port=5432;Database=ddcrm_worker;Username=postgres;Password=postgres
+      WORKER_API_SERVICE_AUTH_ENABLED: "true"
+      TEST_WORKER_ENABLED: "true"
+      TEST_WORKER_DEFAULT_VISIBILITY: hidden
+      TEST_WORKER_ALLOWED_ENVIRONMENTS: development,local,ci,staging
+      TEST_WORKER_BLOCK_IN_PRODUCTION: "true"
+      TEST_WORKER_SCENARIO: TW-SCN-HAPPY-PATH
+      TEST_WORKER_CAPABILITY_PROFILE: TW-CAP-CORE-V1
+      TEST_WORKER_PROVIDER: platimarket
+      TEST_WORKER_FIXTURE_SOURCE: ./fixtures/test-worker
+      TEST_WORKER_FIXTURE_REVISION: main
+      TEST_WORKER_EXT_ACTIONS_ENABLED: "true"
+      WORKER_PROXY_CREDENTIALS_ENCRYPTION_KEY: replace-with-long-random-worker-key
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS -H \"X-Service-Token: $$WORKER_API_SERVICE_AUTH_CLIENT_TOKEN\" http://localhost:8080/health > /dev/null || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    ports:
+      - "5072:8080"
+
+  ui:
+    build:
+      context: .
+      dockerfile: docker/ui.Dockerfile
+    restart: unless-stopped
+    depends_on:
+      core-api:
+        condition: service_healthy
+    environment:
+      NEXT_TELEMETRY_DISABLED: "1"
+    ports:
+      - "3400:3000"
+    networks:
+      - ddcrm
+
+volumes:
+  ddcrm_postgres:
+
+networks:
+  ddcrm:
+    driver: bridge

@@ -1,0 +1,124 @@
+# DDCRM — Runbook
+
+Канонический источник порогов, SLO и recovery-критериев:
+- `docs/standards/quality-gates.md`
+
+## 0. Целевые SLO и пороги инцидентов
+- инцидентные пороги: `QG-INC-SEV1-5XX-RATE`, `QG-INC-SEV1-ROUTE-NOT-FOUND-RATE`, `QG-INC-SEV1-WEBHOOK-OLDEST-AGE`, `QG-INC-SEV2-GW-CHECK-P95`, `QG-INC-SEV2-IAM-CACHE-P99`, `QG-INC-SEV2-CORS-PREFLIGHT-FAIL-RATE`, `QG-INC-SEV2-INTERNAL-AUTH-FAIL-RATE`, `QG-INC-SEV2-WORKER-AUTH-FAIL-RATE`
+- операционные SLA реакции: `QG-OPS-MTTA-SEV1`, `QG-OPS-MITIGATION-START-SEV1`
+
+## 0.1 Операционный dry-run (обязательный)
+- перед pre-release и rollback rehearsal выполнить `./eng/ops-ready.ps1` (или `./eng/ops-ready.sh`);
+- fast-mode `-SkipContracts` / `--skip-contracts` допускается только если contract gates уже прогнаны в текущем изменении;
+- если хотя бы один шаг dry-run красный, rollout блокируется до устранения причины.
+
+## 1. Инцидент: недоступен Gateway
+### Симптомы
+- массовые ошибки account API
+- рост `5xx` на Gateway
+
+### Действия
+- проверить health-check Gateway
+- проверить доступность Route Registry DB
+- проверить доступность Entitlement Service
+- при необходимости переключить трафик на последнюю стабильную версию Gateway
+
+### Критерий восстановления
+- `QG-REC-GW-5XX-RATE`
+- `QG-REC-GW-CHECK-P95`
+
+## 2. Инцидент: route не резолвится
+### Симптомы
+- `ROUTE_NOT_FOUND` при активных аккаунтах
+
+### Действия
+- проверить запись в Route Registry DB
+- сравнить route version с последним lifecycle событием
+- повторить route upsert через Accounts Manager -> Gateway
+
+### Критерий восстановления
+- `QG-REC-ROUTE-NOT-FOUND-RATE`
+- `QG-REC-ROUTE-RESOLVE-P95`
+
+## 3. Инцидент: дубль webhook платежа
+### Симптомы
+- повторные попытки активации entitlement
+
+### Действия
+- проверить dedup-ключ события в Billing
+- убедиться, что повтор не изменил итоговый статус подписки
+- при конфликте запустить reconciliation
+
+### Критерий восстановления
+- `QG-REC-WEBHOOK-P95`
+- `QG-REC-WEBHOOK-OLDEST-AGE`
+- повторные webhook не изменяют состояние подписки повторно
+
+## 4. Инцидент: некорректный override
+### Симптомы
+- доступы проекта не соответствуют платежному статусу
+
+### Действия
+- проверить запись override: reason/actor/createdAt/expiresAt
+- проверить, не истёк ли override
+- если override некорректен, завершить его и пересчитать entitlement
+
+### Критерий восстановления
+- все активные override валидны по полям `reason/actor/createdAt/expiresAt`
+- `QG-REC-ENT-RECALC-P95`
+
+## 5. Инцидент: массовая блокировка после даунгрейда
+### Симптомы
+- пользователи теряют доступ к операциям на разрешённых платформах
+
+### Действия
+- проверить правила entitlement для тарифа
+- проверить, что Gateway применяет выборочную блокировку
+- при ошибке применить временный admin override с коротким TTL и аудитом
+
+### Критерий восстановления
+- `QG-REC-FALSE-BLOCKED-RATE`
+- нет роста `ENTITLEMENT_BLOCKED` для разрешённых action
+
+## 6. Инцидент: CORS/preflight ошибки external API
+### Симптомы
+- браузерные клиенты получают CORS-ошибки до бизнес-логики API
+- рост неуспешных `OPTIONS` запросов
+
+### Действия
+- сверить runtime-конфиг среды с `docs/standards/runtime-configuration.md`
+- проверить allowlist origins и отсутствие wildcard в production
+- проверить заголовки preflight-ответа (`Access-Control-Allow-*`)
+- при необходимости вернуть последнюю валидную CORS-конфигурацию
+
+### Критерий восстановления
+- `QG-REC-CORS-PREFLIGHT-FAIL-RATE`
+- preflight-запросы завершаются успешно для разрешённых origins
+- браузерные запросы к external API проходят без CORS-блокировки
+
+## 7. Инцидент: отказ service-auth internal/worker API
+### Симптомы
+- внутренние сервисы получают `401/403` от internal API
+- Gateway получает `401/403` от worker API на валидных маршрутах
+- резкий рост ошибок `WORKER_AUTH_FAILED`
+
+### Действия
+- сверить runtime-конфиг среды с `docs/standards/runtime-configuration.md`
+- проверить согласованность клиентских service-auth токенов и списков разрешённых токенов по `docs/standards/runtime-configuration.md`
+- проверить, что токены internal и worker контуров не переиспользуются и не пересекаются
+- проверить, что заголовок `X-Service-Token` передается при вызовах internal и worker API
+- при необходимости выполнить controlled token-rotation по `docs/operations/service-auth-rotation-playbook.md`
+
+### Критерий восстановления
+- `QG-REC-INTERNAL-AUTH-FAIL-RATE`
+- `QG-REC-WORKER-AUTH-FAIL-RATE`
+- internal API принимает запросы с валидным `X-Service-Token`
+- worker API принимает запросы с валидным `X-Service-Token`
+- нет повторного роста `WORKER_AUTH_FAILED`
+
+## 8. Эскалация
+- L1: on-call инженер
+- L2: владелец сервиса (Billing/Entitlement/Gateway)
+- L3: продукт + техлид при коммерческом риске
+- `QG-OPS-ESCALATE-L2-SEV1`
+- `QG-OPS-ESCALATE-L3-SEV1`

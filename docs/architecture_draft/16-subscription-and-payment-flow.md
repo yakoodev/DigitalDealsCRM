@@ -19,8 +19,9 @@ sequenceDiagram
     CORE-->>FE: payment session / url
 
     PAY-->>BILL: payment success callback
-    BILL->>ENT: activate purchased permissions
-    ENT->>DB: update entitlement / subscription snapshot
+    BILL->>BILL: validate + deduplicate webhook
+    BILL->>ENT: publish subscription state update
+    ENT->>DB: update entitlement snapshot
     DB-->>ENT: ok
     ENT-->>BILL: provisioning completed
 ```
@@ -34,5 +35,14 @@ sequenceDiagram
 - trial / paid state
 - блокировки и снятие блокировок
 
+## State machine доступа
+- состояние доступа ведёт Entitlement Service
+- переходы `trial -> active -> grace -> blocked`
+- длительности `trial/grace` задаются политикой тарифа
+
 ## Ручной сценарий
 Архитектура должна поддерживать ручное подтверждение платежа и ручную активацию доступа вне эквайринга.
+
+## Источник истины
+- факт оплаты и состояние подписки: Billing
+- итоговые разрешения проекта: Entitlement Service

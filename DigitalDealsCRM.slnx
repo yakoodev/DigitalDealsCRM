@@ -1,0 +1,32 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/DDCRM.AccountsManager.Api/DDCRM.AccountsManager.Api.csproj" />
+    <Project Path="src/DDCRM.AccountsManager.Persistence/DDCRM.AccountsManager.Persistence.csproj" />
+    <Project Path="src/DDCRM.Billing.Api/DDCRM.Billing.Api.csproj" />
+    <Project Path="src/DDCRM.Billing.Persistence/DDCRM.Billing.Persistence.csproj" />
+    <Project Path="src/DDCRM.Core.Api/DDCRM.Core.Api.csproj" />
+    <Project Path="src/DDCRM.Core.Persistence/DDCRM.Core.Persistence.csproj" />
+    <Project Path="src/DDCRM.Entitlement.Api/DDCRM.Entitlement.Api.csproj" />
+    <Project Path="src/DDCRM.Entitlement.Persistence/DDCRM.Entitlement.Persistence.csproj" />
+    <Project Path="src/DDCRM.Gateway.Api/DDCRM.Gateway.Api.csproj" />
+    <Project Path="src/DDCRM.Iam.Api/DDCRM.Iam.Api.csproj" />
+    <Project Path="src/DDCRM.RouteRegistry.Api/DDCRM.RouteRegistry.Api.csproj" />
+    <Project Path="src/DDCRM.RouteRegistry.Persistence/DDCRM.RouteRegistry.Persistence.csproj" />
+    <Project Path="src/DDCRM.Shared/DDCRM.Shared.csproj" />
+    <Project Path="src/DDCRM.Worker.Api/DDCRM.Worker.Api.csproj" />
+    <Project Path="src/DDCRM.Worker.Persistence/DDCRM.Worker.Persistence.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/DDCRM.AccountsManager.Api.Tests/DDCRM.AccountsManager.Api.Tests.csproj" />
+    <Project Path="tests/DDCRM.Billing.Api.Tests/DDCRM.Billing.Api.Tests.csproj" />
+    <Project Path="tests/DDCRM.Core.Api.Tests/DDCRM.Core.Api.Tests.csproj" />
+    <Project Path="tests/DDCRM.Entitlement.Api.Tests/DDCRM.Entitlement.Api.Tests.csproj" />
+    <Project Path="tests/DDCRM.Gateway.Api.Tests/DDCRM.Gateway.Api.Tests.csproj" />
+    <Project Path="tests/DDCRM.Iam.Api.Tests/DDCRM.Iam.Api.Tests.csproj" />
+    <Project Path="tests/DDCRM.RouteRegistry.Api.Tests/DDCRM.RouteRegistry.Api.Tests.csproj" />
+    <Project Path="tests/DDCRM.Worker.Api.Tests/DDCRM.Worker.Api.Tests.csproj" />
+  </Folder>
+  <Folder Name="/tools/">
+    <Project Path="tools/DDCRM.Contracts.Cli/DDCRM.Contracts.Cli.csproj" />
+  </Folder>
+</Solution>
