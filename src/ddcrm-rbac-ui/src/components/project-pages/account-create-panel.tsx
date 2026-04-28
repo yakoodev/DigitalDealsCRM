@@ -134,7 +134,8 @@ export function ProjectAccountCreatePanel({
         },
       };
 
-      if (selectedAccountType.platform.trim().toLowerCase() === "funpay") {
+      const normalizedPlatform = selectedAccountType.platform.trim().toLowerCase();
+      if (normalizedPlatform === "funpay") {
         const goldenKey = readRequiredDraftValue(
           activeDraft,
           "funpayGoldenKey",
@@ -150,6 +151,41 @@ export function ProjectAccountCreatePanel({
 
         payload.marketplaceAuth = {
           scheme: "golden_key",
+          credentials,
+        };
+      }
+      else if (normalizedPlatform === "playerok") {
+        const rawScheme = (activeDraft.playerokAuthScheme ?? "tokens").trim().toLowerCase();
+        const scheme = rawScheme === "cookies" ? "cookies" : "tokens";
+        const userAgent = (activeDraft.playerokUserAgent ?? "").trim();
+        const credentials: Record<string, string> = {};
+
+        if (scheme === "tokens") {
+          credentials.token = readRequiredDraftValue(
+            activeDraft,
+            "playerokToken",
+            "Playerok token",
+          );
+          credentials.ddg5 = readRequiredDraftValue(
+            activeDraft,
+            "playerokDdg5",
+            "Playerok ddg5",
+          );
+        }
+        else {
+          credentials.cookies = readRequiredDraftValue(
+            activeDraft,
+            "playerokCookies",
+            "Playerok cookies",
+          );
+        }
+
+        if (userAgent) {
+          credentials.user_agent = userAgent;
+        }
+
+        payload.marketplaceAuth = {
+          scheme,
           credentials,
         };
       }

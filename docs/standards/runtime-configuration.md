@@ -23,6 +23,7 @@
 - `WORKER_MARKETPLACE_AUTH_ENCRYPTION_KEY` — ключ шифрования marketplace auth credentials в worker state storage;
 - `DDCRM_WORKER_ACCOUNT_ID` — runtime account binding для single-tenant worker instance (инжектится Accounts Manager autospawn на каждый spawned worker);
 - `FUNPAY_WORKER_ACCOUNT_ID` — platform-alias runtime account binding для FunPay worker (значение синхронизируется с `DDCRM_WORKER_ACCOUNT_ID`);
+- `PLAYEROK_WORKER_ACCOUNT_ID` — platform-alias runtime account binding для Playerok worker (значение синхронизируется с `DDCRM_WORKER_ACCOUNT_ID`);
 - `WORKER_CONTROL_CLIENT_*` — переменные internal worker-control client-а (service-to-service вызовы internal -> worker);
 - `ACCOUNT_MANAGER_AUTOSPAWN_*` — переменные Docker-autospawn orchestration в Accounts Manager;
 - `ACCOUNT_MANAGER_AUTOSPAWN_REGISTRY_*` — переменные secret-handling для registry credentials в Accounts Manager (`worker-servers` GHCR auth, write-only storage);

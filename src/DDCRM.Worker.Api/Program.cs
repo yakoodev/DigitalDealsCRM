@@ -1015,6 +1015,28 @@ static (Guid AccountId, MarketplaceAuthValue MarketplaceAuth) ReadMarketplaceAut
             StatusCodes.Status400BadRequest,
             "Для marketplaceAuth.scheme=golden_key требуется payload.marketplaceAuth.credentials.golden_key.");
     }
+    if (string.Equals(scheme, MarketplaceAuthSchemeKeys.Tokens, StringComparison.Ordinal))
+    {
+        if (!credentials.ContainsKey("token"))
+        {
+            throw CreatePlatformError(
+                StatusCodes.Status400BadRequest,
+                "Для marketplaceAuth.scheme=tokens требуется payload.marketplaceAuth.credentials.token.");
+        }
+        if (!credentials.ContainsKey("ddg5"))
+        {
+            throw CreatePlatformError(
+                StatusCodes.Status400BadRequest,
+                "Для marketplaceAuth.scheme=tokens требуется payload.marketplaceAuth.credentials.ddg5.");
+        }
+    }
+    if (string.Equals(scheme, MarketplaceAuthSchemeKeys.Cookies, StringComparison.Ordinal)
+        && !credentials.ContainsKey("cookies"))
+    {
+        throw CreatePlatformError(
+            StatusCodes.Status400BadRequest,
+            "Для marketplaceAuth.scheme=cookies требуется payload.marketplaceAuth.credentials.cookies.");
+    }
 
     return (accountId, new MarketplaceAuthValue(scheme, credentials));
 }

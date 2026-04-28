@@ -1509,6 +1509,32 @@ static MarketplaceAuthPayload? ReadMarketplaceAuth(Dictionary<string, JsonElemen
             ApiErrorCodes.ValidationError,
             "Для marketplaceAuth.scheme=golden_key требуется credentials.golden_key.");
     }
+    if (string.Equals(scheme, MarketplaceAuthSchemes.Tokens, StringComparison.Ordinal))
+    {
+        if (!credentials.ContainsKey("token"))
+        {
+            throw new ApiErrorException(
+                StatusCodes.Status400BadRequest,
+                ApiErrorCodes.ValidationError,
+                "Для marketplaceAuth.scheme=tokens требуется credentials.token.");
+        }
+
+        if (!credentials.ContainsKey("ddg5"))
+        {
+            throw new ApiErrorException(
+                StatusCodes.Status400BadRequest,
+                ApiErrorCodes.ValidationError,
+                "Для marketplaceAuth.scheme=tokens требуется credentials.ddg5.");
+        }
+    }
+    if (string.Equals(scheme, MarketplaceAuthSchemes.Cookies, StringComparison.Ordinal)
+        && !credentials.ContainsKey("cookies"))
+    {
+        throw new ApiErrorException(
+            StatusCodes.Status400BadRequest,
+            ApiErrorCodes.ValidationError,
+            "Для marketplaceAuth.scheme=cookies требуется credentials.cookies.");
+    }
 
     return new MarketplaceAuthPayload(scheme, credentials);
 }

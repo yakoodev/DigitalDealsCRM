@@ -107,10 +107,55 @@ export default function AccountManagerTemplatesPage() {
           placeholder: "Опционально: браузерный User-Agent",
         },
       ];
+      const playerokFormFields: TemplateField[] = [
+        {
+          key: "playerokAuthScheme",
+          label: "Playerok auth scheme",
+          inputType: "text",
+          required: true,
+          secret: false,
+          placeholder: "tokens или cookies",
+          defaultValue: "tokens",
+        },
+        {
+          key: "playerokToken",
+          label: "Playerok token",
+          inputType: "password",
+          required: false,
+          secret: true,
+          placeholder: "Обязательно для scheme=tokens",
+        },
+        {
+          key: "playerokDdg5",
+          label: "Playerok ddg5",
+          inputType: "password",
+          required: false,
+          secret: true,
+          placeholder: "Cookie __ddg5_ (обязательно для scheme=tokens)",
+        },
+        {
+          key: "playerokCookies",
+          label: "Playerok cookies",
+          inputType: "password",
+          required: false,
+          secret: true,
+          placeholder: "Обязательно для scheme=cookies",
+        },
+        {
+          key: "playerokUserAgent",
+          label: "Playerok user agent",
+          inputType: "text",
+          required: false,
+          secret: false,
+          placeholder: "Опционально: браузерный User-Agent",
+        },
+      ];
 
-      const formFields =
-        platform.trim().toLowerCase() === "funpay"
-          ? [...baseFormFields, ...funpayFormFields]
+      const normalizedPlatform = platform.trim().toLowerCase();
+      const formFields = normalizedPlatform === "funpay"
+        ? [...baseFormFields, ...funpayFormFields]
+        : normalizedPlatform === "playerok"
+          ? [...baseFormFields, ...playerokFormFields]
           : baseFormFields;
 
       return upsertAdminAccountTypeRequest(apiSession, accountTypeId.trim(), {

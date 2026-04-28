@@ -191,6 +191,154 @@ describe("ProjectAccountCreatePanel", () => {
     });
   });
 
+  it("для playerok формирует marketplaceAuth по scheme=tokens", async () => {
+    vi.mocked(listProjectAccountTypesRequest).mockResolvedValueOnce([
+      {
+        accountTypeId: "test-worker.playerok",
+        platform: "playerok",
+        displayName: "Тестовый worker: Playerok",
+        description: "Playerok template",
+        workerProfileId: "test-worker",
+        enabled: true,
+        sortOrder: 20,
+        formFields: [
+          {
+            key: "displayName",
+            label: "Название аккаунта",
+            inputType: "text",
+            required: true,
+            secret: false,
+            placeholder: "Playerok Test Account",
+            defaultValue: "Playerok Test Account",
+          },
+          {
+            key: "proxyHost",
+            label: "Proxy host",
+            inputType: "text",
+            required: true,
+            secret: false,
+            placeholder: "45.88.208.237",
+            defaultValue: "",
+          },
+          {
+            key: "proxyPort",
+            label: "Proxy port",
+            inputType: "number",
+            required: true,
+            secret: false,
+            placeholder: "1508",
+            defaultValue: "1508",
+          },
+          {
+            key: "proxyLogin",
+            label: "Proxy login",
+            inputType: "text",
+            required: true,
+            secret: false,
+            placeholder: "user305829",
+            defaultValue: "",
+          },
+          {
+            key: "proxyPassword",
+            label: "Proxy password",
+            inputType: "password",
+            required: true,
+            secret: true,
+            placeholder: "Введите пароль",
+            defaultValue: "",
+          },
+          {
+            key: "playerokAuthScheme",
+            label: "Playerok auth scheme",
+            inputType: "text",
+            required: true,
+            secret: false,
+            placeholder: "tokens или cookies",
+            defaultValue: "tokens",
+          },
+          {
+            key: "playerokToken",
+            label: "Playerok token",
+            inputType: "password",
+            required: false,
+            secret: true,
+            placeholder: "Обязательно для scheme=tokens",
+            defaultValue: "",
+          },
+          {
+            key: "playerokDdg5",
+            label: "Playerok ddg5",
+            inputType: "password",
+            required: false,
+            secret: true,
+            placeholder: "Cookie __ddg5_ (обязательно для scheme=tokens)",
+            defaultValue: "",
+          },
+          {
+            key: "playerokCookies",
+            label: "Playerok cookies",
+            inputType: "password",
+            required: false,
+            secret: true,
+            placeholder: "Обязательно для scheme=cookies",
+            defaultValue: "",
+          },
+          {
+            key: "playerokUserAgent",
+            label: "Playerok user agent",
+            inputType: "text",
+            required: false,
+            secret: false,
+            placeholder: "Опционально: браузерный User-Agent",
+            defaultValue: "",
+          },
+        ],
+      },
+    ]);
+
+    renderPanel();
+
+    const titles = await screen.findAllByText("Тестовый worker: Playerok");
+    expect(titles.length).toBeGreaterThan(0);
+
+    await userEvent.clear(screen.getByLabelText(/Название аккаунта/i));
+    await userEvent.type(screen.getByLabelText(/Название аккаунта/i), "QA Playerok");
+    await userEvent.type(screen.getByLabelText(/Proxy host/i), "45.88.208.238");
+    await userEvent.type(screen.getByLabelText(/Proxy login/i), "user-playerok");
+    await userEvent.type(screen.getByLabelText(/Proxy password/i), "proxy-secret");
+    await userEvent.type(screen.getByLabelText(/Playerok token/i), "token-value");
+    await userEvent.type(screen.getByLabelText(/Playerok ddg5/i), "ddg5-value");
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Добавить аккаунт в проект" }),
+    );
+
+    await waitFor(() => {
+      expect(createAccountRequest).toHaveBeenCalledWith(
+        { baseUrl: "http://localhost:5073", token: "token" },
+        "project-1",
+        {
+          accountTypeId: "test-worker.playerok",
+          platform: "playerok",
+          displayName: "QA Playerok",
+          proxyConfig: {
+            host: "45.88.208.238",
+            port: 1508,
+            login: "user-playerok",
+            password: "proxy-secret",
+          },
+          marketplaceAuth: {
+            scheme: "tokens",
+            credentials: {
+              token: "token-value",
+              ddg5: "ddg5-value",
+            },
+          },
+        },
+      );
+    });
+  });
+
   it("для moderator показывает запрет на создание аккаунта", () => {
     renderPanel("moderator");
 

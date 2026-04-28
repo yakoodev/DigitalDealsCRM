@@ -178,6 +178,49 @@ public sealed class CoreApiIntegrationTests(CoreApiFactory factory) : IClassFixt
 
     [Fact]
     [Trait("Category", "Integration")]
+    public async Task CreateAccount_WithMarketplaceAuthTokensWithoutDdg5_ReturnsBadRequest()
+    {
+        factory.AccountsManagerClient.Reset();
+
+        using var client = CreateAuthorizedClient(Guid.NewGuid());
+        var projectId = await CreateProjectAsync(client, "Accounts-PlayerokAuthValidation");
+        var idempotencyKey = Guid.NewGuid().ToString("N");
+
+        var payload = new
+        {
+            platform = "playerok",
+            accountTypeId = "test-worker.playerok",
+            displayName = "Playerok Auth Account",
+            proxyConfig = new
+            {
+                host = "proxy-auth.internal",
+                port = 1508,
+                login = "seller-auth",
+                password = "proxy-secret",
+            },
+            marketplaceAuth = new
+            {
+                scheme = "tokens",
+                credentials = new
+                {
+                    token = "playerok-token",
+                },
+            },
+        };
+
+        var response = await SendJsonAsync(
+            client,
+            HttpMethod.Post,
+            $"/v1/projects/{projectId}/accounts",
+            idempotencyKey,
+            payload);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Empty(factory.AccountsManagerClient.CreateCalls);
+    }
+
+    [Fact]
+    [Trait("Category", "Integration")]
     public async Task ListProjectAccountTypes_ReturnsAccountsManagerCatalog()
     {
         using var client = CreateAuthorizedClient(Guid.NewGuid());

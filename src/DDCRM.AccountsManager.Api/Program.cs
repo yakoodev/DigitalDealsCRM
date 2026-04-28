@@ -1076,6 +1076,49 @@ static IReadOnlyList<AccountTypeFieldDto> CreateDefaultAccountTypeFields(string 
             "Опционально: браузерный User-Agent",
             null));
     }
+    else if (string.Equals(platform, "playerok", StringComparison.Ordinal))
+    {
+        fields.Add(new AccountTypeFieldDto(
+            "playerokAuthScheme",
+            "Playerok auth scheme",
+            "text",
+            true,
+            false,
+            "tokens или cookies",
+            "tokens"));
+        fields.Add(new AccountTypeFieldDto(
+            "playerokToken",
+            "Playerok token",
+            "password",
+            false,
+            true,
+            "Обязательно для scheme=tokens",
+            null));
+        fields.Add(new AccountTypeFieldDto(
+            "playerokDdg5",
+            "Playerok ddg5",
+            "password",
+            false,
+            true,
+            "Cookie __ddg5_ (обязательно для scheme=tokens)",
+            null));
+        fields.Add(new AccountTypeFieldDto(
+            "playerokCookies",
+            "Playerok cookies",
+            "password",
+            false,
+            true,
+            "Обязательно для scheme=cookies",
+            null));
+        fields.Add(new AccountTypeFieldDto(
+            "playerokUserAgent",
+            "Playerok user agent",
+            "text",
+            false,
+            false,
+            "Опционально: браузерный User-Agent",
+            null));
+    }
 
     return fields;
 }
@@ -1099,6 +1142,25 @@ static AccountTypeRuntimeConfigDto CreateDefaultAccountTypeRuntime(string platfo
                 ["FUNPAY_WORKER_PROVIDER"] = "funpay",
             },
             WorkerCommand: ["python", "-m", "ddcrm_funpay_worker.main"]);
+    }
+    if (string.Equals(platform, "playerok", StringComparison.Ordinal))
+    {
+        return new AccountTypeRuntimeConfigDto(
+            AutospawnEnabled: true,
+            WorkerImage: "ddcrm/playerok-worker:local",
+            WorkerPathPrefix: "/internal/v2/worker",
+            HealthPath: "/health",
+            ContainerPort: 8080,
+            EnvironmentVariables: new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["WORKER_API_SERVICE_AUTH_ENABLED"] = "true",
+                ["WORKER_API_SERVICE_AUTH_ACCEPTED_TOKENS"] = "worker-token-a,worker-token-b",
+                ["WORKER_PROXY_CREDENTIALS_ENCRYPTION_KEY"] = "replace-with-long-random-worker-key",
+                ["WORKER_MARKETPLACE_AUTH_ENCRYPTION_KEY"] = "replace-with-long-random-marketplace-auth-key",
+                ["WORKER_PROVIDER"] = "playerok",
+                ["PLAYEROK_REQUESTS_TIMEOUT"] = "30",
+            },
+            WorkerCommand: ["python", "-m", "ddcrm_playerok_worker.main"]);
     }
 
     return new AccountTypeRuntimeConfigDto(
@@ -1370,6 +1432,32 @@ static MarketplaceAuthPayload? NormalizeMarketplaceAuth(MarketplaceAuthDto? mark
             ApiErrorCodes.ValidationError,
             "Для marketplaceAuth.scheme=golden_key требуется credentials.golden_key.");
     }
+    if (string.Equals(scheme, MarketplaceAuthSchemeKeys.Tokens, StringComparison.Ordinal))
+    {
+        if (!normalizedCredentials.ContainsKey("token"))
+        {
+            throw new ApiErrorException(
+                StatusCodes.Status400BadRequest,
+                ApiErrorCodes.ValidationError,
+                "Для marketplaceAuth.scheme=tokens требуется credentials.token.");
+        }
+
+        if (!normalizedCredentials.ContainsKey("ddg5"))
+        {
+            throw new ApiErrorException(
+                StatusCodes.Status400BadRequest,
+                ApiErrorCodes.ValidationError,
+                "Для marketplaceAuth.scheme=tokens требуется credentials.ddg5.");
+        }
+    }
+    if (string.Equals(scheme, MarketplaceAuthSchemeKeys.Cookies, StringComparison.Ordinal)
+        && !normalizedCredentials.ContainsKey("cookies"))
+    {
+        throw new ApiErrorException(
+            StatusCodes.Status400BadRequest,
+            ApiErrorCodes.ValidationError,
+            "Для marketplaceAuth.scheme=cookies требуется credentials.cookies.");
+    }
 
     return new MarketplaceAuthPayload(scheme, normalizedCredentials);
 }
@@ -1540,6 +1628,7 @@ static Dictionary<string, string> BuildWorkerSpawnEnvironment(
         ["TEST_INMEMORY_DB_NAME"] = $"worker-{accountId:N}",
         ["DDCRM_WORKER_ACCOUNT_ID"] = normalizedAccountId,
         ["FUNPAY_WORKER_ACCOUNT_ID"] = normalizedAccountId,
+        ["PLAYEROK_WORKER_ACCOUNT_ID"] = normalizedAccountId,
     };
 
     if (!env.ContainsKey("ASPNETCORE_URLS"))
