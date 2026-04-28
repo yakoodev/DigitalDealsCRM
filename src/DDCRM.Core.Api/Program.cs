@@ -682,7 +682,8 @@ external.MapPut("/admin/account-manager/account-types/{accountTypeId}", async (
             request.Runtime.WorkerPathPrefix,
             request.Runtime.HealthPath,
             request.Runtime.ContainerPort,
-            request.Runtime.EnvironmentVariables);
+            request.Runtime.EnvironmentVariables,
+            request.Runtime.WorkerCommand?.ToList());
     var formFields = request.FormFields?.Select(field => new AccountsManagerAccountTypeField(
         field.Key,
         field.Label,
@@ -755,6 +756,7 @@ external.MapPost("/projects/{projectId:guid}/accounts", async (
     var accountTypeId = TryReadString(request, "accountTypeId");
     var displayName = ReadString(request, "displayName");
     var proxyConfig = ReadProxyConfig(request, "proxyConfig", required: true)!;
+    var marketplaceAuth = ReadMarketplaceAuth(request, "marketplaceAuth");
 
     if (accountTypeId is not null)
     {
@@ -801,6 +803,7 @@ external.MapPost("/projects/{projectId:guid}/accounts", async (
                     accountId,
                     platform,
                     ToProxyConfigDictionary(proxyConfig),
+                    marketplaceAuth is null ? null : ToAccountsManagerMarketplaceAuth(marketplaceAuth),
                     idempotencyKey,
                     ct);
 
@@ -1227,7 +1230,8 @@ external.MapPost("/account-api/{routeKey}/{action}", async (
     }
 
     if (action.StartsWith("ext.account.proxy-credentials.", StringComparison.Ordinal)
-        || action.StartsWith("ext.account.lifecycle.", StringComparison.Ordinal))
+        || action.StartsWith("ext.account.lifecycle.", StringComparison.Ordinal)
+        || action.StartsWith("ext.account.marketplace-auth.", StringComparison.Ordinal))
     {
         throw new ApiErrorException(
             StatusCodes.Status400BadRequest,
@@ -1441,6 +1445,74 @@ static ProxyConfigPayload? ReadProxyConfig(Dictionary<string, JsonElement> paylo
     return new ProxyConfigPayload(host, port, login, password);
 }
 
+static MarketplaceAuthPayload? ReadMarketplaceAuth(Dictionary<string, JsonElement> payload, string key)
+{
+    if (!payload.TryGetValue(key, out var value))
+    {
+        return null;
+    }
+
+    if (value.ValueKind != JsonValueKind.Object)
+    {
+        throw new ApiErrorException(
+            StatusCodes.Status400BadRequest,
+            ApiErrorCodes.ValidationError,
+            $"Поле {key} должно быть объектом.");
+    }
+
+    var objectValue = value.EnumerateObject()
+        .ToDictionary(x => x.Name, x => x.Value.Clone(), StringComparer.Ordinal);
+    var scheme = ReadString(objectValue, "scheme");
+    if (!MarketplaceAuthSchemes.All.Contains(scheme))
+    {
+        throw new ApiErrorException(
+            StatusCodes.Status400BadRequest,
+            ApiErrorCodes.ValidationError,
+            "Поле marketplaceAuth.scheme содержит неподдерживаемое значение.");
+    }
+
+    if (!objectValue.TryGetValue("credentials", out var credentialsValue) || credentialsValue.ValueKind != JsonValueKind.Object)
+    {
+        throw new ApiErrorException(
+            StatusCodes.Status400BadRequest,
+            ApiErrorCodes.ValidationError,
+            "Поле marketplaceAuth.credentials обязательно и должно быть объектом.");
+    }
+
+    var credentials = new Dictionary<string, string>(StringComparer.Ordinal);
+    foreach (var property in credentialsValue.EnumerateObject())
+    {
+        if (property.Value.ValueKind != JsonValueKind.String || string.IsNullOrWhiteSpace(property.Value.GetString()))
+        {
+            throw new ApiErrorException(
+                StatusCodes.Status400BadRequest,
+                ApiErrorCodes.ValidationError,
+                $"Поле marketplaceAuth.credentials.{property.Name} должно быть непустой строкой.");
+        }
+
+        credentials[property.Name] = property.Value.GetString()!.Trim();
+    }
+
+    if (credentials.Count == 0)
+    {
+        throw new ApiErrorException(
+            StatusCodes.Status400BadRequest,
+            ApiErrorCodes.ValidationError,
+            "Поле marketplaceAuth.credentials должно содержать минимум одно значение.");
+    }
+
+    if (string.Equals(scheme, MarketplaceAuthSchemes.GoldenKey, StringComparison.Ordinal)
+        && !credentials.ContainsKey("golden_key"))
+    {
+        throw new ApiErrorException(
+            StatusCodes.Status400BadRequest,
+            ApiErrorCodes.ValidationError,
+            "Для marketplaceAuth.scheme=golden_key требуется credentials.golden_key.");
+    }
+
+    return new MarketplaceAuthPayload(scheme, credentials);
+}
+
 static Dictionary<string, object?> ToProxyConfigDictionary(ProxyConfigPayload proxyConfig)
 {
     return new Dictionary<string, object?>
@@ -1450,6 +1522,11 @@ static Dictionary<string, object?> ToProxyConfigDictionary(ProxyConfigPayload pr
         ["login"] = proxyConfig.Login,
         ["password"] = proxyConfig.Password,
     };
+}
+
+static AccountsManagerMarketplaceAuth ToAccountsManagerMarketplaceAuth(MarketplaceAuthPayload payload)
+{
+    return new AccountsManagerMarketplaceAuth(payload.Scheme, payload.Credentials);
 }
 
 static string BuildRouteKey(Guid accountId) => $"rk.{accountId:N}";
@@ -1548,7 +1625,8 @@ static AdminAccountTypeDto ToAdminAccountTypeDto(AccountsManagerAccountTypeDefin
             definition.Runtime.WorkerPathPrefix,
             definition.Runtime.HealthPath,
             definition.Runtime.ContainerPort,
-            definition.Runtime.EnvironmentVariables));
+            definition.Runtime.EnvironmentVariables,
+            definition.Runtime.WorkerCommand));
 }
 
 static AdminWorkerServerDto ToAdminWorkerServerDto(AccountsManagerWorkerServerDefinition server)
@@ -1647,7 +1725,8 @@ public sealed record AdminAccountTypeRuntimeDto(
     string WorkerPathPrefix,
     string HealthPath,
     int ContainerPort,
-    IReadOnlyDictionary<string, string> EnvironmentVariables);
+    IReadOnlyDictionary<string, string> EnvironmentVariables,
+    IReadOnlyCollection<string>? WorkerCommand);
 
 public sealed record AdminAccountTypeDto(
     string AccountTypeId,
@@ -1737,5 +1816,19 @@ public sealed record ProxyResponse(string RequestId, JsonElement Result);
 public sealed record GenericObjectResponse(string RequestId, IDictionary<string, object?> Data);
 
 internal sealed record ProxyConfigPayload(string Host, int Port, string Login, string Password);
+
+internal sealed record MarketplaceAuthPayload(string Scheme, IReadOnlyDictionary<string, string> Credentials);
+
+internal static class MarketplaceAuthSchemes
+{
+    public const string GoldenKey = "golden_key";
+    public const string Cookies = "cookies";
+    public const string Tokens = "tokens";
+    public const string LoginPassword = "login_password";
+
+    public static readonly HashSet<string> All = new(
+        [GoldenKey, Cookies, Tokens, LoginPassword],
+        StringComparer.Ordinal);
+}
 
 public partial class Program;

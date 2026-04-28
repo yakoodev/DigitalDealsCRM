@@ -422,6 +422,7 @@ lifecycle.MapPost("/create", async (
     {
         throw new ApiErrorException(StatusCodes.Status400BadRequest, ApiErrorCodes.ValidationError, "proxyConfig обязателен для lifecycle create.");
     }
+    var marketplaceAuth = NormalizeMarketplaceAuth(request.MarketplaceAuth);
 
     return await idempotency.ExecuteAsync(
         dbContext,
@@ -461,6 +462,7 @@ lifecycle.MapPost("/create", async (
                         initialWorkerId,
                         normalizedPlatform,
                         runtimeConfig.WorkerImage,
+                        runtimeConfig.WorkerCommand,
                         workerPort,
                         targetServer.Server?.DockerNetwork,
                         targetServer.Server?.DockerHost,
@@ -499,6 +501,17 @@ lifecycle.MapPost("/create", async (
                     idempotencyKey,
                     workerControlBaseUrlTemplate,
                     ct);
+
+                if (marketplaceAuth is not null)
+                {
+                    await workerControlClient.ApplyMarketplaceAuthAsync(
+                        workerBinding,
+                        request.AccountId,
+                        marketplaceAuth,
+                        idempotencyKey,
+                        workerControlBaseUrlTemplate,
+                        ct);
+                }
             }
             catch
             {
@@ -700,6 +713,7 @@ lifecycle.MapPost("/migrate", async (
                         targetWorkerId,
                         existing.Platform,
                         runtimeConfig.WorkerImage,
+                        runtimeConfig.WorkerCommand,
                         workerPort,
                         targetServer.Server?.DockerNetwork,
                         targetServer.Server?.DockerHost,
@@ -826,6 +840,7 @@ lifecycle.MapPost("/rebalance", async (
                                 BuildSpawnWorkerId(placement.AccountId),
                                 placement.Platform,
                                 runtimeConfig.WorkerImage,
+                                runtimeConfig.WorkerCommand,
                                 workerPort,
                                 targetServer.DockerNetwork,
                                 targetServer.DockerHost,
@@ -978,7 +993,7 @@ static AccountTypeEntity CreateDefaultAccountType(
     string defaultDisplayName,
     DateTimeOffset now)
 {
-    var fields = CreateDefaultAccountTypeFields(defaultDisplayName);
+    var fields = CreateDefaultAccountTypeFields(platform, defaultDisplayName);
     var runtime = CreateDefaultAccountTypeRuntime(platform);
 
     return new AccountTypeEntity
@@ -996,10 +1011,10 @@ static AccountTypeEntity CreateDefaultAccountType(
     };
 }
 
-static IReadOnlyList<AccountTypeFieldDto> CreateDefaultAccountTypeFields(string defaultDisplayName)
+static IReadOnlyList<AccountTypeFieldDto> CreateDefaultAccountTypeFields(string platform, string defaultDisplayName)
 {
-    return
-    [
+    var fields = new List<AccountTypeFieldDto>
+    {
         new(
             "displayName",
             "Название аккаунта",
@@ -1040,11 +1055,52 @@ static IReadOnlyList<AccountTypeFieldDto> CreateDefaultAccountTypeFields(string 
             true,
             "Введите пароль",
             null),
-    ];
+    };
+
+    if (string.Equals(platform, "funpay", StringComparison.Ordinal))
+    {
+        fields.Add(new AccountTypeFieldDto(
+            "funpayGoldenKey",
+            "FunPay golden_key",
+            "password",
+            true,
+            true,
+            "Введите golden_key аккаунта FunPay",
+            null));
+        fields.Add(new AccountTypeFieldDto(
+            "funpayUserAgent",
+            "FunPay user agent",
+            "text",
+            false,
+            false,
+            "Опционально: браузерный User-Agent",
+            null));
+    }
+
+    return fields;
 }
 
 static AccountTypeRuntimeConfigDto CreateDefaultAccountTypeRuntime(string platform)
 {
+    if (string.Equals(platform, "funpay", StringComparison.Ordinal))
+    {
+        return new AccountTypeRuntimeConfigDto(
+            AutospawnEnabled: true,
+            WorkerImage: "ddcrm/funpay-worker:local",
+            WorkerPathPrefix: "/internal/v2/worker",
+            HealthPath: "/health",
+            ContainerPort: 8080,
+            EnvironmentVariables: new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["WORKER_API_SERVICE_AUTH_ENABLED"] = "true",
+                ["WORKER_API_SERVICE_AUTH_ACCEPTED_TOKENS"] = "worker-token-a,worker-token-b",
+                ["WORKER_PROXY_CREDENTIALS_ENCRYPTION_KEY"] = "replace-with-long-random-worker-key",
+                ["WORKER_MARKETPLACE_AUTH_ENCRYPTION_KEY"] = "replace-with-long-random-marketplace-auth-key",
+                ["FUNPAY_WORKER_PROVIDER"] = "funpay",
+            },
+            WorkerCommand: ["python", "-m", "ddcrm_funpay_worker.main"]);
+    }
+
     return new AccountTypeRuntimeConfigDto(
         AutospawnEnabled: true,
         WorkerImage: "ddcrm/worker-api:local",
@@ -1067,7 +1123,8 @@ static AccountTypeRuntimeConfigDto CreateDefaultAccountTypeRuntime(string platfo
             ["WORKER_PROXY_CREDENTIALS_ENCRYPTION_KEY"] = "replace-with-long-random-worker-key",
             ["WORKER_API_SERVICE_AUTH_ENABLED"] = "true",
             ["WORKER_API_SERVICE_AUTH_ACCEPTED_TOKENS"] = "worker-token-a,worker-token-b",
-        });
+        },
+        WorkerCommand: ["DDCRM.Worker.Api.dll"]);
 }
 
 static bool ApplyAccountTypeDefaults(
@@ -1257,6 +1314,66 @@ static IReadOnlyList<AccountTypeFieldDto> NormalizeFormFields(
         "formFields обязателен и должен содержать минимум одно поле.");
 }
 
+static MarketplaceAuthPayload? NormalizeMarketplaceAuth(MarketplaceAuthDto? marketplaceAuth)
+{
+    if (marketplaceAuth is null)
+    {
+        return null;
+    }
+
+    var scheme = marketplaceAuth.Scheme?.Trim();
+    if (string.IsNullOrWhiteSpace(scheme) || !MarketplaceAuthSchemeKeys.All.Contains(scheme))
+    {
+        throw new ApiErrorException(
+            StatusCodes.Status400BadRequest,
+            ApiErrorCodes.ValidationError,
+            "marketplaceAuth.scheme содержит неподдерживаемое значение.");
+    }
+
+    if (marketplaceAuth.Credentials is null || marketplaceAuth.Credentials.Count == 0)
+    {
+        throw new ApiErrorException(
+            StatusCodes.Status400BadRequest,
+            ApiErrorCodes.ValidationError,
+            "marketplaceAuth.credentials должен содержать минимум одно значение.");
+    }
+
+    var normalizedCredentials = new Dictionary<string, string>(StringComparer.Ordinal);
+    foreach (var (key, value) in marketplaceAuth.Credentials)
+    {
+        var normalizedKey = key?.Trim();
+        if (string.IsNullOrWhiteSpace(normalizedKey))
+        {
+            throw new ApiErrorException(
+                StatusCodes.Status400BadRequest,
+                ApiErrorCodes.ValidationError,
+                "marketplaceAuth.credentials содержит пустой ключ.");
+        }
+
+        var normalizedValue = value?.Trim();
+        if (string.IsNullOrWhiteSpace(normalizedValue))
+        {
+            throw new ApiErrorException(
+                StatusCodes.Status400BadRequest,
+                ApiErrorCodes.ValidationError,
+                $"marketplaceAuth.credentials.{normalizedKey} должен быть непустой строкой.");
+        }
+
+        normalizedCredentials[normalizedKey] = normalizedValue;
+    }
+
+    if (string.Equals(scheme, MarketplaceAuthSchemeKeys.GoldenKey, StringComparison.Ordinal)
+        && !normalizedCredentials.ContainsKey("golden_key"))
+    {
+        throw new ApiErrorException(
+            StatusCodes.Status400BadRequest,
+            ApiErrorCodes.ValidationError,
+            "Для marketplaceAuth.scheme=golden_key требуется credentials.golden_key.");
+    }
+
+    return new MarketplaceAuthPayload(scheme, normalizedCredentials);
+}
+
 static AccountTypeRuntimeConfigDto NormalizeRuntimeConfig(
     AccountTypeRuntimeConfigDto? runtime,
     AccountTypeEntity? existing,
@@ -1301,6 +1418,14 @@ static AccountTypeRuntimeConfigDto NormalizeRuntimeConfig(
     var env = candidate.EnvironmentVariables is null
         ? new Dictionary<string, string>(StringComparer.Ordinal)
         : new Dictionary<string, string>(candidate.EnvironmentVariables, StringComparer.Ordinal);
+    var workerCommand = candidate.WorkerCommand?
+        .Where(x => !string.IsNullOrWhiteSpace(x))
+        .Select(x => x.Trim())
+        .ToArray();
+    if (workerCommand is { Length: 0 })
+    {
+        workerCommand = null;
+    }
 
     return new AccountTypeRuntimeConfigDto(
         candidate.AutospawnEnabled,
@@ -1308,7 +1433,8 @@ static AccountTypeRuntimeConfigDto NormalizeRuntimeConfig(
         pathPrefix,
         healthPath,
         containerPort,
-        env);
+        env,
+        workerCommand);
 }
 
 static string SerializeFormFields(IReadOnlyList<AccountTypeFieldDto> formFields)
@@ -1407,10 +1533,13 @@ static Dictionary<string, string> BuildWorkerSpawnEnvironment(
     string platform,
     Guid accountId)
 {
+    var normalizedAccountId = accountId.ToString("D");
     var env = new Dictionary<string, string>(runtimeConfig.EnvironmentVariables, StringComparer.Ordinal)
     {
         ["TEST_WORKER_PROVIDER"] = platform,
         ["TEST_INMEMORY_DB_NAME"] = $"worker-{accountId:N}",
+        ["DDCRM_WORKER_ACCOUNT_ID"] = normalizedAccountId,
+        ["FUNPAY_WORKER_ACCOUNT_ID"] = normalizedAccountId,
     };
 
     if (!env.ContainsKey("ASPNETCORE_URLS"))
@@ -2104,9 +2233,16 @@ static WorkerServerDto ToWorkerServerDto(WorkerServerEntity entity)
 
 public sealed record AckResponse(string RequestId, string Status);
 
-public sealed record LifecycleCreateRequest(Guid AccountId, Guid ProjectId, string Platform, Dictionary<string, object?> ProxyConfig);
+public sealed record LifecycleCreateRequest(
+    Guid AccountId,
+    Guid ProjectId,
+    string Platform,
+    Dictionary<string, object?> ProxyConfig,
+    MarketplaceAuthDto? MarketplaceAuth);
 
 public sealed record LifecycleUpdateRequest(Guid AccountId, Dictionary<string, object?>? ProxyConfig);
+
+public sealed record MarketplaceAuthDto(string Scheme, Dictionary<string, string> Credentials);
 
 public sealed record LifecycleDeleteRequest(Guid AccountId);
 
@@ -2138,7 +2274,8 @@ public sealed record AccountTypeRuntimeConfigDto(
     string WorkerPathPrefix,
     string HealthPath,
     int ContainerPort,
-    IReadOnlyDictionary<string, string> EnvironmentVariables);
+    IReadOnlyDictionary<string, string> EnvironmentVariables,
+    IReadOnlyList<string>? WorkerCommand);
 
 public sealed record AccountTypeDto(
     string AccountTypeId,
@@ -2224,5 +2361,17 @@ public sealed record WorkerServerRegistryState(
     string? Username,
     string? TokenEncrypted,
     DateTimeOffset? TokenUpdatedAtUtc);
+
+internal static class MarketplaceAuthSchemeKeys
+{
+    public const string GoldenKey = "golden_key";
+    public const string Cookies = "cookies";
+    public const string Tokens = "tokens";
+    public const string LoginPassword = "login_password";
+
+    public static readonly HashSet<string> All = new(
+        [GoldenKey, Cookies, Tokens, LoginPassword],
+        StringComparer.Ordinal);
+}
 
 public partial class Program;

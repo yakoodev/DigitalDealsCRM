@@ -28,6 +28,7 @@
 - resource endpoint-ы `account/conversations/products` отклоняют операции с `features=false` через `409/WORKER_RUNTIME_CONFLICT`;
 - extension endpoint принимает только `ext.*` action-key;
 - Gateway не вызывает extension action без соответствующего capability.
+- service-to-service action `ext.account.marketplace-auth.apply` синхронизирует marketplace auth в worker state storage (без reveal полного секрета в V1).
 
 ## 4. Совместимость и регресс
 - backward compatibility проверена для `openapi-worker.yaml`;

@@ -646,6 +646,21 @@ components:
           type: string
         proxyConfig:
           $ref: '#/components/schemas/ProxyConfig'
+        marketplaceAuth:
+          $ref: '#/components/schemas/MarketplaceAuth'
+
+    MarketplaceAuth:
+      type: object
+      required: [scheme, credentials]
+      properties:
+        scheme:
+          type: string
+          enum: [golden_key, cookies, tokens, login_password]
+        credentials:
+          type: object
+          minProperties: 1
+          additionalProperties:
+            type: string
 
     AccountTypeField:
       type: object
@@ -722,6 +737,10 @@ components:
         environmentVariables:
           type: object
           additionalProperties:
+            type: string
+        workerCommand:
+          type: array
+          items:
             type: string
 
     AdminAccountType:

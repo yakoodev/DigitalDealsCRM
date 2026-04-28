@@ -111,6 +111,24 @@ describe("ProjectAccountCreatePanel", () => {
             placeholder: "Введите пароль",
             defaultValue: "",
           },
+          {
+            key: "funpayGoldenKey",
+            label: "FunPay golden_key",
+            inputType: "password",
+            required: true,
+            secret: true,
+            placeholder: "Введите golden_key аккаунта FunPay",
+            defaultValue: "",
+          },
+          {
+            key: "funpayUserAgent",
+            label: "FunPay user agent",
+            inputType: "text",
+            required: false,
+            secret: false,
+            placeholder: "Опционально: браузерный User-Agent",
+            defaultValue: "",
+          },
         ],
       },
     ]);
@@ -138,6 +156,7 @@ describe("ProjectAccountCreatePanel", () => {
     await userEvent.type(screen.getByLabelText(/Proxy host/i), "45.88.208.237");
     await userEvent.type(screen.getByLabelText(/Proxy login/i), "user305829");
     await userEvent.type(screen.getByLabelText(/Proxy password/i), "oksbuf");
+    await userEvent.type(screen.getByLabelText(/FunPay golden_key/i), "golden-key-123");
 
     await userEvent.click(
       screen.getByRole("button", { name: "Добавить аккаунт в проект" }),
@@ -156,6 +175,12 @@ describe("ProjectAccountCreatePanel", () => {
             port: 1508,
             login: "user305829",
             password: "oksbuf",
+          },
+          marketplaceAuth: {
+            scheme: "golden_key",
+            credentials: {
+              golden_key: "golden-key-123",
+            },
           },
         },
       );

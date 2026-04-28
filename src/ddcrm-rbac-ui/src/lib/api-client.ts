@@ -85,6 +85,7 @@ export interface AdminAccountTypeRuntime {
   healthPath: string;
   containerPort: number;
   environmentVariables: Record<string, string>;
+  workerCommand?: string[];
 }
 
 export interface AdminAccountType extends ProjectAccountType {

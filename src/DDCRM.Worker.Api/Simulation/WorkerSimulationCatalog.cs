@@ -11,6 +11,7 @@ public static class WorkerSimulationCatalog
             "ext.market.audit",
             "ext.account.proxy-credentials.apply",
             "ext.account.proxy-credentials.reveal",
+            "ext.account.marketplace-auth.apply",
         ],
         [WorkerCapabilityProfiles.FailuresV1] =
         [
@@ -19,12 +20,14 @@ public static class WorkerSimulationCatalog
             "ext.worker.diagnostics",
             "ext.account.proxy-credentials.apply",
             "ext.account.proxy-credentials.reveal",
+            "ext.account.marketplace-auth.apply",
         ],
         [WorkerCapabilityProfiles.ContractV1] =
         [
             "ext.market.sync",
             "ext.account.proxy-credentials.apply",
             "ext.account.proxy-credentials.reveal",
+            "ext.account.marketplace-auth.apply",
             "ext.test.capability-mismatch",
             "ext.test.idempotency-replay",
             "ext.test.timeout",

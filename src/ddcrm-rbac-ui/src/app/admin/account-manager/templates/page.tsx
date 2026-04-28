@@ -6,9 +6,12 @@ import { AdminLayout } from "@/components/layout/admin-layout";
 import {
   listAdminAccountTypesRequest,
   upsertAdminAccountTypeRequest,
+  type AdminAccountTypeUpsertPayload,
   type ApiSession,
 } from "@/lib/api-client";
 import { useSessionGuard } from "@/lib/use-session-guard";
+
+type TemplateField = NonNullable<AdminAccountTypeUpsertPayload["formFields"]>[number];
 
 export default function AccountManagerTemplatesPage() {
   const queryClient = useQueryClient();
@@ -20,9 +23,10 @@ export default function AccountManagerTemplatesPage() {
   const [platform, setPlatform] = useState("funpay");
   const [displayName, setDisplayName] = useState("Тестовый worker: FunPay");
   const [enabled, setEnabled] = useState(true);
-  const [workerImage, setWorkerImage] = useState("ddcrm/worker-api:local");
+  const [workerImage, setWorkerImage] = useState("ddcrm/funpay-worker:local");
   const [pathPrefix, setPathPrefix] = useState("/internal/v2/worker");
   const [healthPath, setHealthPath] = useState("/health");
+  const [workerCommand, setWorkerCommand] = useState("python -m ddcrm_funpay_worker.main");
 
   const apiSession = useMemo<ApiSession>(
     () => ({
@@ -39,57 +43,83 @@ export default function AccountManagerTemplatesPage() {
   });
 
   const upsertMutation = useMutation({
-    mutationFn: async () =>
-      upsertAdminAccountTypeRequest(apiSession, accountTypeId.trim(), {
+    mutationFn: async () => {
+      const baseFormFields: TemplateField[] = [
+        {
+          key: "displayName",
+          label: "Название аккаунта",
+          inputType: "text",
+          required: true,
+          secret: false,
+          placeholder: "Например, FunPay Test Account",
+          defaultValue: "FunPay Test Account",
+        },
+        {
+          key: "proxyHost",
+          label: "Proxy host",
+          inputType: "text",
+          required: true,
+          secret: false,
+          placeholder: "45.88.208.237",
+        },
+        {
+          key: "proxyPort",
+          label: "Proxy port",
+          inputType: "number",
+          required: true,
+          secret: false,
+          placeholder: "1508",
+          defaultValue: "1508",
+        },
+        {
+          key: "proxyLogin",
+          label: "Proxy login",
+          inputType: "text",
+          required: true,
+          secret: false,
+          placeholder: "user305829",
+        },
+        {
+          key: "proxyPassword",
+          label: "Proxy password",
+          inputType: "password",
+          required: true,
+          secret: true,
+          placeholder: "Введите пароль",
+        },
+      ];
+
+      const funpayFormFields: TemplateField[] = [
+        {
+          key: "funpayGoldenKey",
+          label: "FunPay golden_key",
+          inputType: "password",
+          required: true,
+          secret: true,
+          placeholder: "Введите golden_key аккаунта FunPay",
+        },
+        {
+          key: "funpayUserAgent",
+          label: "FunPay user agent",
+          inputType: "text",
+          required: false,
+          secret: false,
+          placeholder: "Опционально: браузерный User-Agent",
+        },
+      ];
+
+      const formFields =
+        platform.trim().toLowerCase() === "funpay"
+          ? [...baseFormFields, ...funpayFormFields]
+          : baseFormFields;
+
+      return upsertAdminAccountTypeRequest(apiSession, accountTypeId.trim(), {
         platform: platform.trim(),
         displayName: displayName.trim(),
         workerProfileId: "test-worker",
         enabled,
         sortOrder: 10,
-        formFields: [
-          {
-            key: "displayName",
-            label: "Название аккаунта",
-            inputType: "text",
-            required: true,
-            secret: false,
-            placeholder: "Например, FunPay Test Account",
-            defaultValue: "FunPay Test Account",
-          },
-          {
-            key: "proxyHost",
-            label: "Proxy host",
-            inputType: "text",
-            required: true,
-            secret: false,
-            placeholder: "45.88.208.237",
-          },
-          {
-            key: "proxyPort",
-            label: "Proxy port",
-            inputType: "number",
-            required: true,
-            secret: false,
-            placeholder: "1508",
-            defaultValue: "1508",
-          },
-          {
-            key: "proxyLogin",
-            label: "Proxy login",
-            inputType: "text",
-            required: true,
-            secret: false,
-            placeholder: "user305829",
-          },
-          {
-            key: "proxyPassword",
-            label: "Proxy password",
-            inputType: "password",
-            required: true,
-            secret: true,
-            placeholder: "Введите пароль",
-          },
-        ],
+        formFields,
         runtime: {
           autospawnEnabled: true,
           workerImage: workerImage.trim(),
@@ -99,8 +129,13 @@ export default function AccountManagerTemplatesPage() {
           environmentVariables: {
             TEST_WORKER_PROVIDER: platform.trim(),
           },
+          workerCommand: workerCommand
+            .split(/\s+/)
+            .map((part) => part.trim())
+            .filter(Boolean),
         },
-      }),
+      });
+    },
     onSuccess: async () => {
       await queryClient.invalidateQueries({
         queryKey: ["admin-account-types", apiSession.baseUrl, apiSession.token],
@@ -209,6 +244,15 @@ export default function AccountManagerTemplatesPage() {
             <label className="field">
               <span>Worker image</span>
               <input className="input" value={workerImage} onChange={(event) => setWorkerImage(event.target.value)} />
+            </label>
+            <label className="field">
+              <span>Worker command</span>
+              <input
+                className="input"
+                value={workerCommand}
+                onChange={(event) => setWorkerCommand(event.target.value)}
+                placeholder="python -m ddcrm_funpay_worker.main"
+              />
             </label>
             <div className="grid-2">
               <label className="field">

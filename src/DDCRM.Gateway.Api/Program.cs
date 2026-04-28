@@ -355,6 +355,11 @@ static string ResolvePermissionForAction(string action)
             : ProjectPermissions.ProjectAccountsProxyCredentialsUpdate;
     }
 
+    if (action.StartsWith("ext.account.marketplace-auth.", StringComparison.Ordinal))
+    {
+        return ProjectPermissions.ProjectAccountsLifecycleManage;
+    }
+
     return ProjectPermissions.ProjectWorkersOperate;
 }
 

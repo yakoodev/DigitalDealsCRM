@@ -130,6 +130,54 @@ public sealed class CoreApiIntegrationTests(CoreApiFactory factory) : IClassFixt
 
     [Fact]
     [Trait("Category", "Integration")]
+    public async Task CreateAccount_WithMarketplaceAuth_ForwardsPayloadToAccountsManager()
+    {
+        factory.AccountsManagerClient.Reset();
+
+        using var client = CreateAuthorizedClient(Guid.NewGuid());
+        var projectId = await CreateProjectAsync(client, "Accounts-MarketplaceAuth");
+        var idempotencyKey = Guid.NewGuid().ToString("N");
+
+        var payload = new
+        {
+            platform = "funpay",
+            accountTypeId = "test-worker.funpay",
+            displayName = "FunPay Auth Account",
+            proxyConfig = new
+            {
+                host = "proxy-auth.internal",
+                port = 1508,
+                login = "seller-auth",
+                password = "proxy-secret",
+            },
+            marketplaceAuth = new
+            {
+                scheme = "golden_key",
+                credentials = new
+                {
+                    golden_key = "funpay-golden-key",
+                    user_agent = "Mozilla/5.0",
+                },
+            },
+        };
+
+        var response = await SendJsonAsync(
+            client,
+            HttpMethod.Post,
+            $"/v1/projects/{projectId}/accounts",
+            idempotencyKey,
+            payload);
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        var createCall = Assert.Single(factory.AccountsManagerClient.CreateCalls);
+        Assert.NotNull(createCall.MarketplaceAuth);
+        Assert.Equal("golden_key", createCall.MarketplaceAuth!.Scheme);
+        Assert.Equal("funpay-golden-key", createCall.MarketplaceAuth.Credentials["golden_key"]);
+        Assert.Equal("Mozilla/5.0", createCall.MarketplaceAuth.Credentials["user_agent"]);
+    }
+
+    [Fact]
+    [Trait("Category", "Integration")]
     public async Task ListProjectAccountTypes_ReturnsAccountsManagerCatalog()
     {
         using var client = CreateAuthorizedClient(Guid.NewGuid());

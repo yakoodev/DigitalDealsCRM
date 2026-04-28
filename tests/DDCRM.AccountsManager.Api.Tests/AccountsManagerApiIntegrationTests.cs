@@ -409,6 +409,50 @@ public sealed class AccountsManagerApiIntegrationTests
 
     [Fact]
     [Trait("Category", "Integration")]
+    public async Task LifecycleCreate_WithMarketplaceAuth_AppliesMarketplaceAuthViaWorkerControl()
+    {
+        using var factory = new AccountsManagerApiFactory();
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add("X-Service-Token", "internal-token-a");
+
+        var accountId = Guid.NewGuid();
+        using var createRequest = CreateMutatingRequest(
+            HttpMethod.Post,
+            "/internal/v1/lifecycle/create",
+            Guid.NewGuid().ToString("N"),
+            new
+            {
+                accountId,
+                projectId = Guid.NewGuid(),
+                platform = "funpay",
+                proxyConfig = new
+                {
+                    host = "127.0.0.1",
+                    port = 1508,
+                },
+                marketplaceAuth = new
+                {
+                    scheme = "golden_key",
+                    credentials = new
+                    {
+                        golden_key = "funpay-golden-key",
+                        user_agent = "Mozilla/5.0",
+                    },
+                },
+            });
+
+        var createResponse = await client.SendAsync(createRequest);
+        Assert.Equal(HttpStatusCode.Accepted, createResponse.StatusCode);
+
+        var authApplyCall = Assert.Single(factory.WorkerControlClient.MarketplaceAuthApplyCalls);
+        Assert.Equal(accountId, authApplyCall.AccountId);
+        Assert.Equal("golden_key", authApplyCall.MarketplaceAuth.Scheme);
+        Assert.Equal("funpay-golden-key", authApplyCall.MarketplaceAuth.Credentials["golden_key"]);
+        Assert.Equal("Mozilla/5.0", authApplyCall.MarketplaceAuth.Credentials["user_agent"]);
+    }
+
+    [Fact]
+    [Trait("Category", "Integration")]
     public async Task LifecycleMigrate_WithoutTarget_ChoosesBestServerDifferentFromCurrent()
     {
         using var factory = new AccountsManagerApiFactory();

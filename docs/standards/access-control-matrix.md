@@ -76,4 +76,5 @@
 - для `ext.account.proxy-credentials.reveal` требуется `project.accounts.proxyCredentials.reveal`;
 - для `ext.account.proxy-credentials.update` требуется `project.accounts.proxyCredentials.update`;
 - для `ext.account.proxy-credentials.apply` требуется `project.accounts.proxyCredentials.update`;
+- для `ext.account.marketplace-auth.apply` требуется `project.accounts.lifecycle.manage`;
 - Gateway обязан применять это сопоставление до проксирования запроса в worker.
