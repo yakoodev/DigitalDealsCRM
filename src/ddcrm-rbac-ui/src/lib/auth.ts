@@ -3,7 +3,8 @@ import { projectRoles, type ProjectRole } from "@/lib/rbac";
 
 const SESSION_STORAGE_KEY = "ddcrm-platform.session";
 
-const DEFAULT_EXTERNAL_API_BASE_URL = "http://localhost:5073";
+const DEFAULT_EXTERNAL_API_BASE_URL = "http://localhost:15073";
+const LEGACY_EXTERNAL_API_BASE_URLS = new Set(["http://localhost:5073"]);
 const DEFAULT_JWT_ISSUER =
   process.env.NEXT_PUBLIC_EXTERNAL_API_JWT_ISSUER ?? "ddcrm-local";
 const DEFAULT_JWT_AUDIENCE =
@@ -39,6 +40,9 @@ export interface PlatformSession extends ApiSession {
   profile: PlatformUserProfile;
 }
 
+export const SYSTEM_ACCOUNT_MANAGER_PERMISSION = DEFAULT_SYSTEM_PERMISSION_CLAIM_VALUE;
+export const SYSTEM_INTEGRATIONS_PERMISSION = DEFAULT_SYSTEM_INTEGRATIONS_PERMISSION_CLAIM_VALUE;
+
 interface DemoUserCredential {
   userId: string;
   email: string;
@@ -50,29 +54,15 @@ interface DemoUserCredential {
 
 export const demoUsers: readonly DemoUserCredential[] = [
   {
-    userId: "11111111-1111-1111-1111-111111111111",
-    email: "owner@ddcrm.local",
-    password: "Owner123!",
-    displayName: "Owner Demo",
-    role: "owner",
-  },
-  {
     userId: "22222222-2222-2222-2222-222222222222",
     email: "admin@ddcrm.local",
     password: "Admin123!",
-    displayName: "Admin Demo",
+    displayName: "System Admin",
     role: "admin",
     systemPermissions: [
       DEFAULT_SYSTEM_PERMISSION_CLAIM_VALUE,
       DEFAULT_SYSTEM_INTEGRATIONS_PERMISSION_CLAIM_VALUE,
     ],
-  },
-  {
-    userId: "33333333-3333-3333-3333-333333333333",
-    email: "moderator@ddcrm.local",
-    password: "Moderator123!",
-    displayName: "Moderator Demo",
-    role: "moderator",
   },
 ] as const;
 
@@ -82,7 +72,12 @@ function normalizeBaseUrl(value: string) {
     return DEFAULT_EXTERNAL_API_BASE_URL;
   }
 
-  return trimmed.replace(/\/+$/, "");
+  const normalized = trimmed.replace(/\/+$/, "");
+  if (LEGACY_EXTERNAL_API_BASE_URLS.has(normalized)) {
+    return DEFAULT_EXTERNAL_API_BASE_URL;
+  }
+
+  return normalized;
 }
 
 function toBase64Url(bytes: Uint8Array) {

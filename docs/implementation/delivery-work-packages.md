@@ -19,6 +19,7 @@
 | `WP-BILLING` | payment/subscription/webhook | `WP-PLATFORM-CORE` |
 | `WP-ENTITLEMENT` | access/limits recalculation | `WP-BILLING`, `WP-PLATFORM-CORE` |
 | `WP-RBAC-UI` | ограничение UI по ролям | `WP-IAM`, `WP-GATEWAY` |
+| `WP-OFFER-WORKFLOW-CUSTOMHTTP` | Offer + Workflow engine + Custom HTTP integrations | `WP-PLATFORM-CORE`, `WP-IAM`, `WP-RBAC-UI` |
 | `WP-OPS-READY` | runbook/rollout/alerts/token rotation | `WP-GATEWAY`, `WP-BILLING`, `WP-ENTITLEMENT` |
 
 ## 2. Пакеты реализации
@@ -108,7 +109,20 @@
   - регрессионные RBAC-сценарии из test strategy зелёные
   - reveal/update proxy credentials доступны только owner/admin
 
-### 2.10 `WP-OPS-READY`
+### 2.10 `WP-OFFER-WORKFLOW-CUSTOMHTTP`
+- Scope:
+  - канонический объект `Offer` + `OfferVariant` для объединения товарных вариаций между аккаунтами
+  - draft/publish workflow-движок (граф узлов, async outbox execution, execution logs, idempotency)
+  - project-level custom HTTP integrations (CRUD/test/invoke) с feature-grant `custom-http`
+  - admin allowlist (`HTTPS + host pattern`) и SSRF-hardening
+  - отключение legacy `attributes.ddcrmDeliveryProfile` в UI/backend проходах
+- Done:
+  - OpenAPI external дополнен Offer/Workflow/Custom HTTP/Admin allowlist/purchase webhook endpoint-ами
+  - RBAC: `project.offers.manage`, `project.workflows.manage`, `project.workflows.run`, `project.integrations.custom.manage` только для owner/admin
+  - purchase webhook запускает workflow асинхронно и дедуплицируется по `projectId + sourceOrderId`
+  - custom HTTP endpoint-ы доступны только при активном grant `custom-http` (`scope=use`)
+
+### 2.11 `WP-OPS-READY`
 - Scope:
   - alerting dashboards + incident playbooks
   - rollout/rollback rehearsal
@@ -129,7 +143,7 @@
 2. `WP-ACCOUNTS-MANAGER`, `WP-GATEWAY`
 3. `WP-WORKER-CONTRACT`
 4. `WP-BILLING`, `WP-ENTITLEMENT`
-5. `WP-RBAC-UI`
+5. `WP-RBAC-UI`, `WP-OFFER-WORKFLOW-CUSTOMHTTP`
 6. `WP-OPS-READY`
 
 ## 5. Связанные документы

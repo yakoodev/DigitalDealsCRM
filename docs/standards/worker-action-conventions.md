@@ -20,6 +20,7 @@
 - `ext.account.lifecycle.*` — extension-операции lifecycle аккаунта (чувствительные)
 - `ext.account.proxy-credentials.*` — extension-операции управления proxy credentials (чувствительные)
 - `ext.account.marketplace-auth.*` — extension-операции управления marketplace auth credentials (чувствительные)
+- `ext.integration.*` — extension-операции integration-bus runtime (`read/jobs`) для project integration worker/service контуров
 - `ext.test.*` — симуляторные extension-операции только для non-production контуров
 - `ext.account.proxy-credentials.apply` — технический action синхронизации credentials в worker state storage (service-to-service)
 - `ext.account.marketplace-auth.apply` — технический action синхронизации marketplace auth в worker state storage (service-to-service)
@@ -31,6 +32,7 @@
 - extension ключи обязаны иметь префикс `ext.`.
 - `ext.test.*` разрешён только для тестового воркера по `docs/standards/test-worker-governance.md`.
 - чувствительные `ext.account.*` action-key должны проверяться через RBAC-сопоставление из `docs/standards/access-control-matrix.md` до проксирования.
+- `ext.integration.*` зарезервирован для integration-bus endpoint-ов (`/projects/{projectId}/integrations/*`) и не должен проксироваться через generic Core `/account-api/{routeKey}/{action}`.
 
 ## 4. Capability-согласование
 - любой `ext.*` action должен иметь соответствующий capability-флаг в `/internal/v2/worker/capabilities`;

@@ -7,6 +7,7 @@ using DDCRM.Core.Api.AccountsManager;
 using DDCRM.Core.Api.Billing;
 using DDCRM.Core.Api.GatewayProxy;
 using DDCRM.Core.Api.Integrations;
+using DDCRM.Core.Api.Workflows;
 using DDCRM.Core.Persistence;
 using DDCRM.Core.Persistence.Entities;
 using DDCRM.Shared.Authorization;
@@ -74,16 +75,25 @@ builder.Services.PostConfigure<FunPayStatClientOptions>(options =>
 {
     options.ServiceToken ??= builder.Configuration["FUNPAYSTAT_INTEGRATION_SERVICE_TOKEN"];
 });
-builder.Services.Configure<SteamAccountsManagerClientOptions>(builder.Configuration.GetSection(SteamAccountsManagerClientOptions.SectionName));
-builder.Services.PostConfigure<SteamAccountsManagerClientOptions>(options =>
-{
-    options.ServiceToken ??= builder.Configuration["STEAM_ACCOUNTS_MANAGER_INTEGRATION_SERVICE_TOKEN"];
-});
 builder.Services.Configure<TelegramNotificationOptions>(builder.Configuration.GetSection(TelegramNotificationOptions.SectionName));
 builder.Services.PostConfigure<TelegramNotificationOptions>(options =>
 {
     options.BotToken ??= builder.Configuration["TELEGRAM_NOTIFICATION_BOT_TOKEN"];
     options.LinkWebhookSecret ??= builder.Configuration["TELEGRAM_LINK_WEBHOOK_SECRET"];
+});
+builder.Services.Configure<IntegrationWorkerRuntimeOptions>(builder.Configuration.GetSection(IntegrationWorkerRuntimeOptions.SectionName));
+builder.Services.Configure<WorkflowMessagePollingOptions>(builder.Configuration.GetSection(WorkflowMessagePollingOptions.SectionName));
+builder.Services.PostConfigure<WorkflowMessagePollingOptions>(options =>
+{
+    options.InternalServiceToken ??= builder.Configuration["INTERNAL_API_SERVICE_AUTH_CLIENT_TOKEN"];
+    options.WorkerServiceToken ??= builder.Configuration["WORKER_API_SERVICE_AUTH_CLIENT_TOKEN"];
+
+    var routeRegistryBaseUrl = builder.Configuration["RouteRegistryClient:BaseUrl"]
+                               ?? builder.Configuration["RouteRegistryClient__BaseUrl"];
+    if (!string.IsNullOrWhiteSpace(routeRegistryBaseUrl))
+    {
+        options.RouteRegistryBaseUrl = routeRegistryBaseUrl;
+    }
 });
 builder.Services.Configure<EntitlementCheckClientOptions>(builder.Configuration.GetSection(EntitlementCheckClientOptions.SectionName));
 builder.Services.PostConfigure<EntitlementCheckClientOptions>(options =>
@@ -95,23 +105,42 @@ builder.Services.AddHttpClient<FunPayStatIntegrationClient>((serviceProvider, cl
     var options = serviceProvider.GetRequiredService<IOptions<FunPayStatClientOptions>>().Value;
     client.BaseAddress = new Uri(options.BaseUrl);
 });
-builder.Services.AddHttpClient<SteamAccountsManagerIntegrationClient>((serviceProvider, client) =>
-{
-    var options = serviceProvider.GetRequiredService<IOptions<SteamAccountsManagerClientOptions>>().Value;
-    client.BaseAddress = new Uri(options.BaseUrl);
-});
 builder.Services.AddHttpClient<IEntitlementCheckClient, EntitlementCheckHttpClient>((serviceProvider, client) =>
 {
     var options = serviceProvider.GetRequiredService<IOptions<EntitlementCheckClientOptions>>().Value;
     client.BaseAddress = new Uri(options.BaseUrl);
 });
+builder.Services.AddHttpClient<WorkflowWorkerBridgeClient>(client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(20);
+});
 builder.Services.AddScoped<IProjectServiceIntegrationClient>(serviceProvider => serviceProvider.GetRequiredService<FunPayStatIntegrationClient>());
-builder.Services.AddScoped<IProjectServiceIntegrationClient>(serviceProvider => serviceProvider.GetRequiredService<SteamAccountsManagerIntegrationClient>());
 builder.Services.AddScoped<ProjectServiceIntegrationRegistry>();
 builder.Services.AddSingleton<ProjectSecretCrypto>();
+builder.Services.AddScoped<ICustomHttpIntegrationInvoker, CustomHttpIntegrationInvoker>();
+builder.Services.AddScoped<WorkflowNodeExecutorRegistry>();
+builder.Services.AddScoped<IWorkflowNodeExecutor, PurchaseStartNodeExecutor>();
+builder.Services.AddScoped<IWorkflowNodeExecutor, MessageStartNodeExecutor>();
+builder.Services.AddScoped<IWorkflowNodeExecutor, ReviewStartNodeExecutor>();
+builder.Services.AddScoped<IWorkflowNodeExecutor, ConditionNodeExecutor>();
+builder.Services.AddScoped<IWorkflowNodeExecutor, SetVariablesNodeExecutor>();
+builder.Services.AddScoped<IWorkflowNodeExecutor, LoadOfferNodeExecutor>();
+builder.Services.AddScoped<IWorkflowNodeExecutor, SelectAccountPriorityFallbackNodeExecutor>();
+builder.Services.AddScoped<IWorkflowNodeExecutor, InvokeWorkerActionNodeExecutor>();
+builder.Services.AddScoped<IWorkflowNodeExecutor, InvokeCustomHttpNodeExecutor>();
+builder.Services.AddScoped<IWorkflowNodeExecutor, SteamActionNodeExecutor>();
+builder.Services.AddScoped<IWorkflowNodeExecutor, TaskNodeExecutor>();
+builder.Services.AddScoped<IWorkflowNodeExecutor, SendBuyerResponseNodeExecutor>();
+builder.Services.AddScoped<IWorkflowNodeExecutor, NotifyNodeExecutor>();
+builder.Services.AddScoped<IWorkflowNodeExecutor, EndNodeExecutor>();
+builder.Services.AddScoped<WorkflowExecutionEngine>();
 builder.Services.AddScoped<TelegramNotificationSender>();
 builder.Services.AddHostedService<ServiceCredentialSyncBackgroundService>();
+builder.Services.AddHostedService<IntegrationWorkerRuntimeBackgroundService>();
 builder.Services.AddHostedService<NotificationOutboxBackgroundService>();
+builder.Services.AddHostedService<TelegramBotPollingBackgroundService>();
+builder.Services.AddHostedService<WorkflowExecutionBackgroundService>();
+builder.Services.AddHostedService<WorkflowMessagePollingBackgroundService>();
 
 builder.Services
     .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
@@ -260,6 +289,9 @@ var systemPermissionClaimValue =
 var systemIntegrationsPermissionValue =
     builder.Configuration["EXTERNAL_API_SYSTEM_INTEGRATIONS_PERMISSION_CLAIM_VALUE"]
     ?? "system.integrations.manage";
+var offersFeatureEnabled = builder.Configuration.GetValue("FEATURE_OFFERS_ENABLED", true);
+var workflowsFeatureEnabled = builder.Configuration.GetValue("FEATURE_WORKFLOWS_ENABLED", true);
+var customHttpFeatureEnabled = builder.Configuration.GetValue("FEATURE_CUSTOM_HTTP_INTEGRATIONS_ENABLED", true);
 
 var app = builder.Build();
 
@@ -786,18 +818,27 @@ external.MapGet("/admin/integrations/projects/{projectId:guid}/grants", async (
         .AsNoTracking()
         .Where(x => x.ProjectId == projectId)
         .ToDictionaryAsync(x => x.IntegrationKey, StringComparer.OrdinalIgnoreCase, cancellationToken);
+    var runtimes = await dbContext.ProjectIntegrationWorkerRuntimes
+        .AsNoTracking()
+        .Where(x => x.ProjectId == projectId)
+        .ToDictionaryAsync(x => x.IntegrationKey, StringComparer.OrdinalIgnoreCase, cancellationToken);
 
     var items = grants.Select(grant =>
     {
         credentials.TryGetValue(grant.IntegrationKey, out var credential);
+        runtimes.TryGetValue(grant.IntegrationKey, out var runtime);
         return new AdminIntegrationGrantDto(
             grant.IntegrationKey,
+            IntegrationKeys.ResolveIntegrationType(grant.IntegrationKey),
             grant.Status,
             SplitScopes(grant.ScopesCsv),
             grant.GrantedAtUtc,
             grant.RevokedAtUtc,
             credential?.Status,
-            credential?.SecretMasked);
+            credential?.SecretMasked,
+            runtime?.Status,
+            runtime?.RuntimeAccountId,
+            runtime?.LastError);
     }).ToList();
 
     return Results.Ok(new AdminIntegrationGrantListResponse(httpContext.GetOrCreateRequestId(), items));
@@ -866,6 +907,7 @@ external.MapPut("/admin/integrations/projects/{projectId:guid}/grants/{integrati
             }
 
             ProjectServiceCredentialEntity? credential = null;
+            ProjectIntegrationWorkerRuntimeEntity? runtime = null;
             if (IntegrationKeys.ServiceIntegrations.Contains(normalizedIntegrationKey))
             {
                 var token = GenerateProjectServiceToken(normalizedIntegrationKey);
@@ -913,6 +955,39 @@ external.MapPut("/admin/integrations/projects/{projectId:guid}/grants/{integrati
                     CreatedAtUtc = now,
                 });
             }
+            else if (IntegrationKeys.WorkerIntegrations.Contains(normalizedIntegrationKey))
+            {
+                // Legacy service credential rows for Steam are fail-closed after transport switch to worker.
+                var legacyCredential = await dbContext.ProjectServiceCredentials
+                    .SingleOrDefaultAsync(x => x.ProjectId == projectId && x.IntegrationKey == normalizedIntegrationKey, ct);
+                if (legacyCredential is not null)
+                {
+                    legacyCredential.Status = "revoked";
+                    legacyCredential.RevokedAtUtc = now;
+                    legacyCredential.UpdatedAtUtc = now;
+                }
+
+                runtime = await dbContext.ProjectIntegrationWorkerRuntimes
+                    .SingleOrDefaultAsync(x => x.ProjectId == projectId && x.IntegrationKey == normalizedIntegrationKey, ct);
+                runtime = EnsureWorkerRuntime(
+                    dbContext,
+                    runtime,
+                    projectId,
+                    normalizedIntegrationKey,
+                    now,
+                    status: "pending_provision",
+                    clearDeprovisionedAt: true);
+                await QueueWorkerRuntimeOutboxOperationAsync(
+                    dbContext,
+                    projectId,
+                    normalizedIntegrationKey,
+                    runtime.RuntimeAccountId,
+                    operation: "provision",
+                    now,
+                    suppressProvisionOperations: false,
+                    suppressDeprovisionOperations: true,
+                    ct);
+            }
 
             dbContext.NotificationOutbox.Add(CreateNotificationOutbox(
                 projectId,
@@ -928,12 +1003,16 @@ external.MapPut("/admin/integrations/projects/{projectId:guid}/grants/{integrati
                     httpContext.GetOrCreateRequestId(),
                     new AdminIntegrationGrantDto(
                         normalizedIntegrationKey,
+                        IntegrationKeys.ResolveIntegrationType(normalizedIntegrationKey),
                         grant.Status,
                         scopes,
                         grant.GrantedAtUtc,
                         grant.RevokedAtUtc,
                         credential?.Status,
-                        credential?.SecretMasked)));
+                        credential?.SecretMasked,
+                        runtime?.Status,
+                        runtime?.RuntimeAccountId,
+                        runtime?.LastError)));
         },
         cancellationToken);
 });
@@ -970,26 +1049,69 @@ external.MapDelete("/admin/integrations/projects/{projectId:guid}/grants/{integr
             grant.RevokedByUserId = actorId;
             grant.RevokedAtUtc = now;
 
-            var credential = await dbContext.ProjectServiceCredentials
-                .SingleOrDefaultAsync(x => x.ProjectId == projectId && x.IntegrationKey == normalizedIntegrationKey, ct);
-
-            if (credential is not null)
+            if (IntegrationKeys.ServiceIntegrations.Contains(normalizedIntegrationKey))
             {
-                credential.Status = "revoking";
-                credential.UpdatedAtUtc = now;
+                var credential = await dbContext.ProjectServiceCredentials
+                    .SingleOrDefaultAsync(x => x.ProjectId == projectId && x.IntegrationKey == normalizedIntegrationKey, ct);
 
-                dbContext.ServiceCredentialSyncOutbox.Add(new ServiceCredentialSyncOutboxEntity
+                if (credential is not null)
                 {
-                    Id = Guid.NewGuid(),
-                    ProjectId = projectId,
-                    CredentialId = credential.Id,
-                    IntegrationKey = normalizedIntegrationKey,
-                    Operation = "revoke",
-                    Status = "pending",
-                    AttemptCount = 0,
-                    NextAttemptAtUtc = now,
-                    CreatedAtUtc = now,
-                });
+                    credential.Status = "revoking";
+                    credential.UpdatedAtUtc = now;
+
+                    dbContext.ServiceCredentialSyncOutbox.Add(new ServiceCredentialSyncOutboxEntity
+                    {
+                        Id = Guid.NewGuid(),
+                        ProjectId = projectId,
+                        CredentialId = credential.Id,
+                        IntegrationKey = normalizedIntegrationKey,
+                        Operation = "revoke",
+                        Status = "pending",
+                        AttemptCount = 0,
+                        NextAttemptAtUtc = now,
+                        CreatedAtUtc = now,
+                    });
+                }
+            }
+            else if (IntegrationKeys.WorkerIntegrations.Contains(normalizedIntegrationKey))
+            {
+                await SupersedeWorkerRuntimeOutboxOperationsAsync(
+                    dbContext,
+                    projectId,
+                    normalizedIntegrationKey,
+                    operation: "provision",
+                    now,
+                    note: "Suppressed by integration revoke.",
+                    ct);
+
+                var runtime = await dbContext.ProjectIntegrationWorkerRuntimes
+                    .SingleOrDefaultAsync(x => x.ProjectId == projectId && x.IntegrationKey == normalizedIntegrationKey, ct);
+
+                if (runtime is not null)
+                {
+                    runtime.Status = "revoking";
+                    runtime.LastError = null;
+                    runtime.UpdatedAtUtc = now;
+                    await QueueWorkerRuntimeOutboxOperationAsync(
+                        dbContext,
+                        projectId,
+                        normalizedIntegrationKey,
+                        runtime.RuntimeAccountId,
+                        operation: "deprovision",
+                        now,
+                        suppressProvisionOperations: true,
+                        suppressDeprovisionOperations: false,
+                        ct);
+                }
+
+                var legacyCredential = await dbContext.ProjectServiceCredentials
+                    .SingleOrDefaultAsync(x => x.ProjectId == projectId && x.IntegrationKey == normalizedIntegrationKey, ct);
+                if (legacyCredential is not null)
+                {
+                    legacyCredential.Status = "revoked";
+                    legacyCredential.RevokedAtUtc = now;
+                    legacyCredential.UpdatedAtUtc = now;
+                }
             }
 
             dbContext.NotificationOutbox.Add(CreateNotificationOutbox(
@@ -1003,6 +1125,206 @@ external.MapDelete("/admin/integrations/projects/{projectId:guid}/grants/{integr
             return new IdempotentExecutionResult(
                 StatusCodes.Status200OK,
                 new AckResponse(httpContext.GetOrCreateRequestId(), "completed"));
+        },
+        cancellationToken);
+});
+
+external.MapPost("/admin/integrations/projects/{projectId:guid}/grants/{integrationKey}/runtime/provision", async (
+    HttpContext httpContext,
+    Guid projectId,
+    string integrationKey,
+    CoreDbContext dbContext,
+    IdempotencyExecutor idempotency,
+    CancellationToken cancellationToken) =>
+{
+    EnsureSystemPermission(httpContext, systemPermissionClaimType, systemIntegrationsPermissionValue);
+    var idempotencyKey = httpContext.RequireIdempotencyKey();
+    var normalizedIntegrationKey = NormalizeIntegrationKey(integrationKey);
+
+    if (!IntegrationKeys.WorkerIntegrations.Contains(normalizedIntegrationKey))
+    {
+        throw new ApiErrorException(StatusCodes.Status400BadRequest, ApiErrorCodes.ValidationError, "Runtime provision поддержан только для worker-интеграций.");
+    }
+
+    return await idempotency.ExecuteAsync(
+        dbContext,
+        $"core:integrationRuntimeProvision:{projectId}:{normalizedIntegrationKey}",
+        idempotencyKey,
+        async ct =>
+        {
+            var grant = await dbContext.ProjectIntegrationGrants
+                .SingleOrDefaultAsync(x => x.ProjectId == projectId && x.IntegrationKey == normalizedIntegrationKey, ct);
+            if (grant is null || grant.Status != "active")
+            {
+                throw new ApiErrorException(StatusCodes.Status409Conflict, ApiErrorCodes.Conflict, "Для provision требуется активный grant.");
+            }
+
+            var now = DateTimeOffset.UtcNow;
+            var runtime = await dbContext.ProjectIntegrationWorkerRuntimes
+                .SingleOrDefaultAsync(x => x.ProjectId == projectId && x.IntegrationKey == normalizedIntegrationKey, ct);
+            runtime = EnsureWorkerRuntime(
+                dbContext,
+                runtime,
+                projectId,
+                normalizedIntegrationKey,
+                now,
+                status: "pending_provision",
+                clearDeprovisionedAt: true);
+            await QueueWorkerRuntimeOutboxOperationAsync(
+                dbContext,
+                projectId,
+                normalizedIntegrationKey,
+                runtime.RuntimeAccountId,
+                operation: "provision",
+                now,
+                suppressProvisionOperations: false,
+                suppressDeprovisionOperations: true,
+                ct);
+
+            await dbContext.SaveChangesAsync(ct);
+            return new IdempotentExecutionResult(
+                StatusCodes.Status200OK,
+                new AckResponse(httpContext.GetOrCreateRequestId(), "queued"));
+        },
+        cancellationToken);
+});
+
+external.MapPost("/admin/integrations/projects/{projectId:guid}/grants/{integrationKey}/runtime/deprovision", async (
+    HttpContext httpContext,
+    Guid projectId,
+    string integrationKey,
+    CoreDbContext dbContext,
+    IdempotencyExecutor idempotency,
+    CancellationToken cancellationToken) =>
+{
+    EnsureSystemPermission(httpContext, systemPermissionClaimType, systemIntegrationsPermissionValue);
+    var idempotencyKey = httpContext.RequireIdempotencyKey();
+    var normalizedIntegrationKey = NormalizeIntegrationKey(integrationKey);
+
+    if (!IntegrationKeys.WorkerIntegrations.Contains(normalizedIntegrationKey))
+    {
+        throw new ApiErrorException(StatusCodes.Status400BadRequest, ApiErrorCodes.ValidationError, "Runtime deprovision поддержан только для worker-интеграций.");
+    }
+
+    return await idempotency.ExecuteAsync(
+        dbContext,
+        $"core:integrationRuntimeDeprovision:{projectId}:{normalizedIntegrationKey}",
+        idempotencyKey,
+        async ct =>
+        {
+            var runtime = await dbContext.ProjectIntegrationWorkerRuntimes
+                .SingleOrDefaultAsync(x => x.ProjectId == projectId && x.IntegrationKey == normalizedIntegrationKey, ct);
+
+            if (runtime is null)
+            {
+                return new IdempotentExecutionResult(
+                    StatusCodes.Status200OK,
+                    new AckResponse(httpContext.GetOrCreateRequestId(), "completed"));
+            }
+
+            var now = DateTimeOffset.UtcNow;
+            await SupersedeWorkerRuntimeOutboxOperationsAsync(
+                dbContext,
+                projectId,
+                normalizedIntegrationKey,
+                operation: "provision",
+                now,
+                note: "Suppressed by manual deprovision.",
+                ct);
+            runtime.Status = "revoking";
+            runtime.LastError = null;
+            runtime.UpdatedAtUtc = now;
+            await QueueWorkerRuntimeOutboxOperationAsync(
+                dbContext,
+                projectId,
+                normalizedIntegrationKey,
+                runtime.RuntimeAccountId,
+                operation: "deprovision",
+                now,
+                suppressProvisionOperations: true,
+                suppressDeprovisionOperations: false,
+                ct);
+
+            await dbContext.SaveChangesAsync(ct);
+            return new IdempotentExecutionResult(
+                StatusCodes.Status200OK,
+                new AckResponse(httpContext.GetOrCreateRequestId(), "queued"));
+        },
+        cancellationToken);
+});
+
+external.MapPost("/admin/integrations/projects/{projectId:guid}/grants/{integrationKey}/runtime/restart", async (
+    HttpContext httpContext,
+    Guid projectId,
+    string integrationKey,
+    CoreDbContext dbContext,
+    IdempotencyExecutor idempotency,
+    CancellationToken cancellationToken) =>
+{
+    EnsureSystemPermission(httpContext, systemPermissionClaimType, systemIntegrationsPermissionValue);
+    var idempotencyKey = httpContext.RequireIdempotencyKey();
+    var normalizedIntegrationKey = NormalizeIntegrationKey(integrationKey);
+
+    if (!IntegrationKeys.WorkerIntegrations.Contains(normalizedIntegrationKey))
+    {
+        throw new ApiErrorException(StatusCodes.Status400BadRequest, ApiErrorCodes.ValidationError, "Runtime restart поддержан только для worker-интеграций.");
+    }
+
+    return await idempotency.ExecuteAsync(
+        dbContext,
+        $"core:integrationRuntimeRestart:{projectId}:{normalizedIntegrationKey}",
+        idempotencyKey,
+        async ct =>
+        {
+            var grant = await dbContext.ProjectIntegrationGrants
+                .SingleOrDefaultAsync(x => x.ProjectId == projectId && x.IntegrationKey == normalizedIntegrationKey, ct);
+            if (grant is null || grant.Status != "active")
+            {
+                throw new ApiErrorException(StatusCodes.Status409Conflict, ApiErrorCodes.Conflict, "Для restart требуется активный grant.");
+            }
+
+            var now = DateTimeOffset.UtcNow;
+            var runtime = await dbContext.ProjectIntegrationWorkerRuntimes
+                .SingleOrDefaultAsync(x => x.ProjectId == projectId && x.IntegrationKey == normalizedIntegrationKey, ct);
+            var hadActiveRuntime = runtime?.ProvisionedAtUtc is not null || string.Equals(runtime?.Status, "active", StringComparison.OrdinalIgnoreCase);
+            runtime = EnsureWorkerRuntime(
+                dbContext,
+                runtime,
+                projectId,
+                normalizedIntegrationKey,
+                now,
+                status: "pending_provision",
+                clearDeprovisionedAt: true);
+
+            if (hadActiveRuntime)
+            {
+                await QueueWorkerRuntimeOutboxOperationAsync(
+                    dbContext,
+                    projectId,
+                    normalizedIntegrationKey,
+                    runtime.RuntimeAccountId,
+                    operation: "deprovision",
+                    now,
+                    suppressProvisionOperations: true,
+                    suppressDeprovisionOperations: false,
+                    ct);
+            }
+
+            await QueueWorkerRuntimeOutboxOperationAsync(
+                dbContext,
+                projectId,
+                normalizedIntegrationKey,
+                runtime.RuntimeAccountId,
+                operation: "provision",
+                now.AddSeconds(1),
+                suppressProvisionOperations: false,
+                suppressDeprovisionOperations: false,
+                ct);
+
+            await dbContext.SaveChangesAsync(ct);
+            return new IdempotentExecutionResult(
+                StatusCodes.Status200OK,
+                new AckResponse(httpContext.GetOrCreateRequestId(), "queued"));
         },
         cancellationToken);
 });
@@ -1050,6 +1372,8 @@ external.MapPut("/admin/integrations/telegram/proxies/{proxyId:guid}", async (
         throw new ApiErrorException(StatusCodes.Status400BadRequest, ApiErrorCodes.ValidationError, "name и host обязательны.");
     }
 
+    var normalizedName = request.Name.Trim();
+
     if (request.Port is < 1 or > 65535)
     {
         throw new ApiErrorException(StatusCodes.Status400BadRequest, ApiErrorCodes.ValidationError, "port должен быть в диапазоне 1..65535.");
@@ -1061,6 +1385,13 @@ external.MapPut("/admin/integrations/telegram/proxies/{proxyId:guid}", async (
         idempotencyKey,
         async ct =>
         {
+            var duplicateNameExists = await dbContext.TelegramProxyProfiles
+                .AnyAsync(x => x.Name == normalizedName && x.Id != proxyId, ct);
+            if (duplicateNameExists)
+            {
+                throw new ApiErrorException(StatusCodes.Status409Conflict, ApiErrorCodes.Conflict, "Профиль с таким name уже существует.");
+            }
+
             var entity = await dbContext.TelegramProxyProfiles.SingleOrDefaultAsync(x => x.Id == proxyId, ct);
             var now = DateTimeOffset.UtcNow;
 
@@ -1080,7 +1411,7 @@ external.MapPut("/admin/integrations/telegram/proxies/{proxyId:guid}", async (
                 entity = new TelegramProxyProfileEntity
                 {
                     Id = proxyId,
-                    Name = request.Name.Trim(),
+                    Name = normalizedName,
                     ProxyType = NormalizeProxyType(request.ProxyType),
                     Host = request.Host.Trim(),
                     Port = request.Port,
@@ -1095,7 +1426,7 @@ external.MapPut("/admin/integrations/telegram/proxies/{proxyId:guid}", async (
             }
             else
             {
-                entity.Name = request.Name.Trim();
+                entity.Name = normalizedName;
                 entity.ProxyType = NormalizeProxyType(request.ProxyType);
                 entity.Host = request.Host.Trim();
                 entity.Port = request.Port;
@@ -1115,7 +1446,7 @@ external.MapPut("/admin/integrations/telegram/proxies/{proxyId:guid}", async (
                     entity.PasswordCiphertext = crypto.Encrypt(request.Password.Trim());
                 }
 
-                entity.IsActive = request.SetActive || entity.IsActive;
+                entity.IsActive = request.SetActive;
                 entity.UpdatedByUserId = actorId;
                 entity.UpdatedAtUtc = now;
             }
@@ -1139,6 +1470,206 @@ external.MapPut("/admin/integrations/telegram/proxies/{proxyId:guid}", async (
         cancellationToken);
 });
 
+external.MapPost("/admin/integrations/telegram/test-message", async (
+    HttpContext httpContext,
+    AdminTelegramTestMessageRequest request,
+    CoreDbContext dbContext,
+    ProjectSecretCrypto crypto,
+    TelegramNotificationSender sender,
+    CancellationToken cancellationToken) =>
+{
+    EnsureSystemPermission(httpContext, systemPermissionClaimType, systemIntegrationsPermissionValue);
+
+    if (string.IsNullOrWhiteSpace(request.ChatId))
+    {
+        throw new ApiErrorException(StatusCodes.Status400BadRequest, ApiErrorCodes.ValidationError, "chatId обязателен.");
+    }
+
+    var chatId = request.ChatId.Trim();
+    var message = string.IsNullOrWhiteSpace(request.Message)
+        ? $"DDCRM Telegram test {DateTimeOffset.UtcNow:O}"
+        : request.Message.Trim();
+
+    var proxy = await ResolveActiveTelegramProxyAsync(dbContext, crypto, cancellationToken);
+    var sendResult = await sender.SendMessageWithDiagnosticsAsync(chatId, message, proxy, cancellationToken);
+    if (sendResult.Status != "ok")
+    {
+        throw new ApiErrorException(
+            StatusCodes.Status502BadGateway,
+            ApiErrorCodes.InternalError,
+            $"Не удалось отправить Telegram test message: {sendResult.ReasonCode}: {sendResult.ErrorMessage}");
+    }
+
+    return Results.Ok(new AdminTelegramTestMessageResponse(
+        httpContext.GetOrCreateRequestId(),
+        "completed",
+        sendResult.EffectivePath ?? "unknown",
+        sendResult.ReasonCode));
+});
+
+external.MapPost("/admin/integrations/telegram/test-connectivity", async (
+    HttpContext httpContext,
+    CoreDbContext dbContext,
+    ProjectSecretCrypto crypto,
+    TelegramNotificationSender sender,
+    CancellationToken cancellationToken) =>
+{
+    EnsureSystemPermission(httpContext, systemPermissionClaimType, systemIntegrationsPermissionValue);
+
+    var proxy = await ResolveActiveTelegramProxyAsync(dbContext, crypto, cancellationToken);
+    try
+    {
+        var result = await sender.GetMeWithDiagnosticsAsync(proxy, cancellationToken);
+        return Results.Ok(new AdminTelegramConnectivityResponse(
+            httpContext.GetOrCreateRequestId(),
+            result.Status,
+            result.EffectivePath,
+            result.ProxyAttempted,
+            result.ProxySucceeded,
+            result.DirectAttempted,
+            result.DirectSucceeded,
+            result.ReasonCode,
+            result.ProxyError,
+            result.DirectError,
+            result.Identity?.BotId,
+            result.Identity?.Username,
+            result.Identity?.FirstName));
+    }
+    catch (Exception exception)
+    {
+        var connectivityFailure = ParseTelegramConnectivityFailure(exception.Message);
+        return Results.Ok(new AdminTelegramConnectivityResponse(
+            httpContext.GetOrCreateRequestId(),
+            "error",
+            connectivityFailure.EffectivePath,
+            connectivityFailure.ProxyAttempted,
+            connectivityFailure.ProxySucceeded,
+            connectivityFailure.DirectAttempted,
+            connectivityFailure.DirectSucceeded,
+            connectivityFailure.ReasonCode,
+            connectivityFailure.ProxyError,
+            connectivityFailure.DirectError,
+            null,
+            null,
+            null));
+    }
+});
+
+external.MapGet("/admin/integrations/custom-http/allowlist", async (
+    HttpContext httpContext,
+    CoreDbContext dbContext,
+    CancellationToken cancellationToken) =>
+{
+    EnsureSystemPermission(httpContext, systemPermissionClaimType, systemIntegrationsPermissionValue);
+
+    var items = await dbContext.AdminCustomHttpAllowlist
+        .AsNoTracking()
+        .OrderBy(x => x.HostPattern)
+        .Select(x => new AdminCustomHttpAllowlistEntryDto(
+            x.Id,
+            x.HostPattern,
+            x.IsActive,
+            x.Note,
+            x.UpdatedAtUtc))
+        .ToListAsync(cancellationToken);
+
+    return Results.Ok(new AdminCustomHttpAllowlistListResponse(
+        httpContext.GetOrCreateRequestId(),
+        items));
+});
+
+external.MapPut("/admin/integrations/custom-http/allowlist/{entryId:guid}", async (
+    HttpContext httpContext,
+    Guid entryId,
+    AdminCustomHttpAllowlistUpsertRequest request,
+    CoreDbContext dbContext,
+    IdempotencyExecutor idempotency,
+    CancellationToken cancellationToken) =>
+{
+    EnsureSystemPermission(httpContext, systemPermissionClaimType, systemIntegrationsPermissionValue);
+    var actorId = GetCurrentUserId(httpContext);
+    var idempotencyKey = httpContext.RequireIdempotencyKey();
+
+    return await idempotency.ExecuteAsync(
+        dbContext,
+        $"core:adminCustomHttpAllowlistUpsert:{entryId}",
+        idempotencyKey,
+        async ct =>
+        {
+            var now = DateTimeOffset.UtcNow;
+            var normalizedPattern = NormalizeAllowlistHostPattern(request.HostPattern);
+            var entity = await dbContext.AdminCustomHttpAllowlist
+                .SingleOrDefaultAsync(x => x.Id == entryId, ct);
+            if (entity is null)
+            {
+                entity = new AdminCustomHttpAllowlistEntity
+                {
+                    Id = entryId,
+                    HostPattern = normalizedPattern,
+                    IsActive = request.IsActive,
+                    Note = request.Note?.Trim(),
+                    CreatedAtUtc = now,
+                    UpdatedAtUtc = now,
+                    UpdatedByUserId = actorId,
+                };
+                dbContext.AdminCustomHttpAllowlist.Add(entity);
+            }
+            else
+            {
+                entity.HostPattern = normalizedPattern;
+                entity.IsActive = request.IsActive;
+                entity.Note = request.Note?.Trim();
+                entity.UpdatedAtUtc = now;
+                entity.UpdatedByUserId = actorId;
+            }
+
+            await dbContext.SaveChangesAsync(ct);
+            return new IdempotentExecutionResult(
+                StatusCodes.Status200OK,
+                new AdminCustomHttpAllowlistResponse(
+                    httpContext.GetOrCreateRequestId(),
+                    new AdminCustomHttpAllowlistEntryDto(
+                        entity.Id,
+                        entity.HostPattern,
+                        entity.IsActive,
+                        entity.Note,
+                        entity.UpdatedAtUtc)));
+        },
+        cancellationToken);
+});
+
+external.MapDelete("/admin/integrations/custom-http/allowlist/{entryId:guid}", async (
+    HttpContext httpContext,
+    Guid entryId,
+    CoreDbContext dbContext,
+    IdempotencyExecutor idempotency,
+    CancellationToken cancellationToken) =>
+{
+    EnsureSystemPermission(httpContext, systemPermissionClaimType, systemIntegrationsPermissionValue);
+    var idempotencyKey = httpContext.RequireIdempotencyKey();
+
+    return await idempotency.ExecuteAsync(
+        dbContext,
+        $"core:adminCustomHttpAllowlistDelete:{entryId}",
+        idempotencyKey,
+        async ct =>
+        {
+            var entity = await dbContext.AdminCustomHttpAllowlist
+                .SingleOrDefaultAsync(x => x.Id == entryId, ct);
+            if (entity is null)
+            {
+                throw new ApiErrorException(StatusCodes.Status404NotFound, ApiErrorCodes.NotFound, "Allowlist entry не найден.");
+            }
+
+            dbContext.AdminCustomHttpAllowlist.Remove(entity);
+            await dbContext.SaveChangesAsync(ct);
+            return new IdempotentExecutionResult(
+                StatusCodes.Status200OK,
+                new AckResponse(httpContext.GetOrCreateRequestId(), "completed"));
+        },
+        cancellationToken);
+});
+
 external.MapGet("/projects/{projectId:guid}/integrations/status", async (
     HttpContext httpContext,
     Guid projectId,
@@ -1158,6 +1689,10 @@ external.MapGet("/projects/{projectId:guid}/integrations/status", async (
         .AsNoTracking()
         .Where(x => x.ProjectId == projectId)
         .ToDictionaryAsync(x => x.IntegrationKey, StringComparer.OrdinalIgnoreCase, cancellationToken);
+    var runtimes = await dbContext.ProjectIntegrationWorkerRuntimes
+        .AsNoTracking()
+        .Where(x => x.ProjectId == projectId)
+        .ToDictionaryAsync(x => x.IntegrationKey, StringComparer.OrdinalIgnoreCase, cancellationToken);
 
     var groupChats = await dbContext.TelegramChatBindings
         .AsNoTracking()
@@ -1169,18 +1704,613 @@ external.MapGet("/projects/{projectId:guid}/integrations/status", async (
     var items = grants.Select(grant =>
     {
         credentials.TryGetValue(grant.IntegrationKey, out var credential);
+        runtimes.TryGetValue(grant.IntegrationKey, out var runtime);
         return new ProjectIntegrationStatusDto(
             grant.IntegrationKey,
+            IntegrationKeys.ResolveIntegrationType(grant.IntegrationKey),
             grant.Status,
             SplitScopes(grant.ScopesCsv),
             credential?.Status,
-            credential?.SecretMasked);
+            credential?.SecretMasked,
+            runtime?.Status,
+            runtime?.RuntimeAccountId,
+            runtime?.LastError);
     }).ToList();
 
     return Results.Ok(new ProjectIntegrationStatusResponse(
         httpContext.GetOrCreateRequestId(),
         items,
         new TelegramBindingsSummaryDto(groupChats, userChats)));
+});
+
+external.MapPost("/projects/{projectId:guid}/integrations/{integrationKey}/runtime/provision", async (
+    HttpContext httpContext,
+    Guid projectId,
+    string integrationKey,
+    CoreDbContext dbContext,
+    IdempotencyExecutor idempotency,
+    CancellationToken cancellationToken) =>
+{
+    var actorId = GetCurrentUserId(httpContext);
+    var idempotencyKey = httpContext.RequireIdempotencyKey();
+    await EnsurePermissionAsync(dbContext, projectId, actorId, ProjectPermissions.ProjectIntegrationsUse, cancellationToken);
+
+    var normalizedIntegrationKey = NormalizeIntegrationKey(integrationKey);
+    if (!IntegrationKeys.WorkerIntegrations.Contains(normalizedIntegrationKey))
+    {
+        throw new ApiErrorException(StatusCodes.Status400BadRequest, ApiErrorCodes.ValidationError, "Runtime provision поддержан только для worker-интеграций.");
+    }
+
+    return await idempotency.ExecuteAsync(
+        dbContext,
+        $"core:projectIntegrationRuntimeProvision:{projectId}:{normalizedIntegrationKey}",
+        idempotencyKey,
+        async ct =>
+        {
+            var grant = await dbContext.ProjectIntegrationGrants
+                .SingleOrDefaultAsync(x => x.ProjectId == projectId && x.IntegrationKey == normalizedIntegrationKey, ct);
+            if (grant is null || grant.Status != "active")
+            {
+                throw new ApiErrorException(StatusCodes.Status409Conflict, ApiErrorCodes.Conflict, "Для provision требуется активный grant.");
+            }
+
+            var now = DateTimeOffset.UtcNow;
+            var runtime = await dbContext.ProjectIntegrationWorkerRuntimes
+                .SingleOrDefaultAsync(x => x.ProjectId == projectId && x.IntegrationKey == normalizedIntegrationKey, ct);
+            runtime = EnsureWorkerRuntime(
+                dbContext,
+                runtime,
+                projectId,
+                normalizedIntegrationKey,
+                now,
+                status: "pending_provision",
+                clearDeprovisionedAt: true);
+            await QueueWorkerRuntimeOutboxOperationAsync(
+                dbContext,
+                projectId,
+                normalizedIntegrationKey,
+                runtime.RuntimeAccountId,
+                operation: "provision",
+                now,
+                suppressProvisionOperations: false,
+                suppressDeprovisionOperations: true,
+                ct);
+
+            await dbContext.SaveChangesAsync(ct);
+
+            return new IdempotentExecutionResult(
+                StatusCodes.Status200OK,
+                new AckResponse(httpContext.GetOrCreateRequestId(), "queued"));
+        },
+        cancellationToken);
+});
+
+external.MapPost("/projects/{projectId:guid}/integrations/{integrationKey}/runtime/deprovision", async (
+    HttpContext httpContext,
+    Guid projectId,
+    string integrationKey,
+    CoreDbContext dbContext,
+    IdempotencyExecutor idempotency,
+    CancellationToken cancellationToken) =>
+{
+    var actorId = GetCurrentUserId(httpContext);
+    var idempotencyKey = httpContext.RequireIdempotencyKey();
+    await EnsurePermissionAsync(dbContext, projectId, actorId, ProjectPermissions.ProjectIntegrationsUse, cancellationToken);
+
+    var normalizedIntegrationKey = NormalizeIntegrationKey(integrationKey);
+    if (!IntegrationKeys.WorkerIntegrations.Contains(normalizedIntegrationKey))
+    {
+        throw new ApiErrorException(StatusCodes.Status400BadRequest, ApiErrorCodes.ValidationError, "Runtime deprovision поддержан только для worker-интеграций.");
+    }
+
+    return await idempotency.ExecuteAsync(
+        dbContext,
+        $"core:projectIntegrationRuntimeDeprovision:{projectId}:{normalizedIntegrationKey}",
+        idempotencyKey,
+        async ct =>
+        {
+            var runtime = await dbContext.ProjectIntegrationWorkerRuntimes
+                .SingleOrDefaultAsync(x => x.ProjectId == projectId && x.IntegrationKey == normalizedIntegrationKey, ct);
+
+            if (runtime is null)
+            {
+                return new IdempotentExecutionResult(
+                    StatusCodes.Status200OK,
+                    new AckResponse(httpContext.GetOrCreateRequestId(), "completed"));
+            }
+
+            var now = DateTimeOffset.UtcNow;
+            await SupersedeWorkerRuntimeOutboxOperationsAsync(
+                dbContext,
+                projectId,
+                normalizedIntegrationKey,
+                operation: "provision",
+                now,
+                note: "Suppressed by project deprovision.",
+                ct);
+            runtime.Status = "revoking";
+            runtime.LastError = null;
+            runtime.UpdatedAtUtc = now;
+            await QueueWorkerRuntimeOutboxOperationAsync(
+                dbContext,
+                projectId,
+                normalizedIntegrationKey,
+                runtime.RuntimeAccountId,
+                operation: "deprovision",
+                now,
+                suppressProvisionOperations: true,
+                suppressDeprovisionOperations: false,
+                ct);
+
+            await dbContext.SaveChangesAsync(ct);
+            return new IdempotentExecutionResult(
+                StatusCodes.Status200OK,
+                new AckResponse(httpContext.GetOrCreateRequestId(), "queued"));
+        },
+        cancellationToken);
+});
+
+external.MapPost("/projects/{projectId:guid}/integrations/{integrationKey}/runtime/restart", async (
+    HttpContext httpContext,
+    Guid projectId,
+    string integrationKey,
+    CoreDbContext dbContext,
+    IdempotencyExecutor idempotency,
+    CancellationToken cancellationToken) =>
+{
+    var actorId = GetCurrentUserId(httpContext);
+    var idempotencyKey = httpContext.RequireIdempotencyKey();
+    await EnsurePermissionAsync(dbContext, projectId, actorId, ProjectPermissions.ProjectIntegrationsUse, cancellationToken);
+
+    var normalizedIntegrationKey = NormalizeIntegrationKey(integrationKey);
+    if (!IntegrationKeys.WorkerIntegrations.Contains(normalizedIntegrationKey))
+    {
+        throw new ApiErrorException(StatusCodes.Status400BadRequest, ApiErrorCodes.ValidationError, "Runtime restart поддержан только для worker-интеграций.");
+    }
+
+    return await idempotency.ExecuteAsync(
+        dbContext,
+        $"core:projectIntegrationRuntimeRestart:{projectId}:{normalizedIntegrationKey}",
+        idempotencyKey,
+        async ct =>
+        {
+            var grant = await dbContext.ProjectIntegrationGrants
+                .SingleOrDefaultAsync(x => x.ProjectId == projectId && x.IntegrationKey == normalizedIntegrationKey, ct);
+            if (grant is null || grant.Status != "active")
+            {
+                throw new ApiErrorException(StatusCodes.Status409Conflict, ApiErrorCodes.Conflict, "Для restart требуется активный grant.");
+            }
+
+            var now = DateTimeOffset.UtcNow;
+            var runtime = await dbContext.ProjectIntegrationWorkerRuntimes
+                .SingleOrDefaultAsync(x => x.ProjectId == projectId && x.IntegrationKey == normalizedIntegrationKey, ct);
+            var hadActiveRuntime = runtime?.ProvisionedAtUtc is not null || string.Equals(runtime?.Status, "active", StringComparison.OrdinalIgnoreCase);
+            runtime = EnsureWorkerRuntime(
+                dbContext,
+                runtime,
+                projectId,
+                normalizedIntegrationKey,
+                now,
+                status: "pending_provision",
+                clearDeprovisionedAt: true);
+            if (hadActiveRuntime)
+            {
+                await QueueWorkerRuntimeOutboxOperationAsync(
+                    dbContext,
+                    projectId,
+                    normalizedIntegrationKey,
+                    runtime.RuntimeAccountId,
+                    operation: "deprovision",
+                    now,
+                    suppressProvisionOperations: true,
+                    suppressDeprovisionOperations: false,
+                    ct);
+            }
+            await QueueWorkerRuntimeOutboxOperationAsync(
+                dbContext,
+                projectId,
+                normalizedIntegrationKey,
+                runtime.RuntimeAccountId,
+                operation: "provision",
+                now.AddSeconds(1),
+                suppressProvisionOperations: false,
+                suppressDeprovisionOperations: false,
+                ct);
+
+            await dbContext.SaveChangesAsync(ct);
+            return new IdempotentExecutionResult(
+                StatusCodes.Status200OK,
+                new AckResponse(httpContext.GetOrCreateRequestId(), "queued"));
+        },
+        cancellationToken);
+});
+
+external.MapGet("/projects/{projectId:guid}/integrations/steam/accounts", async (
+    HttpContext httpContext,
+    Guid projectId,
+    string? query,
+    string? status,
+    int? page,
+    int? pageSize,
+    CoreDbContext dbContext,
+    ProjectServiceIntegrationRegistry integrationRegistry,
+    IGatewayProxyClient gatewayProxyClient,
+    IEntitlementCheckClient entitlementCheckClient,
+    ProjectSecretCrypto crypto,
+    CancellationToken cancellationToken) =>
+{
+    var actorId = GetCurrentUserId(httpContext);
+    await EnsurePermissionAsync(dbContext, projectId, actorId, ProjectPermissions.ProjectIntegrationsUse, cancellationToken);
+
+    var authorizationHeader = httpContext.Request.Headers.Authorization.ToString();
+    var payload = new Dictionary<string, JsonElement>(StringComparer.Ordinal)
+    {
+        ["operation"] = JsonSerializer.SerializeToElement("accounts.list"),
+        ["page"] = JsonSerializer.SerializeToElement(Math.Max(1, page ?? 1)),
+        ["pageSize"] = JsonSerializer.SerializeToElement(Math.Clamp(pageSize ?? 50, 1, 200)),
+    };
+    if (!string.IsNullOrWhiteSpace(query))
+    {
+        payload["query"] = JsonSerializer.SerializeToElement(query.Trim());
+    }
+
+    if (!string.IsNullOrWhiteSpace(status))
+    {
+        payload["status"] = JsonSerializer.SerializeToElement(status.Trim());
+    }
+
+    var result = await InvokeProjectIntegrationActionAsync(
+        dbContext,
+        integrationRegistry,
+        gatewayProxyClient,
+        entitlementCheckClient,
+        crypto,
+        projectId,
+        actorId,
+        IntegrationKeys.SteamAccountsManager,
+        scope: "read",
+        request: payload,
+        action: "ext.integration.steam.read",
+        authorizationHeader,
+        idempotencyKey: $"steam-accounts-list:{projectId:N}:{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}",
+        cancellationToken);
+
+    var items = ReadRequiredProperty<SteamIntegrationAccountDto[]>(
+        result,
+        "items",
+        "Steam accounts list");
+    var totalCount = ReadOptionalIntProperty(result, "totalCount") ?? items.Length;
+
+    return Results.Ok(new SteamIntegrationAccountsResponse(
+        httpContext.GetOrCreateRequestId(),
+        items,
+        totalCount));
+});
+
+external.MapPost("/projects/{projectId:guid}/integrations/steam/accounts", async (
+    HttpContext httpContext,
+    Guid projectId,
+    SteamIntegrationAccountUpsertRequest request,
+    CoreDbContext dbContext,
+    ProjectServiceIntegrationRegistry integrationRegistry,
+    IGatewayProxyClient gatewayProxyClient,
+    IEntitlementCheckClient entitlementCheckClient,
+    ProjectSecretCrypto crypto,
+    IdempotencyExecutor idempotency,
+    CancellationToken cancellationToken) =>
+{
+    var actorId = GetCurrentUserId(httpContext);
+    await EnsurePermissionAsync(dbContext, projectId, actorId, ProjectPermissions.ProjectIntegrationsUse, cancellationToken);
+    var idempotencyKey = httpContext.RequireIdempotencyKey();
+    var authorizationHeader = httpContext.Request.Headers.Authorization.ToString();
+
+    if (string.IsNullOrWhiteSpace(request.LoginName))
+    {
+        throw new ApiErrorException(StatusCodes.Status400BadRequest, ApiErrorCodes.ValidationError, "loginName обязателен.");
+    }
+
+    return await idempotency.ExecuteAsync(
+        dbContext,
+        $"core:steamIntegrationAccountCreate:{projectId}",
+        idempotencyKey,
+        async _ =>
+        {
+            var payload = new Dictionary<string, JsonElement>(StringComparer.Ordinal)
+            {
+                ["operation"] = JsonSerializer.SerializeToElement("accounts.create"),
+                ["account"] = JsonSerializer.SerializeToElement(request),
+            };
+
+            var result = await InvokeProjectIntegrationActionAsync(
+                dbContext,
+                integrationRegistry,
+                gatewayProxyClient,
+                entitlementCheckClient,
+                crypto,
+                projectId,
+                actorId,
+                IntegrationKeys.SteamAccountsManager,
+                scope: "jobs",
+                request: payload,
+                action: "ext.integration.steam.jobs",
+                authorizationHeader,
+                idempotencyKey,
+                cancellationToken);
+            var account = ReadRequiredProperty<SteamIntegrationAccountDto>(
+                result,
+                "account",
+                "Steam account create");
+
+            return new IdempotentExecutionResult(
+                StatusCodes.Status201Created,
+                new SteamIntegrationAccountResponse(httpContext.GetOrCreateRequestId(), account));
+        },
+        cancellationToken);
+});
+
+external.MapPatch("/projects/{projectId:guid}/integrations/steam/accounts/{accountId:guid}", async (
+    HttpContext httpContext,
+    Guid projectId,
+    Guid accountId,
+    SteamIntegrationAccountUpsertRequest request,
+    CoreDbContext dbContext,
+    ProjectServiceIntegrationRegistry integrationRegistry,
+    IGatewayProxyClient gatewayProxyClient,
+    IEntitlementCheckClient entitlementCheckClient,
+    ProjectSecretCrypto crypto,
+    IdempotencyExecutor idempotency,
+    CancellationToken cancellationToken) =>
+{
+    var actorId = GetCurrentUserId(httpContext);
+    await EnsurePermissionAsync(dbContext, projectId, actorId, ProjectPermissions.ProjectIntegrationsUse, cancellationToken);
+    var idempotencyKey = httpContext.RequireIdempotencyKey();
+    var authorizationHeader = httpContext.Request.Headers.Authorization.ToString();
+
+    return await idempotency.ExecuteAsync(
+        dbContext,
+        $"core:steamIntegrationAccountUpdate:{projectId}:{accountId}",
+        idempotencyKey,
+        async _ =>
+        {
+            var payload = new Dictionary<string, JsonElement>(StringComparer.Ordinal)
+            {
+                ["operation"] = JsonSerializer.SerializeToElement("accounts.update"),
+                ["accountId"] = JsonSerializer.SerializeToElement(accountId),
+                ["account"] = JsonSerializer.SerializeToElement(request),
+            };
+
+            var result = await InvokeProjectIntegrationActionAsync(
+                dbContext,
+                integrationRegistry,
+                gatewayProxyClient,
+                entitlementCheckClient,
+                crypto,
+                projectId,
+                actorId,
+                IntegrationKeys.SteamAccountsManager,
+                scope: "jobs",
+                request: payload,
+                action: "ext.integration.steam.jobs",
+                authorizationHeader,
+                idempotencyKey,
+                cancellationToken);
+            var account = ReadRequiredProperty<SteamIntegrationAccountDto>(
+                result,
+                "account",
+                "Steam account update");
+
+            return new IdempotentExecutionResult(
+                StatusCodes.Status200OK,
+                new SteamIntegrationAccountResponse(httpContext.GetOrCreateRequestId(), account));
+        },
+        cancellationToken);
+});
+
+external.MapDelete("/projects/{projectId:guid}/integrations/steam/accounts/{accountId:guid}", async (
+    HttpContext httpContext,
+    Guid projectId,
+    Guid accountId,
+    CoreDbContext dbContext,
+    ProjectServiceIntegrationRegistry integrationRegistry,
+    IGatewayProxyClient gatewayProxyClient,
+    IEntitlementCheckClient entitlementCheckClient,
+    ProjectSecretCrypto crypto,
+    IdempotencyExecutor idempotency,
+    CancellationToken cancellationToken) =>
+{
+    var actorId = GetCurrentUserId(httpContext);
+    await EnsurePermissionAsync(dbContext, projectId, actorId, ProjectPermissions.ProjectIntegrationsUse, cancellationToken);
+    var idempotencyKey = httpContext.RequireIdempotencyKey();
+    var authorizationHeader = httpContext.Request.Headers.Authorization.ToString();
+
+    return await idempotency.ExecuteAsync(
+        dbContext,
+        $"core:steamIntegrationAccountArchive:{projectId}:{accountId}",
+        idempotencyKey,
+        async _state =>
+        {
+            var payload = new Dictionary<string, JsonElement>(StringComparer.Ordinal)
+            {
+                ["operation"] = JsonSerializer.SerializeToElement("accounts.archive"),
+                ["accountId"] = JsonSerializer.SerializeToElement(accountId),
+            };
+
+            _ = await InvokeProjectIntegrationActionAsync(
+                dbContext,
+                integrationRegistry,
+                gatewayProxyClient,
+                entitlementCheckClient,
+                crypto,
+                projectId,
+                actorId,
+                IntegrationKeys.SteamAccountsManager,
+                scope: "jobs",
+                request: payload,
+                action: "ext.integration.steam.jobs",
+                authorizationHeader,
+                idempotencyKey,
+                cancellationToken);
+
+            return new IdempotentExecutionResult(
+                StatusCodes.Status200OK,
+                new AckResponse(httpContext.GetOrCreateRequestId(), "completed"));
+        },
+        cancellationToken);
+});
+
+external.MapGet("/projects/{projectId:guid}/integrations/steam/jobs", async (
+    HttpContext httpContext,
+    Guid projectId,
+    int? take,
+    CoreDbContext dbContext,
+    ProjectServiceIntegrationRegistry integrationRegistry,
+    IGatewayProxyClient gatewayProxyClient,
+    IEntitlementCheckClient entitlementCheckClient,
+    ProjectSecretCrypto crypto,
+    CancellationToken cancellationToken) =>
+{
+    var actorId = GetCurrentUserId(httpContext);
+    await EnsurePermissionAsync(dbContext, projectId, actorId, ProjectPermissions.ProjectIntegrationsUse, cancellationToken);
+    var authorizationHeader = httpContext.Request.Headers.Authorization.ToString();
+
+    var payload = new Dictionary<string, JsonElement>(StringComparer.Ordinal)
+    {
+        ["operation"] = JsonSerializer.SerializeToElement("jobs.list"),
+        ["take"] = JsonSerializer.SerializeToElement(Math.Clamp(take ?? 30, 1, 200)),
+    };
+
+    var result = await InvokeProjectIntegrationActionAsync(
+        dbContext,
+        integrationRegistry,
+        gatewayProxyClient,
+        entitlementCheckClient,
+        crypto,
+        projectId,
+        actorId,
+        IntegrationKeys.SteamAccountsManager,
+        scope: "read",
+        request: payload,
+        action: "ext.integration.steam.read",
+        authorizationHeader,
+        idempotencyKey: $"steam-jobs-list:{projectId:N}:{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}",
+        cancellationToken);
+
+    var jobs = ReadRequiredProperty<SteamIntegrationJobDto[]>(
+        result,
+        "jobs",
+        "Steam jobs list");
+
+    return Results.Ok(new SteamIntegrationJobsResponse(
+        httpContext.GetOrCreateRequestId(),
+        jobs));
+});
+
+external.MapPost("/projects/{projectId:guid}/integrations/steam/jobs", async (
+    HttpContext httpContext,
+    Guid projectId,
+    SteamIntegrationJobCreateRequest request,
+    CoreDbContext dbContext,
+    ProjectServiceIntegrationRegistry integrationRegistry,
+    IGatewayProxyClient gatewayProxyClient,
+    IEntitlementCheckClient entitlementCheckClient,
+    ProjectSecretCrypto crypto,
+    IdempotencyExecutor idempotency,
+    CancellationToken cancellationToken) =>
+{
+    var actorId = GetCurrentUserId(httpContext);
+    await EnsurePermissionAsync(dbContext, projectId, actorId, ProjectPermissions.ProjectIntegrationsUse, cancellationToken);
+    var idempotencyKey = httpContext.RequireIdempotencyKey();
+    var authorizationHeader = httpContext.Request.Headers.Authorization.ToString();
+
+    return await idempotency.ExecuteAsync(
+        dbContext,
+        $"core:steamIntegrationJobCreate:{projectId}",
+        idempotencyKey,
+        async _ =>
+        {
+            var payload = new Dictionary<string, JsonElement>(StringComparer.Ordinal)
+            {
+                ["operation"] = JsonSerializer.SerializeToElement("jobs.create"),
+                ["job"] = JsonSerializer.SerializeToElement(request),
+            };
+
+            var result = await InvokeProjectIntegrationActionAsync(
+                dbContext,
+                integrationRegistry,
+                gatewayProxyClient,
+                entitlementCheckClient,
+                crypto,
+                projectId,
+                actorId,
+                IntegrationKeys.SteamAccountsManager,
+                scope: "jobs",
+                request: payload,
+                action: "ext.integration.steam.jobs",
+                authorizationHeader,
+                idempotencyKey,
+                cancellationToken);
+            var job = ReadRequiredProperty<SteamIntegrationJobDto>(
+                result,
+                "job",
+                "Steam job create");
+
+            return new IdempotentExecutionResult(
+                StatusCodes.Status201Created,
+                new SteamIntegrationJobResponse(httpContext.GetOrCreateRequestId(), job));
+        },
+        cancellationToken);
+});
+
+external.MapPost("/projects/{projectId:guid}/integrations/steam/jobs/{jobId:guid}/cancel", async (
+    HttpContext httpContext,
+    Guid projectId,
+    Guid jobId,
+    CoreDbContext dbContext,
+    ProjectServiceIntegrationRegistry integrationRegistry,
+    IGatewayProxyClient gatewayProxyClient,
+    IEntitlementCheckClient entitlementCheckClient,
+    ProjectSecretCrypto crypto,
+    IdempotencyExecutor idempotency,
+    CancellationToken cancellationToken) =>
+{
+    var actorId = GetCurrentUserId(httpContext);
+    await EnsurePermissionAsync(dbContext, projectId, actorId, ProjectPermissions.ProjectIntegrationsUse, cancellationToken);
+    var idempotencyKey = httpContext.RequireIdempotencyKey();
+    var authorizationHeader = httpContext.Request.Headers.Authorization.ToString();
+
+    return await idempotency.ExecuteAsync(
+        dbContext,
+        $"core:steamIntegrationJobCancel:{projectId}:{jobId}",
+        idempotencyKey,
+        async _state =>
+        {
+            var payload = new Dictionary<string, JsonElement>(StringComparer.Ordinal)
+            {
+                ["operation"] = JsonSerializer.SerializeToElement("jobs.cancel"),
+                ["jobId"] = JsonSerializer.SerializeToElement(jobId),
+            };
+
+            _ = await InvokeProjectIntegrationActionAsync(
+                dbContext,
+                integrationRegistry,
+                gatewayProxyClient,
+                entitlementCheckClient,
+                crypto,
+                projectId,
+                actorId,
+                IntegrationKeys.SteamAccountsManager,
+                scope: "jobs",
+                request: payload,
+                action: "ext.integration.steam.jobs",
+                authorizationHeader,
+                idempotencyKey,
+                cancellationToken);
+
+            return new IdempotentExecutionResult(
+                StatusCodes.Status200OK,
+                new AckResponse(httpContext.GetOrCreateRequestId(), "completed"));
+        },
+        cancellationToken);
 });
 
 external.MapPost("/projects/{projectId:guid}/integrations/{integrationKey}/actions/{scope}", async (
@@ -1191,6 +2321,7 @@ external.MapPost("/projects/{projectId:guid}/integrations/{integrationKey}/actio
     Dictionary<string, JsonElement>? request,
     CoreDbContext dbContext,
     ProjectServiceIntegrationRegistry integrationRegistry,
+    IGatewayProxyClient gatewayProxyClient,
     ProjectSecretCrypto crypto,
     IEntitlementCheckClient entitlementCheckClient,
     IdempotencyExecutor idempotency,
@@ -1202,50 +2333,13 @@ external.MapPost("/projects/{projectId:guid}/integrations/{integrationKey}/actio
 
     var normalizedIntegrationKey = NormalizeIntegrationKey(integrationKey);
     var normalizedScope = NormalizeScope(scope);
-    if (!IntegrationKeys.ServiceIntegrations.Contains(normalizedIntegrationKey))
+    if (!IntegrationKeys.ServiceIntegrations.Contains(normalizedIntegrationKey)
+        && !IntegrationKeys.WorkerIntegrations.Contains(normalizedIntegrationKey))
     {
-        throw new ApiErrorException(StatusCodes.Status400BadRequest, ApiErrorCodes.ValidationError, "Integration не поддерживает service actions.");
+        throw new ApiErrorException(StatusCodes.Status400BadRequest, ApiErrorCodes.ValidationError, "Integration не поддерживает actions.");
     }
 
-    if (!integrationRegistry.TryGet(normalizedIntegrationKey, out var integrationClient))
-    {
-        throw new ApiErrorException(StatusCodes.Status503ServiceUnavailable, ApiErrorCodes.InternalError, "Integration client не зарегистрирован.");
-    }
-
-    var grant = await dbContext.ProjectIntegrationGrants
-        .AsNoTracking()
-        .SingleOrDefaultAsync(
-            x => x.ProjectId == projectId && x.IntegrationKey == normalizedIntegrationKey,
-            cancellationToken);
-
-    if (grant is null || grant.Status != "active")
-    {
-        throw new ApiErrorException(StatusCodes.Status403Forbidden, ApiErrorCodes.Forbidden, "Интеграция не выдана проекту.");
-    }
-
-    var allowedScopes = SplitScopes(grant.ScopesCsv);
-    if (!allowedScopes.Contains(normalizedScope, StringComparer.OrdinalIgnoreCase))
-    {
-        throw new ApiErrorException(StatusCodes.Status403Forbidden, ApiErrorCodes.Forbidden, "Scope не разрешён для проекта.");
-    }
-
-    var action = $"ext.integration.{normalizedIntegrationKey}.{normalizedScope}";
-    var entitlementAllowed = await entitlementCheckClient.IsAllowedAsync(projectId, actorId, action, cancellationToken);
-    if (!entitlementAllowed)
-    {
-        throw new ApiErrorException(StatusCodes.Status403Forbidden, ApiErrorCodes.Forbidden, "Операция заблокирована entitlement policy.");
-    }
-
-    var credential = await dbContext.ProjectServiceCredentials
-        .AsNoTracking()
-        .SingleOrDefaultAsync(
-            x => x.ProjectId == projectId && x.IntegrationKey == normalizedIntegrationKey,
-            cancellationToken);
-
-    if (credential is null || credential.Status != "active")
-    {
-        throw new ApiErrorException(StatusCodes.Status409Conflict, ApiErrorCodes.Conflict, "Сервисный токен ещё не активирован.");
-    }
+    var action = $"ext.integration.{ResolveIntegrationActionNamespace(normalizedIntegrationKey)}.{normalizedScope}";
 
     return await idempotency.ExecuteAsync(
         dbContext,
@@ -1253,16 +2347,26 @@ external.MapPost("/projects/{projectId:guid}/integrations/{integrationKey}/actio
         idempotencyKey,
         async _ =>
         {
-            var payload = request is null
-                ? new Dictionary<string, JsonElement>(StringComparer.Ordinal)
-                : request.ToDictionary(x => x.Key, x => x.Value.Clone(), StringComparer.Ordinal);
-
-            payload["projectToken"] = JsonSerializer.SerializeToElement(crypto.Decrypt(credential.SecretCiphertext));
-            var result = await integrationClient.InvokeAsync(projectId, normalizedScope, payload, idempotencyKey, cancellationToken);
+            var authorizationHeader = httpContext.Request.Headers.Authorization.ToString();
+            var resultElement = await InvokeProjectIntegrationActionAsync(
+                dbContext,
+                integrationRegistry,
+                gatewayProxyClient,
+                entitlementCheckClient,
+                crypto,
+                projectId,
+                actorId,
+                normalizedIntegrationKey,
+                normalizedScope,
+                request,
+                action,
+                authorizationHeader,
+                idempotencyKey,
+                cancellationToken);
 
             return new IdempotentExecutionResult(
                 StatusCodes.Status200OK,
-                new ProxyResponse(httpContext.GetOrCreateRequestId(), result));
+                new ProxyResponse(httpContext.GetOrCreateRequestId(), resultElement));
         },
         cancellationToken);
 });
@@ -1480,6 +2584,932 @@ external.MapPost("/projects/{projectId:guid}/integrations/notifications/critical
         },
         cancellationToken);
 });
+
+external.MapGet("/projects/{projectId:guid}/integrations/custom-http", async (
+    HttpContext httpContext,
+    Guid projectId,
+    CoreDbContext dbContext,
+    CancellationToken cancellationToken) =>
+{
+    EnsureFeatureEnabled(customHttpFeatureEnabled, "custom-http");
+    var actorId = GetCurrentUserId(httpContext);
+    await EnsurePermissionAsync(dbContext, projectId, actorId, ProjectPermissions.ProjectIntegrationsCustomManage, cancellationToken);
+    await EnsureCustomHttpGrantAsync(dbContext, projectId, cancellationToken);
+
+    var items = await dbContext.ProjectCustomHttpIntegrations
+        .AsNoTracking()
+        .Where(x => x.ProjectId == projectId)
+        .OrderBy(x => x.Name)
+        .Select(x => new ProjectCustomHttpIntegrationDto(
+            x.Id,
+            x.Name,
+            x.BaseUrl,
+            x.Status,
+            x.BearerTokenMasked,
+            x.LastTestedAtUtc,
+            x.UpdatedAtUtc))
+        .ToListAsync(cancellationToken);
+
+    return Results.Ok(new ProjectCustomHttpIntegrationListResponse(
+        httpContext.GetOrCreateRequestId(),
+        items));
+});
+
+external.MapPost("/projects/{projectId:guid}/integrations/custom-http", async (
+    HttpContext httpContext,
+    Guid projectId,
+    ProjectCustomHttpIntegrationCreateRequest request,
+    CoreDbContext dbContext,
+    ProjectSecretCrypto crypto,
+    IdempotencyExecutor idempotency,
+    CancellationToken cancellationToken) =>
+{
+    EnsureFeatureEnabled(customHttpFeatureEnabled, "custom-http");
+    var actorId = GetCurrentUserId(httpContext);
+    var idempotencyKey = httpContext.RequireIdempotencyKey();
+    await EnsurePermissionAsync(dbContext, projectId, actorId, ProjectPermissions.ProjectIntegrationsCustomManage, cancellationToken);
+    await EnsureCustomHttpGrantAsync(dbContext, projectId, cancellationToken);
+
+    return await idempotency.ExecuteAsync(
+        dbContext,
+        $"core:customHttpIntegrationCreate:{projectId}",
+        idempotencyKey,
+        async ct =>
+        {
+            if (string.IsNullOrWhiteSpace(request.Name)
+                || string.IsNullOrWhiteSpace(request.BaseUrl)
+                || string.IsNullOrWhiteSpace(request.BearerToken))
+            {
+                throw new ApiErrorException(StatusCodes.Status400BadRequest, ApiErrorCodes.ValidationError, "name/baseUrl/bearerToken обязательны.");
+            }
+
+            var normalizedStatus = NormalizeCustomIntegrationStatus(request.Status);
+            var allowlist = await dbContext.AdminCustomHttpAllowlist
+                .AsNoTracking()
+                .Where(x => x.IsActive)
+                .Select(x => x.HostPattern)
+                .ToListAsync(ct);
+            var uri = new Uri(request.BaseUrl.Trim());
+            await CustomHttpIntegrationInvoker.ValidateTargetUriAsync(uri, allowlist, ct);
+
+            var now = DateTimeOffset.UtcNow;
+            var entity = new ProjectCustomHttpIntegrationEntity
+            {
+                Id = Guid.NewGuid(),
+                ProjectId = projectId,
+                Name = request.Name.Trim(),
+                BaseUrl = request.BaseUrl.Trim(),
+                Status = normalizedStatus,
+                BearerTokenCiphertext = crypto.Encrypt(request.BearerToken.Trim()),
+                BearerTokenMasked = MaskToken(request.BearerToken.Trim()),
+                DefaultHeadersJson = request.DefaultHeaders is null
+                    ? null
+                    : JsonSerializer.Serialize(request.DefaultHeaders),
+                CreatedAtUtc = now,
+                UpdatedAtUtc = now,
+            };
+
+            dbContext.ProjectCustomHttpIntegrations.Add(entity);
+            await dbContext.SaveChangesAsync(ct);
+
+            return new IdempotentExecutionResult(
+                StatusCodes.Status201Created,
+                new ProjectCustomHttpIntegrationResponse(
+                    httpContext.GetOrCreateRequestId(),
+                    new ProjectCustomHttpIntegrationDto(
+                        entity.Id,
+                        entity.Name,
+                        entity.BaseUrl,
+                        entity.Status,
+                        entity.BearerTokenMasked,
+                        entity.LastTestedAtUtc,
+                        entity.UpdatedAtUtc)));
+        },
+        cancellationToken);
+});
+
+external.MapPatch("/projects/{projectId:guid}/integrations/custom-http/{integrationId:guid}", async (
+    HttpContext httpContext,
+    Guid projectId,
+    Guid integrationId,
+    ProjectCustomHttpIntegrationUpdateRequest request,
+    CoreDbContext dbContext,
+    ProjectSecretCrypto crypto,
+    IdempotencyExecutor idempotency,
+    CancellationToken cancellationToken) =>
+{
+    EnsureFeatureEnabled(customHttpFeatureEnabled, "custom-http");
+    var actorId = GetCurrentUserId(httpContext);
+    var idempotencyKey = httpContext.RequireIdempotencyKey();
+    await EnsurePermissionAsync(dbContext, projectId, actorId, ProjectPermissions.ProjectIntegrationsCustomManage, cancellationToken);
+    await EnsureCustomHttpGrantAsync(dbContext, projectId, cancellationToken);
+
+    return await idempotency.ExecuteAsync(
+        dbContext,
+        $"core:customHttpIntegrationUpdate:{projectId}:{integrationId}",
+        idempotencyKey,
+        async ct =>
+        {
+            var entity = await dbContext.ProjectCustomHttpIntegrations
+                .SingleOrDefaultAsync(x => x.ProjectId == projectId && x.Id == integrationId, ct);
+            if (entity is null)
+            {
+                throw new ApiErrorException(StatusCodes.Status404NotFound, ApiErrorCodes.NotFound, "Кастомная интеграция не найдена.");
+            }
+
+            if (!string.IsNullOrWhiteSpace(request.Name))
+            {
+                entity.Name = request.Name.Trim();
+            }
+
+            if (!string.IsNullOrWhiteSpace(request.BaseUrl))
+            {
+                var allowlist = await dbContext.AdminCustomHttpAllowlist
+                    .AsNoTracking()
+                    .Where(x => x.IsActive)
+                    .Select(x => x.HostPattern)
+                    .ToListAsync(ct);
+                var endpoint = new Uri(request.BaseUrl.Trim());
+                await CustomHttpIntegrationInvoker.ValidateTargetUriAsync(endpoint, allowlist, ct);
+                entity.BaseUrl = request.BaseUrl.Trim();
+            }
+
+            if (!string.IsNullOrWhiteSpace(request.BearerToken))
+            {
+                var token = request.BearerToken.Trim();
+                entity.BearerTokenCiphertext = crypto.Encrypt(token);
+                entity.BearerTokenMasked = MaskToken(token);
+            }
+
+            if (request.DefaultHeaders is not null)
+            {
+                entity.DefaultHeadersJson = JsonSerializer.Serialize(request.DefaultHeaders);
+            }
+
+            if (!string.IsNullOrWhiteSpace(request.Status))
+            {
+                entity.Status = NormalizeCustomIntegrationStatus(request.Status);
+            }
+
+            entity.UpdatedAtUtc = DateTimeOffset.UtcNow;
+            await dbContext.SaveChangesAsync(ct);
+
+            return new IdempotentExecutionResult(
+                StatusCodes.Status200OK,
+                new ProjectCustomHttpIntegrationResponse(
+                    httpContext.GetOrCreateRequestId(),
+                    new ProjectCustomHttpIntegrationDto(
+                        entity.Id,
+                        entity.Name,
+                        entity.BaseUrl,
+                        entity.Status,
+                        entity.BearerTokenMasked,
+                        entity.LastTestedAtUtc,
+                        entity.UpdatedAtUtc)));
+        },
+        cancellationToken);
+});
+
+external.MapDelete("/projects/{projectId:guid}/integrations/custom-http/{integrationId:guid}", async (
+    HttpContext httpContext,
+    Guid projectId,
+    Guid integrationId,
+    CoreDbContext dbContext,
+    IdempotencyExecutor idempotency,
+    CancellationToken cancellationToken) =>
+{
+    EnsureFeatureEnabled(customHttpFeatureEnabled, "custom-http");
+    var actorId = GetCurrentUserId(httpContext);
+    var idempotencyKey = httpContext.RequireIdempotencyKey();
+    await EnsurePermissionAsync(dbContext, projectId, actorId, ProjectPermissions.ProjectIntegrationsCustomManage, cancellationToken);
+    await EnsureCustomHttpGrantAsync(dbContext, projectId, cancellationToken);
+
+    return await idempotency.ExecuteAsync(
+        dbContext,
+        $"core:customHttpIntegrationDelete:{projectId}:{integrationId}",
+        idempotencyKey,
+        async ct =>
+        {
+            var entity = await dbContext.ProjectCustomHttpIntegrations
+                .SingleOrDefaultAsync(x => x.ProjectId == projectId && x.Id == integrationId, ct);
+            if (entity is null)
+            {
+                throw new ApiErrorException(StatusCodes.Status404NotFound, ApiErrorCodes.NotFound, "Кастомная интеграция не найдена.");
+            }
+
+            dbContext.ProjectCustomHttpIntegrations.Remove(entity);
+            await dbContext.SaveChangesAsync(ct);
+            return new IdempotentExecutionResult(
+                StatusCodes.Status200OK,
+                new AckResponse(httpContext.GetOrCreateRequestId(), "completed"));
+        },
+        cancellationToken);
+});
+
+external.MapPost("/projects/{projectId:guid}/integrations/custom-http/{integrationId:guid}/test", async (
+    HttpContext httpContext,
+    Guid projectId,
+    Guid integrationId,
+    ProjectCustomHttpIntegrationTestRequest request,
+    CoreDbContext dbContext,
+    ICustomHttpIntegrationInvoker invoker,
+    IdempotencyExecutor idempotency,
+    CancellationToken cancellationToken) =>
+{
+    EnsureFeatureEnabled(customHttpFeatureEnabled, "custom-http");
+    var actorId = GetCurrentUserId(httpContext);
+    var idempotencyKey = httpContext.RequireIdempotencyKey();
+    await EnsurePermissionAsync(dbContext, projectId, actorId, ProjectPermissions.ProjectIntegrationsCustomManage, cancellationToken);
+    await EnsureCustomHttpGrantAsync(dbContext, projectId, cancellationToken);
+
+    return await idempotency.ExecuteAsync(
+        dbContext,
+        $"core:customHttpIntegrationTest:{projectId}:{integrationId}",
+        idempotencyKey,
+        async ct =>
+        {
+            var result = await invoker.InvokeAsync(
+                projectId,
+                integrationId,
+                new CustomHttpInvokeRequest(
+                    request.Method ?? "POST",
+                    request.Path,
+                    request.Headers,
+                    request.Payload is null ? null : JsonSerializer.Serialize(request.Payload)),
+                ct);
+
+            var integration = await dbContext.ProjectCustomHttpIntegrations
+                .SingleOrDefaultAsync(x => x.Id == integrationId && x.ProjectId == projectId, ct);
+            if (integration is not null)
+            {
+                integration.LastTestedAtUtc = DateTimeOffset.UtcNow;
+                integration.UpdatedAtUtc = DateTimeOffset.UtcNow;
+                await dbContext.SaveChangesAsync(ct);
+            }
+
+            return new IdempotentExecutionResult(
+                StatusCodes.Status200OK,
+                new ProjectCustomHttpIntegrationTestResponse(
+                    httpContext.GetOrCreateRequestId(),
+                    result.StatusCode,
+                    result.Endpoint,
+                    result.Body));
+        },
+        cancellationToken);
+});
+
+external.MapGet("/projects/{projectId:guid}/offers", async (
+    HttpContext httpContext,
+    Guid projectId,
+    CoreDbContext dbContext,
+    CancellationToken cancellationToken) =>
+{
+    EnsureFeatureEnabled(offersFeatureEnabled, "offers");
+    var actorId = GetCurrentUserId(httpContext);
+    await EnsurePermissionAsync(dbContext, projectId, actorId, ProjectPermissions.ProjectOffersManage, cancellationToken);
+
+    var offers = await dbContext.Offers
+        .AsNoTracking()
+        .Where(x => x.ProjectId == projectId)
+        .OrderBy(x => x.Name)
+        .ToListAsync(cancellationToken);
+    var variants = await dbContext.OfferVariants
+        .AsNoTracking()
+        .Where(x => x.ProjectId == projectId)
+        .ToListAsync(cancellationToken);
+    var variantsByOffer = variants
+        .GroupBy(x => x.OfferId)
+        .ToDictionary(group => group.Key, group => group.ToList());
+
+    var items = offers
+        .Select(offer =>
+        {
+            variantsByOffer.TryGetValue(offer.Id, out var offerVariants);
+            return ToOfferDto(offer, offerVariants ?? []);
+        })
+        .ToList();
+
+    return Results.Ok(new OfferListResponse(httpContext.GetOrCreateRequestId(), items));
+});
+
+external.MapPost("/projects/{projectId:guid}/offers", async (
+    HttpContext httpContext,
+    Guid projectId,
+    OfferCreateRequest request,
+    CoreDbContext dbContext,
+    IdempotencyExecutor idempotency,
+    CancellationToken cancellationToken) =>
+{
+    EnsureFeatureEnabled(offersFeatureEnabled, "offers");
+    var actorId = GetCurrentUserId(httpContext);
+    await EnsurePermissionAsync(dbContext, projectId, actorId, ProjectPermissions.ProjectOffersManage, cancellationToken);
+    var idempotencyKey = httpContext.RequireIdempotencyKey();
+
+    return await idempotency.ExecuteAsync(
+        dbContext,
+        $"core:offerCreate:{projectId}",
+        idempotencyKey,
+        async ct =>
+        {
+            if (string.IsNullOrWhiteSpace(request.Name))
+            {
+                throw new ApiErrorException(StatusCodes.Status400BadRequest, ApiErrorCodes.ValidationError, "offer.name обязателен.");
+            }
+
+            var now = DateTimeOffset.UtcNow;
+            var offer = new OfferEntity
+            {
+                Id = Guid.NewGuid(),
+                ProjectId = projectId,
+                Name = request.Name.Trim(),
+                Description = request.Description?.Trim(),
+                Status = NormalizeOfferStatus(request.Status),
+                CreatedAtUtc = now,
+                UpdatedAtUtc = now,
+            };
+            dbContext.Offers.Add(offer);
+            await dbContext.SaveChangesAsync(ct);
+
+            return new IdempotentExecutionResult(
+                StatusCodes.Status201Created,
+                new OfferResponse(httpContext.GetOrCreateRequestId(), ToOfferDto(offer, [])));
+        },
+        cancellationToken);
+});
+
+external.MapGet("/projects/{projectId:guid}/offers/{offerId:guid}", async (
+    HttpContext httpContext,
+    Guid projectId,
+    Guid offerId,
+    CoreDbContext dbContext,
+    CancellationToken cancellationToken) =>
+{
+    EnsureFeatureEnabled(offersFeatureEnabled, "offers");
+    var actorId = GetCurrentUserId(httpContext);
+    await EnsurePermissionAsync(dbContext, projectId, actorId, ProjectPermissions.ProjectOffersManage, cancellationToken);
+
+    var offer = await dbContext.Offers
+        .AsNoTracking()
+        .SingleOrDefaultAsync(x => x.ProjectId == projectId && x.Id == offerId, cancellationToken);
+    if (offer is null)
+    {
+        throw new ApiErrorException(StatusCodes.Status404NotFound, ApiErrorCodes.NotFound, "Offer не найден.");
+    }
+
+    var variants = await dbContext.OfferVariants
+        .AsNoTracking()
+        .Where(x => x.ProjectId == projectId && x.OfferId == offerId)
+        .OrderBy(x => x.Priority)
+        .ToListAsync(cancellationToken);
+
+    return Results.Ok(new OfferResponse(httpContext.GetOrCreateRequestId(), ToOfferDto(offer, variants)));
+});
+
+external.MapPatch("/projects/{projectId:guid}/offers/{offerId:guid}", async (
+    HttpContext httpContext,
+    Guid projectId,
+    Guid offerId,
+    OfferUpdateRequest request,
+    CoreDbContext dbContext,
+    IdempotencyExecutor idempotency,
+    CancellationToken cancellationToken) =>
+{
+    EnsureFeatureEnabled(offersFeatureEnabled, "offers");
+    var actorId = GetCurrentUserId(httpContext);
+    await EnsurePermissionAsync(dbContext, projectId, actorId, ProjectPermissions.ProjectOffersManage, cancellationToken);
+    var idempotencyKey = httpContext.RequireIdempotencyKey();
+
+    return await idempotency.ExecuteAsync(
+        dbContext,
+        $"core:offerUpdate:{projectId}:{offerId}",
+        idempotencyKey,
+        async ct =>
+        {
+            var offer = await dbContext.Offers
+                .SingleOrDefaultAsync(x => x.ProjectId == projectId && x.Id == offerId, ct);
+            if (offer is null)
+            {
+                throw new ApiErrorException(StatusCodes.Status404NotFound, ApiErrorCodes.NotFound, "Offer не найден.");
+            }
+
+            if (!string.IsNullOrWhiteSpace(request.Name))
+            {
+                offer.Name = request.Name.Trim();
+            }
+
+            if (request.Description is not null)
+            {
+                offer.Description = request.Description.Trim();
+            }
+
+            if (!string.IsNullOrWhiteSpace(request.Status))
+            {
+                offer.Status = NormalizeOfferStatus(request.Status);
+            }
+
+            offer.UpdatedAtUtc = DateTimeOffset.UtcNow;
+            await dbContext.SaveChangesAsync(ct);
+
+            var variants = await dbContext.OfferVariants
+                .AsNoTracking()
+                .Where(x => x.ProjectId == projectId && x.OfferId == offerId)
+                .OrderBy(x => x.Priority)
+                .ToListAsync(ct);
+
+            return new IdempotentExecutionResult(
+                StatusCodes.Status200OK,
+                new OfferResponse(httpContext.GetOrCreateRequestId(), ToOfferDto(offer, variants)));
+        },
+        cancellationToken);
+});
+
+external.MapDelete("/projects/{projectId:guid}/offers/{offerId:guid}", async (
+    HttpContext httpContext,
+    Guid projectId,
+    Guid offerId,
+    CoreDbContext dbContext,
+    IdempotencyExecutor idempotency,
+    CancellationToken cancellationToken) =>
+{
+    EnsureFeatureEnabled(offersFeatureEnabled, "offers");
+    var actorId = GetCurrentUserId(httpContext);
+    await EnsurePermissionAsync(dbContext, projectId, actorId, ProjectPermissions.ProjectOffersManage, cancellationToken);
+    var idempotencyKey = httpContext.RequireIdempotencyKey();
+
+    return await idempotency.ExecuteAsync(
+        dbContext,
+        $"core:offerDelete:{projectId}:{offerId}",
+        idempotencyKey,
+        async ct =>
+        {
+            var offer = await dbContext.Offers
+                .SingleOrDefaultAsync(x => x.ProjectId == projectId && x.Id == offerId, ct);
+            if (offer is null)
+            {
+                throw new ApiErrorException(StatusCodes.Status404NotFound, ApiErrorCodes.NotFound, "Offer не найден.");
+            }
+
+            var variants = await dbContext.OfferVariants
+                .Where(x => x.ProjectId == projectId && x.OfferId == offerId)
+                .ToListAsync(ct);
+            dbContext.OfferVariants.RemoveRange(variants);
+
+            var definition = await dbContext.WorkflowDefinitions
+                .SingleOrDefaultAsync(x => x.ProjectId == projectId && x.OfferId == offerId, ct);
+            if (definition is not null)
+            {
+                dbContext.WorkflowDefinitions.Remove(definition);
+            }
+
+            dbContext.Offers.Remove(offer);
+            await dbContext.SaveChangesAsync(ct);
+
+            return new IdempotentExecutionResult(
+                StatusCodes.Status200OK,
+                new AckResponse(httpContext.GetOrCreateRequestId(), "completed"));
+        },
+        cancellationToken);
+});
+
+external.MapPut("/projects/{projectId:guid}/offers/{offerId:guid}/variants", async (
+    HttpContext httpContext,
+    Guid projectId,
+    Guid offerId,
+    OfferVariantsReplaceRequest request,
+    CoreDbContext dbContext,
+    IdempotencyExecutor idempotency,
+    CancellationToken cancellationToken) =>
+{
+    EnsureFeatureEnabled(offersFeatureEnabled, "offers");
+    var actorId = GetCurrentUserId(httpContext);
+    await EnsurePermissionAsync(dbContext, projectId, actorId, ProjectPermissions.ProjectOffersManage, cancellationToken);
+    var idempotencyKey = httpContext.RequireIdempotencyKey();
+
+    return await idempotency.ExecuteAsync(
+        dbContext,
+        $"core:offerVariantsReplace:{projectId}:{offerId}",
+        idempotencyKey,
+        async ct =>
+        {
+            var offer = await dbContext.Offers
+                .SingleOrDefaultAsync(x => x.ProjectId == projectId && x.Id == offerId, ct);
+            if (offer is null)
+            {
+                throw new ApiErrorException(StatusCodes.Status404NotFound, ApiErrorCodes.NotFound, "Offer не найден.");
+            }
+
+            var items = request.Items ?? [];
+            var accountIds = items.Select(x => x.AccountId).Distinct().ToArray();
+            if (accountIds.Length > 0)
+            {
+                var knownAccountIds = await dbContext.Accounts
+                    .AsNoTracking()
+                    .Where(x => x.ProjectId == projectId && accountIds.Contains(x.Id))
+                    .Select(x => x.Id)
+                    .ToListAsync(ct);
+                var missing = accountIds.Except(knownAccountIds).ToArray();
+                if (missing.Length > 0)
+                {
+                    throw new ApiErrorException(StatusCodes.Status400BadRequest, ApiErrorCodes.ValidationError, "В variants есть accountId, не принадлежащий проекту.");
+                }
+            }
+
+            var existingVariants = await dbContext.OfferVariants
+                .Where(x => x.ProjectId == projectId && x.OfferId == offerId)
+                .ToListAsync(ct);
+            dbContext.OfferVariants.RemoveRange(existingVariants);
+
+            var now = DateTimeOffset.UtcNow;
+            foreach (var item in items)
+            {
+                if (string.IsNullOrWhiteSpace(item.WorkerProductId)
+                    || string.IsNullOrWhiteSpace(item.Platform)
+                    || string.IsNullOrWhiteSpace(item.ObservedTitle)
+                    || string.IsNullOrWhiteSpace(item.ObservedCurrency))
+                {
+                    throw new ApiErrorException(StatusCodes.Status400BadRequest, ApiErrorCodes.ValidationError, "variant workerProductId/platform/observedTitle/observedCurrency обязательны.");
+                }
+
+                dbContext.OfferVariants.Add(new OfferVariantEntity
+                {
+                    Id = Guid.NewGuid(),
+                    OfferId = offerId,
+                    ProjectId = projectId,
+                    AccountId = item.AccountId,
+                    WorkerProductId = item.WorkerProductId.Trim(),
+                    Platform = item.Platform.Trim().ToLowerInvariant(),
+                    ObservedTitle = item.ObservedTitle.Trim(),
+                    ObservedDescription = item.ObservedDescription?.Trim(),
+                    ObservedPrice = item.ObservedPrice,
+                    ObservedCurrency = item.ObservedCurrency.Trim().ToUpperInvariant(),
+                    Priority = item.Priority,
+                    IsActive = item.IsActive,
+                    CreatedAtUtc = now,
+                    UpdatedAtUtc = now,
+                });
+            }
+
+            offer.UpdatedAtUtc = now;
+            await dbContext.SaveChangesAsync(ct);
+
+            var variants = await dbContext.OfferVariants
+                .AsNoTracking()
+                .Where(x => x.ProjectId == projectId && x.OfferId == offerId)
+                .OrderBy(x => x.Priority)
+                .ToListAsync(ct);
+
+            return new IdempotentExecutionResult(
+                StatusCodes.Status200OK,
+                new OfferResponse(httpContext.GetOrCreateRequestId(), ToOfferDto(offer, variants)));
+        },
+        cancellationToken);
+});
+
+external.MapGet("/projects/{projectId:guid}/offers/{offerId:guid}/workflow/draft", async (
+    HttpContext httpContext,
+    Guid projectId,
+    Guid offerId,
+    CoreDbContext dbContext,
+    CancellationToken cancellationToken) =>
+{
+    EnsureFeatureEnabled(workflowsFeatureEnabled, "workflows");
+    var actorId = GetCurrentUserId(httpContext);
+    await EnsurePermissionAsync(dbContext, projectId, actorId, ProjectPermissions.ProjectWorkflowsManage, cancellationToken);
+
+    var offerExists = await dbContext.Offers.AnyAsync(x => x.ProjectId == projectId && x.Id == offerId, cancellationToken);
+    if (!offerExists)
+    {
+        throw new ApiErrorException(StatusCodes.Status404NotFound, ApiErrorCodes.NotFound, "Offer не найден.");
+    }
+
+    var definition = await dbContext.WorkflowDefinitions
+        .AsNoTracking()
+        .SingleOrDefaultAsync(x => x.ProjectId == projectId && x.OfferId == offerId, cancellationToken);
+
+    var draft = definition is null
+        ? new WorkflowDraftModel()
+        : JsonSerializer.Deserialize<WorkflowDraftModel>(definition.DraftJson, WorkflowExecutionEngine.JsonOptions()) ?? new WorkflowDraftModel();
+
+    return Results.Ok(new WorkflowDraftResponse(
+        httpContext.GetOrCreateRequestId(),
+        draft,
+        definition?.Status ?? "draft",
+        definition?.PublishedVersion ?? 0,
+        definition?.PublishedAtUtc));
+});
+
+external.MapPut("/projects/{projectId:guid}/offers/{offerId:guid}/workflow/draft", async (
+    HttpContext httpContext,
+    Guid projectId,
+    Guid offerId,
+    WorkflowDraftModel request,
+    CoreDbContext dbContext,
+    IdempotencyExecutor idempotency,
+    CancellationToken cancellationToken) =>
+{
+    EnsureFeatureEnabled(workflowsFeatureEnabled, "workflows");
+    var actorId = GetCurrentUserId(httpContext);
+    await EnsurePermissionAsync(dbContext, projectId, actorId, ProjectPermissions.ProjectWorkflowsManage, cancellationToken);
+    var idempotencyKey = httpContext.RequireIdempotencyKey();
+
+    return await idempotency.ExecuteAsync(
+        dbContext,
+        $"core:workflowDraftPut:{projectId}:{offerId}",
+        idempotencyKey,
+        async ct =>
+        {
+            var offer = await dbContext.Offers
+                .SingleOrDefaultAsync(x => x.ProjectId == projectId && x.Id == offerId, ct);
+            if (offer is null)
+            {
+                throw new ApiErrorException(StatusCodes.Status404NotFound, ApiErrorCodes.NotFound, "Offer не найден.");
+            }
+
+            ValidateWorkflowDraftForSave(request);
+
+            var now = DateTimeOffset.UtcNow;
+            var definition = await dbContext.WorkflowDefinitions
+                .SingleOrDefaultAsync(x => x.ProjectId == projectId && x.OfferId == offerId, ct);
+            if (definition is null)
+            {
+                definition = new WorkflowDefinitionEntity
+                {
+                    Id = Guid.NewGuid(),
+                    ProjectId = projectId,
+                    OfferId = offerId,
+                    DraftJson = JsonSerializer.Serialize(request),
+                    PublishedJson = null,
+                    Status = "draft",
+                    PublishedVersion = 0,
+                    MaxSteps = request.MaxSteps,
+                    MaxDurationSeconds = request.MaxDurationSeconds,
+                    MaxRetries = request.MaxRetries,
+                    CreatedAtUtc = now,
+                    UpdatedAtUtc = now,
+                    UpdatedByUserId = actorId,
+                };
+                dbContext.WorkflowDefinitions.Add(definition);
+            }
+            else
+            {
+                definition.DraftJson = JsonSerializer.Serialize(request);
+                definition.MaxSteps = request.MaxSteps;
+                definition.MaxDurationSeconds = request.MaxDurationSeconds;
+                definition.MaxRetries = request.MaxRetries;
+                definition.UpdatedAtUtc = now;
+                definition.UpdatedByUserId = actorId;
+                if (string.IsNullOrWhiteSpace(definition.PublishedJson))
+                {
+                    definition.Status = "draft";
+                }
+            }
+
+            await dbContext.SaveChangesAsync(ct);
+            return new IdempotentExecutionResult(
+                StatusCodes.Status200OK,
+                new WorkflowDraftResponse(
+                    httpContext.GetOrCreateRequestId(),
+                    request,
+                    definition.Status,
+                    definition.PublishedVersion,
+                    definition.PublishedAtUtc));
+        },
+        cancellationToken);
+});
+
+external.MapPost("/projects/{projectId:guid}/offers/{offerId:guid}/workflow/publish", async (
+    HttpContext httpContext,
+    Guid projectId,
+    Guid offerId,
+    CoreDbContext dbContext,
+    IdempotencyExecutor idempotency,
+    CancellationToken cancellationToken) =>
+{
+    EnsureFeatureEnabled(workflowsFeatureEnabled, "workflows");
+    var actorId = GetCurrentUserId(httpContext);
+    await EnsurePermissionAsync(dbContext, projectId, actorId, ProjectPermissions.ProjectWorkflowsManage, cancellationToken);
+    var idempotencyKey = httpContext.RequireIdempotencyKey();
+
+    return await idempotency.ExecuteAsync(
+        dbContext,
+        $"core:workflowPublish:{projectId}:{offerId}",
+        idempotencyKey,
+        async ct =>
+        {
+            var definition = await dbContext.WorkflowDefinitions
+                .SingleOrDefaultAsync(x => x.ProjectId == projectId && x.OfferId == offerId, ct);
+            if (definition is null)
+            {
+                throw new ApiErrorException(StatusCodes.Status404NotFound, ApiErrorCodes.NotFound, "Workflow draft не найден.");
+            }
+
+            var draft = JsonSerializer.Deserialize<WorkflowDraftModel>(definition.DraftJson, WorkflowExecutionEngine.JsonOptions())
+                ?? throw new ApiErrorException(StatusCodes.Status400BadRequest, ApiErrorCodes.ValidationError, "Workflow draft поврежден.");
+            WorkflowGraphValidator.ValidateOrThrow(draft);
+
+            definition.PublishedJson = definition.DraftJson;
+            definition.Status = "published";
+            definition.PublishedVersion = Math.Max(1, definition.PublishedVersion + 1);
+            definition.PublishedAtUtc = DateTimeOffset.UtcNow;
+            definition.PublishedByUserId = actorId;
+            definition.UpdatedAtUtc = DateTimeOffset.UtcNow;
+            definition.UpdatedByUserId = actorId;
+
+            await dbContext.SaveChangesAsync(ct);
+
+            return new IdempotentExecutionResult(
+                StatusCodes.Status200OK,
+                new WorkflowDraftResponse(
+                    httpContext.GetOrCreateRequestId(),
+                    draft,
+                    definition.Status,
+                    definition.PublishedVersion,
+                    definition.PublishedAtUtc));
+        },
+        cancellationToken);
+});
+
+external.MapGet("/projects/{projectId:guid}/offers/{offerId:guid}/workflow/executions", async (
+    HttpContext httpContext,
+    Guid projectId,
+    Guid offerId,
+    CoreDbContext dbContext,
+    CancellationToken cancellationToken) =>
+{
+    EnsureFeatureEnabled(workflowsFeatureEnabled, "workflows");
+    var actorId = GetCurrentUserId(httpContext);
+    await EnsurePermissionAsync(dbContext, projectId, actorId, ProjectPermissions.ProjectWorkflowsManage, cancellationToken);
+
+    var executions = await dbContext.WorkflowExecutions
+        .AsNoTracking()
+        .Where(x => x.ProjectId == projectId && x.OfferId == offerId)
+        .OrderByDescending(x => x.StartedAtUtc)
+        .Take(50)
+        .ToListAsync(cancellationToken);
+    var executionIds = executions.Select(x => x.Id).ToArray();
+    var steps = await dbContext.WorkflowExecutionSteps
+        .AsNoTracking()
+        .Where(x => executionIds.Contains(x.ExecutionId))
+        .OrderBy(x => x.StepIndex)
+        .ToListAsync(cancellationToken);
+    var stepsByExecutionId = steps
+        .GroupBy(x => x.ExecutionId)
+        .ToDictionary(group => group.Key, group => group.ToList());
+
+    var items = executions.Select(execution =>
+    {
+        stepsByExecutionId.TryGetValue(execution.Id, out var executionSteps);
+        return new WorkflowExecutionDto(
+            execution.Id,
+            execution.SourceOrderId,
+            execution.WorkflowVersion,
+            execution.Status,
+            execution.StartedAtUtc,
+            execution.FinishedAtUtc,
+            execution.LastError,
+            executionSteps?
+                .Select(step => new WorkflowExecutionStepDto(
+                    step.NodeId,
+                    step.NodeType,
+                    step.StepIndex,
+                    step.Status,
+                    step.StartedAtUtc,
+                    step.FinishedAtUtc,
+                    step.OutputJson,
+                    step.Error))
+                .ToList() ?? []);
+    }).ToList();
+
+    return Results.Ok(new WorkflowExecutionListResponse(httpContext.GetOrCreateRequestId(), items));
+});
+
+app.MapPost("/v1/integrations/workflow/purchase", async (
+    HttpContext httpContext,
+    PurchaseWebhookRequest request,
+    CoreDbContext dbContext,
+    IConfiguration configuration,
+    CancellationToken cancellationToken) =>
+{
+    EnsureFeatureEnabled(workflowsFeatureEnabled, "workflows");
+    var workflowPurchaseWebhookSecret = configuration["WORKFLOW_PURCHASE_WEBHOOK_SECRET"] ?? string.Empty;
+
+    if (string.IsNullOrWhiteSpace(workflowPurchaseWebhookSecret)
+        || !httpContext.Request.Headers.TryGetValue("X-Workflow-Purchase-Secret", out var providedSecret)
+        || !string.Equals(providedSecret.ToString(), workflowPurchaseWebhookSecret, StringComparison.Ordinal))
+    {
+        throw new ApiErrorException(StatusCodes.Status401Unauthorized, ApiErrorCodes.Unauthorized, "Некорректный webhook secret.");
+    }
+
+    if (request.ProjectId == Guid.Empty || request.OfferId == Guid.Empty || string.IsNullOrWhiteSpace(request.SourceOrderId))
+    {
+        throw new ApiErrorException(StatusCodes.Status400BadRequest, ApiErrorCodes.ValidationError, "projectId/offerId/sourceOrderId обязательны.");
+    }
+
+    var offerExists = await dbContext.Offers.AnyAsync(
+        x => x.ProjectId == request.ProjectId && x.Id == request.OfferId,
+        cancellationToken);
+    if (!offerExists)
+    {
+        throw new ApiErrorException(StatusCodes.Status404NotFound, ApiErrorCodes.NotFound, "Offer не найден.");
+    }
+
+    var hasPublishedWorkflow = await dbContext.WorkflowDefinitions.AnyAsync(
+        x => x.ProjectId == request.ProjectId
+             && x.OfferId == request.OfferId
+             && !string.IsNullOrWhiteSpace(x.PublishedJson),
+        cancellationToken);
+    if (!hasPublishedWorkflow)
+    {
+        throw new ApiErrorException(StatusCodes.Status409Conflict, ApiErrorCodes.Conflict, "Для offer не опубликован workflow.");
+    }
+
+    var normalizedSourceOrderId = request.SourceOrderId.Trim();
+    var normalizedEventType = NormalizeWorkflowEventType(request.EventType);
+    var triggerSource = BuildWorkflowTriggerSource(normalizedEventType);
+    var duplicate = await dbContext.WorkflowTriggerEvents.AnyAsync(
+        x => x.ProjectId == request.ProjectId
+             && x.SourceOrderId == normalizedSourceOrderId
+             && x.Source == triggerSource,
+        cancellationToken);
+    if (duplicate)
+    {
+        return Results.Ok(new PurchaseWebhookAckResponse(
+            httpContext.GetOrCreateRequestId(),
+            "duplicate"));
+    }
+
+    var now = DateTimeOffset.UtcNow;
+    var payload = request.Payload is null
+        ? new Dictionary<string, object?>(StringComparer.Ordinal)
+        : new Dictionary<string, object?>(request.Payload, StringComparer.Ordinal);
+
+    if (!string.IsNullOrWhiteSpace(request.Platform))
+    {
+        payload["platform"] = request.Platform.Trim();
+    }
+
+    if (request.Quantity.HasValue)
+    {
+        payload["quantity"] = request.Quantity.Value;
+    }
+
+    if (request.Amount.HasValue)
+    {
+        payload["amount"] = request.Amount.Value;
+    }
+
+    if (!string.IsNullOrWhiteSpace(request.Currency))
+    {
+        payload["currency"] = request.Currency.Trim().ToUpperInvariant();
+    }
+
+    if (!string.IsNullOrWhiteSpace(request.MessageText))
+    {
+        payload["messageText"] = request.MessageText.Trim();
+    }
+
+    if (request.ReviewRating.HasValue)
+    {
+        payload["reviewRating"] = request.ReviewRating.Value;
+    }
+
+    if (!string.IsNullOrWhiteSpace(request.ReviewText))
+    {
+        payload["reviewText"] = request.ReviewText.Trim();
+    }
+
+    var triggerEvent = new WorkflowTriggerEventEntity
+    {
+        Id = Guid.NewGuid(),
+        ProjectId = request.ProjectId,
+        OfferId = request.OfferId,
+        Source = triggerSource,
+        SourceOrderId = normalizedSourceOrderId,
+        BuyerId = request.BuyerId?.Trim(),
+        PayloadJson = payload.Count == 0 ? "{}" : JsonSerializer.Serialize(payload),
+        Status = "accepted",
+        CreatedAtUtc = now,
+    };
+    dbContext.WorkflowTriggerEvents.Add(triggerEvent);
+    dbContext.WorkflowOutbox.Add(new WorkflowOutboxEntity
+    {
+        Id = Guid.NewGuid(),
+        TriggerEventId = triggerEvent.Id,
+        ProjectId = request.ProjectId,
+        OfferId = request.OfferId,
+        Status = "pending",
+        AttemptCount = 0,
+        NextAttemptAtUtc = now,
+        CreatedAtUtc = now,
+    });
+    await dbContext.SaveChangesAsync(cancellationToken);
+
+    return Results.Accepted(
+        $"/v1/projects/{request.ProjectId}/offers/{request.OfferId}/workflow/executions",
+        new PurchaseWebhookAckResponse(
+            httpContext.GetOrCreateRequestId(),
+            "accepted"));
+}).AllowAnonymous();
 
 external.MapGet("/projects/{projectId:guid}/accounts", async (
     HttpContext httpContext,
@@ -2005,12 +4035,13 @@ external.MapPost("/account-api/{routeKey}/{action}", async (
 
     if (action.StartsWith("ext.account.proxy-credentials.", StringComparison.Ordinal)
         || action.StartsWith("ext.account.lifecycle.", StringComparison.Ordinal)
-        || action.StartsWith("ext.account.marketplace-auth.", StringComparison.Ordinal))
+        || action.StartsWith("ext.account.marketplace-auth.", StringComparison.Ordinal)
+        || action.StartsWith("ext.integration.", StringComparison.Ordinal))
     {
         throw new ApiErrorException(
             StatusCodes.Status400BadRequest,
             ApiErrorCodes.ValidationError,
-            "Для ext.account.* используйте профильные account endpoint-ы Core API.");
+            "Для ext.account.* и ext.integration.* используйте профильные endpoint-ы Core API.");
     }
 
     var authorizationHeader = httpContext.Request.Headers.Authorization.ToString();
@@ -2377,6 +4408,53 @@ static AccountDto ToAccountDto(AccountEntity account)
         account.ProxyLoginMasked);
 }
 
+static OfferDto ToOfferDto(OfferEntity offer, IReadOnlyCollection<OfferVariantEntity> variants)
+{
+    var activeVariants = variants
+        .Where(x => x.IsActive)
+        .ToList();
+
+    var prices = activeVariants
+        .Select(x => x.ObservedPrice)
+        .ToArray();
+    var currencies = activeVariants
+        .Select(x => x.ObservedCurrency.Trim().ToUpperInvariant())
+        .Distinct(StringComparer.OrdinalIgnoreCase)
+        .OrderBy(x => x, StringComparer.Ordinal)
+        .ToList();
+    decimal? minPrice = prices.Length == 0 ? null : prices.Min();
+    decimal? maxPrice = prices.Length == 0 ? null : prices.Max();
+    decimal? averagePrice = prices.Length == 0 ? null : decimal.Round(prices.Average(), 2);
+
+    return new OfferDto(
+        offer.Id,
+        offer.Name,
+        offer.Description,
+        offer.Status,
+        minPrice,
+        maxPrice,
+        averagePrice,
+        currencies,
+        variants.Count,
+        variants
+            .OrderBy(x => x.Priority)
+            .ThenBy(x => x.CreatedAtUtc)
+            .Select(x => new OfferVariantDto(
+                x.Id,
+                x.AccountId,
+                x.WorkerProductId,
+                x.Platform,
+                x.ObservedTitle,
+                x.ObservedDescription,
+                x.ObservedPrice,
+                x.ObservedCurrency,
+                x.Priority,
+                x.IsActive))
+            .ToList(),
+        offer.CreatedAtUtc,
+        offer.UpdatedAtUtc);
+}
+
 static AccountTypeDto ToAccountTypeDto(AccountsManagerAccountTypeDefinition definition)
 {
     return new AccountTypeDto(
@@ -2515,10 +4593,20 @@ static IReadOnlyCollection<string> NormalizeScopes(string integrationKey, IReadO
         allowed = new HashSet<string>(["read", "jobs"], StringComparer.OrdinalIgnoreCase);
         defaults = ["read", "jobs"];
     }
+    else if (IntegrationKeys.WorkerIntegrations.Contains(integrationKey))
+    {
+        allowed = new HashSet<string>(["read", "jobs"], StringComparer.OrdinalIgnoreCase);
+        defaults = ["read", "jobs"];
+    }
     else if (string.Equals(integrationKey, IntegrationKeys.Telegram, StringComparison.OrdinalIgnoreCase))
     {
         allowed = new HashSet<string>(["send"], StringComparer.OrdinalIgnoreCase);
         defaults = ["send"];
+    }
+    else if (string.Equals(integrationKey, IntegrationKeys.CustomHttp, StringComparison.OrdinalIgnoreCase))
+    {
+        allowed = new HashSet<string>(["use"], StringComparer.OrdinalIgnoreCase);
+        defaults = ["use"];
     }
     else if (integrationKey.StartsWith("platform.", StringComparison.Ordinal))
     {
@@ -2555,12 +4643,222 @@ static string NormalizeScope(string scope)
     return normalized;
 }
 
+static string ResolveIntegrationActionNamespace(string integrationKey)
+{
+    if (string.Equals(integrationKey, IntegrationKeys.SteamAccountsManager, StringComparison.OrdinalIgnoreCase))
+    {
+        return "steam";
+    }
+
+    if (string.Equals(integrationKey, IntegrationKeys.FunPayStat, StringComparison.OrdinalIgnoreCase))
+    {
+        return "funpaystat";
+    }
+
+    return integrationKey.Replace("-", string.Empty, StringComparison.Ordinal).ToLowerInvariant();
+}
+
 static IReadOnlyCollection<string> SplitScopes(string scopesCsv)
 {
     return scopesCsv
         .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
         .Distinct(StringComparer.OrdinalIgnoreCase)
         .ToArray();
+}
+
+static ProjectIntegrationWorkerRuntimeEntity EnsureWorkerRuntime(
+    CoreDbContext dbContext,
+    ProjectIntegrationWorkerRuntimeEntity? runtime,
+    Guid projectId,
+    string integrationKey,
+    DateTimeOffset now,
+    string status,
+    bool clearDeprovisionedAt)
+{
+    if (runtime is null)
+    {
+        runtime = new ProjectIntegrationWorkerRuntimeEntity
+        {
+            Id = Guid.NewGuid(),
+            ProjectId = projectId,
+            IntegrationKey = integrationKey,
+            RuntimeAccountId = CreateDeterministicGuid($"core:integrationRuntime:{projectId}:{integrationKey}"),
+            Status = status,
+            CreatedAtUtc = now,
+            UpdatedAtUtc = now,
+        };
+        dbContext.ProjectIntegrationWorkerRuntimes.Add(runtime);
+        return runtime;
+    }
+
+    runtime.Status = status;
+    runtime.LastError = null;
+    runtime.UpdatedAtUtc = now;
+    if (clearDeprovisionedAt)
+    {
+        runtime.DeprovisionedAtUtc = null;
+    }
+
+    return runtime;
+}
+
+static async Task QueueWorkerRuntimeOutboxOperationAsync(
+    CoreDbContext dbContext,
+    Guid projectId,
+    string integrationKey,
+    Guid runtimeAccountId,
+    string operation,
+    DateTimeOffset nextAttemptAtUtc,
+    bool suppressProvisionOperations,
+    bool suppressDeprovisionOperations,
+    CancellationToken cancellationToken)
+{
+    if (suppressProvisionOperations)
+    {
+        await SupersedeWorkerRuntimeOutboxOperationsAsync(
+            dbContext,
+            projectId,
+            integrationKey,
+            operation: "provision",
+            nextAttemptAtUtc,
+            note: $"Suppressed by {operation}.",
+            cancellationToken);
+    }
+
+    if (suppressDeprovisionOperations)
+    {
+        await SupersedeWorkerRuntimeOutboxOperationsAsync(
+            dbContext,
+            projectId,
+            integrationKey,
+            operation: "deprovision",
+            nextAttemptAtUtc,
+            note: $"Suppressed by {operation}.",
+            cancellationToken);
+    }
+
+    var pending = await dbContext.IntegrationWorkerRuntimeOutbox
+        .SingleOrDefaultAsync(
+            x => x.ProjectId == projectId
+                 && x.IntegrationKey == integrationKey
+                 && x.Operation == operation
+                 && (x.Status == "pending" || x.Status == "retry"),
+            cancellationToken);
+    if (pending is not null)
+    {
+        pending.Status = "pending";
+        pending.AttemptCount = 0;
+        pending.NextAttemptAtUtc = nextAttemptAtUtc;
+        pending.LastError = null;
+        return;
+    }
+
+    dbContext.IntegrationWorkerRuntimeOutbox.Add(new IntegrationWorkerRuntimeOutboxEntity
+    {
+        Id = Guid.NewGuid(),
+        ProjectId = projectId,
+        IntegrationKey = integrationKey,
+        RuntimeAccountId = runtimeAccountId,
+        Operation = operation,
+        Status = "pending",
+        AttemptCount = 0,
+        NextAttemptAtUtc = nextAttemptAtUtc,
+        CreatedAtUtc = DateTimeOffset.UtcNow,
+    });
+}
+
+static async Task SupersedeWorkerRuntimeOutboxOperationsAsync(
+    CoreDbContext dbContext,
+    Guid projectId,
+    string integrationKey,
+    string operation,
+    DateTimeOffset now,
+    string note,
+    CancellationToken cancellationToken)
+{
+    var pendingItems = await dbContext.IntegrationWorkerRuntimeOutbox
+        .Where(x => x.ProjectId == projectId
+                    && x.IntegrationKey == integrationKey
+                    && x.Operation == operation
+                    && (x.Status == "pending" || x.Status == "retry"))
+        .ToListAsync(cancellationToken);
+
+    foreach (var item in pendingItems)
+    {
+        item.Status = "superseded";
+        item.ProcessedAtUtc = now;
+        item.LastError = note.Length > 1000 ? note[..1000] : note;
+    }
+}
+
+static TelegramConnectivityFailureInfo ParseTelegramConnectivityFailure(string message)
+{
+    var normalized = message?.Trim() ?? string.Empty;
+    if (normalized.StartsWith("both_failed:", StringComparison.OrdinalIgnoreCase))
+    {
+        var payload = normalized["both_failed:".Length..].Trim();
+        var parts = payload.Split(';', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+        var proxyError = parts.FirstOrDefault(x => x.StartsWith("proxy=", StringComparison.OrdinalIgnoreCase));
+        var directError = parts.FirstOrDefault(x => x.StartsWith("direct=", StringComparison.OrdinalIgnoreCase));
+        return new TelegramConnectivityFailureInfo(
+            EffectivePath: "none",
+            ProxyAttempted: true,
+            ProxySucceeded: false,
+            DirectAttempted: true,
+            DirectSucceeded: false,
+            ReasonCode: "both_failed",
+            ProxyError: proxyError?["proxy=".Length..],
+            DirectError: directError?["direct=".Length..]);
+    }
+
+    if (normalized.StartsWith("proxy_upstream_blocked:", StringComparison.OrdinalIgnoreCase))
+    {
+        return new TelegramConnectivityFailureInfo(
+            EffectivePath: "none",
+            ProxyAttempted: true,
+            ProxySucceeded: false,
+            DirectAttempted: false,
+            DirectSucceeded: false,
+            ReasonCode: "proxy_upstream_blocked",
+            ProxyError: normalized["proxy_upstream_blocked:".Length..].Trim(),
+            DirectError: null);
+    }
+
+    if (normalized.StartsWith("direct_egress_blocked:", StringComparison.OrdinalIgnoreCase))
+    {
+        return new TelegramConnectivityFailureInfo(
+            EffectivePath: "none",
+            ProxyAttempted: false,
+            ProxySucceeded: false,
+            DirectAttempted: true,
+            DirectSucceeded: false,
+            ReasonCode: "direct_egress_blocked",
+            ProxyError: null,
+            DirectError: normalized["direct_egress_blocked:".Length..].Trim());
+    }
+
+    if (normalized.StartsWith("telegram_api_rejected:", StringComparison.OrdinalIgnoreCase))
+    {
+        return new TelegramConnectivityFailureInfo(
+            EffectivePath: "none",
+            ProxyAttempted: true,
+            ProxySucceeded: false,
+            DirectAttempted: false,
+            DirectSucceeded: false,
+            ReasonCode: "telegram_api_rejected",
+            ProxyError: normalized["telegram_api_rejected:".Length..].Trim(),
+            DirectError: null);
+    }
+
+    return new TelegramConnectivityFailureInfo(
+        EffectivePath: "none",
+        ProxyAttempted: false,
+        ProxySucceeded: false,
+        DirectAttempted: false,
+        DirectSucceeded: false,
+        ReasonCode: "unknown",
+        ProxyError: normalized,
+        DirectError: null);
 }
 
 static NotificationOutboxEntity CreateNotificationOutbox(
@@ -2588,6 +4886,29 @@ static NotificationOutboxEntity CreateNotificationOutbox(
     };
 }
 
+static async Task<TelegramProxyRuntimeConfig?> ResolveActiveTelegramProxyAsync(
+    CoreDbContext dbContext,
+    ProjectSecretCrypto crypto,
+    CancellationToken cancellationToken)
+{
+    var proxy = await dbContext.TelegramProxyProfiles
+        .AsNoTracking()
+        .Where(x => x.IsActive)
+        .OrderByDescending(x => x.UpdatedAtUtc)
+        .FirstOrDefaultAsync(cancellationToken);
+
+    if (proxy is null)
+    {
+        return null;
+    }
+
+    var scheme = string.Equals(proxy.ProxyType, "socks5", StringComparison.OrdinalIgnoreCase) ? "socks5" : "http";
+    var uri = new Uri($"{scheme}://{proxy.Host}:{proxy.Port}");
+    var login = string.IsNullOrWhiteSpace(proxy.LoginCiphertext) ? null : crypto.Decrypt(proxy.LoginCiphertext);
+    var password = string.IsNullOrWhiteSpace(proxy.PasswordCiphertext) ? null : crypto.Decrypt(proxy.PasswordCiphertext);
+    return new TelegramProxyRuntimeConfig(uri, login, password);
+}
+
 static async Task EnsureActiveIntegrationGrantAsync(
     CoreDbContext dbContext,
     Guid projectId,
@@ -2607,6 +4928,244 @@ static async Task EnsureActiveIntegrationGrantAsync(
     }
 }
 
+static async Task EnsureCustomHttpGrantAsync(
+    CoreDbContext dbContext,
+    Guid projectId,
+    CancellationToken cancellationToken)
+{
+    var grant = await dbContext.ProjectIntegrationGrants
+        .AsNoTracking()
+        .SingleOrDefaultAsync(
+            x => x.ProjectId == projectId
+                 && x.IntegrationKey == IntegrationKeys.CustomHttp,
+            cancellationToken);
+
+    if (grant is null || !string.Equals(grant.Status, "active", StringComparison.OrdinalIgnoreCase))
+    {
+        throw new ApiErrorException(
+            StatusCodes.Status403Forbidden,
+            ApiErrorCodes.Forbidden,
+            "Для custom HTTP интеграций требуется активный feature-grant `custom-http`.");
+    }
+
+    var scopes = SplitScopes(grant.ScopesCsv);
+    if (!scopes.Contains("use", StringComparer.OrdinalIgnoreCase))
+    {
+        throw new ApiErrorException(
+            StatusCodes.Status403Forbidden,
+            ApiErrorCodes.Forbidden,
+            "Для custom HTTP интеграций требуется scope `use`.");
+    }
+}
+
+static void EnsureFeatureEnabled(bool enabled, string featureName)
+{
+    if (enabled)
+    {
+        return;
+    }
+
+    throw new ApiErrorException(
+        StatusCodes.Status403Forbidden,
+        ApiErrorCodes.FeatureNotReady,
+        $"Функция `{featureName}` временно выключена feature-flag.");
+}
+
+static string NormalizeOfferStatus(string? status)
+{
+    var normalized = string.IsNullOrWhiteSpace(status)
+        ? "active"
+        : status.Trim().ToLowerInvariant();
+    return normalized switch
+    {
+        "active" => "active",
+        "paused" => "paused",
+        "archived" => "archived",
+        _ => throw new ApiErrorException(
+            StatusCodes.Status400BadRequest,
+            ApiErrorCodes.ValidationError,
+            "offer.status должен быть active|paused|archived."),
+    };
+}
+
+static string NormalizeCustomIntegrationStatus(string? status)
+{
+    var normalized = string.IsNullOrWhiteSpace(status)
+        ? "active"
+        : status.Trim().ToLowerInvariant();
+    return normalized switch
+    {
+        "active" => "active",
+        "disabled" => "disabled",
+        _ => throw new ApiErrorException(
+            StatusCodes.Status400BadRequest,
+            ApiErrorCodes.ValidationError,
+            "custom integration status должен быть active|disabled."),
+    };
+}
+
+static string NormalizeAllowlistHostPattern(string? hostPattern)
+{
+    if (string.IsNullOrWhiteSpace(hostPattern))
+    {
+        throw new ApiErrorException(
+            StatusCodes.Status400BadRequest,
+            ApiErrorCodes.ValidationError,
+            "hostPattern обязателен.");
+    }
+
+    var normalized = hostPattern.Trim().ToLowerInvariant();
+    if (normalized.StartsWith("https://", StringComparison.Ordinal)
+        || normalized.StartsWith("http://", StringComparison.Ordinal))
+    {
+        throw new ApiErrorException(
+            StatusCodes.Status400BadRequest,
+            ApiErrorCodes.ValidationError,
+            "hostPattern должен содержать только host (без scheme/path).");
+    }
+
+    if (normalized.Contains('/') || normalized.Contains(':'))
+    {
+        throw new ApiErrorException(
+            StatusCodes.Status400BadRequest,
+            ApiErrorCodes.ValidationError,
+            "hostPattern должен быть в формате host или *.domain.tld.");
+    }
+
+    var pattern = normalized;
+    if (pattern.StartsWith("*."))
+    {
+        pattern = pattern[2..];
+    }
+
+    if (pattern.Length == 0 || pattern.Contains("..", StringComparison.Ordinal))
+    {
+        throw new ApiErrorException(
+            StatusCodes.Status400BadRequest,
+            ApiErrorCodes.ValidationError,
+            "Некорректный hostPattern.");
+    }
+
+    return normalized;
+}
+
+static void ValidateWorkflowDraftForSave(WorkflowDraftModel draft)
+{
+    if (draft is null)
+    {
+        throw new ApiErrorException(
+            StatusCodes.Status400BadRequest,
+            ApiErrorCodes.ValidationError,
+            "Workflow draft обязателен.");
+    }
+
+    if (string.IsNullOrWhiteSpace(draft.Version))
+    {
+        throw new ApiErrorException(
+            StatusCodes.Status400BadRequest,
+            ApiErrorCodes.ValidationError,
+            "workflow.version обязателен.");
+    }
+
+    if (draft.MaxSteps is < 1 or > 5000)
+    {
+        throw new ApiErrorException(
+            StatusCodes.Status400BadRequest,
+            ApiErrorCodes.ValidationError,
+            "workflow.maxSteps должен быть в диапазоне 1..5000.");
+    }
+
+    if (draft.MaxDurationSeconds is < 1 or > 3600)
+    {
+        throw new ApiErrorException(
+            StatusCodes.Status400BadRequest,
+            ApiErrorCodes.ValidationError,
+            "workflow.maxDurationSeconds должен быть в диапазоне 1..3600.");
+    }
+
+    if (draft.MaxRetries is < 0 or > 20)
+    {
+        throw new ApiErrorException(
+            StatusCodes.Status400BadRequest,
+            ApiErrorCodes.ValidationError,
+            "workflow.maxRetries должен быть в диапазоне 0..20.");
+    }
+
+    var nodeIds = new HashSet<string>(StringComparer.Ordinal);
+    foreach (var node in draft.Nodes)
+    {
+        if (string.IsNullOrWhiteSpace(node.Id))
+        {
+            throw new ApiErrorException(
+                StatusCodes.Status400BadRequest,
+                ApiErrorCodes.ValidationError,
+                "workflow.nodes[].id обязателен.");
+        }
+
+        var trimmedId = node.Id.Trim();
+        if (!nodeIds.Add(trimmedId))
+        {
+            throw new ApiErrorException(
+                StatusCodes.Status400BadRequest,
+                ApiErrorCodes.ValidationError,
+                $"workflow node id `{trimmedId}` повторяется.");
+        }
+
+        if (string.IsNullOrWhiteSpace(node.Type) || !WorkflowNodeTypes.All.Contains(node.Type.Trim()))
+        {
+            throw new ApiErrorException(
+                StatusCodes.Status400BadRequest,
+                ApiErrorCodes.ValidationError,
+                $"workflow node type `{node.Type}` не поддерживается.");
+        }
+    }
+
+    foreach (var edge in draft.Edges)
+    {
+        if (string.IsNullOrWhiteSpace(edge.Id))
+        {
+            throw new ApiErrorException(
+                StatusCodes.Status400BadRequest,
+                ApiErrorCodes.ValidationError,
+                "workflow.edges[].id обязателен.");
+        }
+
+        if (string.IsNullOrWhiteSpace(edge.Source) || !nodeIds.Contains(edge.Source.Trim()))
+        {
+            throw new ApiErrorException(
+                StatusCodes.Status400BadRequest,
+                ApiErrorCodes.ValidationError,
+                $"workflow edge source `{edge.Source}` не найден.");
+        }
+
+        if (string.IsNullOrWhiteSpace(edge.Target) || !nodeIds.Contains(edge.Target.Trim()))
+        {
+            throw new ApiErrorException(
+                StatusCodes.Status400BadRequest,
+                ApiErrorCodes.ValidationError,
+                $"workflow edge target `{edge.Target}` не найден.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(edge.SourceHandle) && edge.SourceHandle.Trim().Length > 120)
+        {
+            throw new ApiErrorException(
+                StatusCodes.Status400BadRequest,
+                ApiErrorCodes.ValidationError,
+                "workflow.edges[].sourceHandle слишком длинный (максимум 120 символов).");
+        }
+
+        if (!string.IsNullOrWhiteSpace(edge.TargetHandle) && edge.TargetHandle.Trim().Length > 120)
+        {
+            throw new ApiErrorException(
+                StatusCodes.Status400BadRequest,
+                ApiErrorCodes.ValidationError,
+                "workflow.edges[].targetHandle слишком длинный (максимум 120 символов).");
+        }
+    }
+
+    WorkflowGraphValidator.ValidateUiOrThrow(draft);
+}
+
 static string BuildPlatformIntegrationKey(string platform)
 {
     return $"platform.{platform.Trim().ToLowerInvariant()}";
@@ -2621,6 +5180,29 @@ static string NormalizeProxyType(string? proxyType)
 
     var value = proxyType.Trim().ToLowerInvariant();
     return value is "http" or "https" or "socks5" ? value : "http";
+}
+
+static string NormalizeWorkflowEventType(string? eventType)
+{
+    if (string.IsNullOrWhiteSpace(eventType))
+    {
+        return "purchase";
+    }
+
+    var normalized = eventType.Trim().ToLowerInvariant();
+    return normalized switch
+    {
+        "purchase" => "purchase",
+        "message" => "message",
+        "review" => "review",
+        _ => "purchase",
+    };
+}
+
+static string BuildWorkflowTriggerSource(string normalizedEventType)
+{
+    var eventType = NormalizeWorkflowEventType(normalizedEventType);
+    return $"{eventType}-webhook";
 }
 
 static string GenerateProjectServiceToken(string integrationKey)
@@ -2650,6 +5232,141 @@ static string GenerateTelegramLinkCode()
         .Replace("=", string.Empty)
         .ToUpperInvariant();
     return value[..Math.Min(12, value.Length)];
+}
+
+static async Task<JsonElement> InvokeProjectIntegrationActionAsync(
+    CoreDbContext dbContext,
+    ProjectServiceIntegrationRegistry integrationRegistry,
+    IGatewayProxyClient gatewayProxyClient,
+    IEntitlementCheckClient entitlementCheckClient,
+    ProjectSecretCrypto crypto,
+    Guid projectId,
+    Guid actorId,
+    string normalizedIntegrationKey,
+    string scope,
+    IDictionary<string, JsonElement>? request,
+    string action,
+    string authorizationHeader,
+    string idempotencyKey,
+    CancellationToken cancellationToken)
+{
+    var normalizedScope = NormalizeScope(scope);
+    var grant = await dbContext.ProjectIntegrationGrants
+        .AsNoTracking()
+        .SingleOrDefaultAsync(
+            x => x.ProjectId == projectId && x.IntegrationKey == normalizedIntegrationKey,
+            cancellationToken);
+    if (grant is null || grant.Status != "active")
+    {
+        throw new ApiErrorException(StatusCodes.Status403Forbidden, ApiErrorCodes.Forbidden, "Интеграция не выдана проекту.");
+    }
+
+    var allowedScopes = SplitScopes(grant.ScopesCsv);
+    if (!allowedScopes.Contains(normalizedScope, StringComparer.OrdinalIgnoreCase))
+    {
+        throw new ApiErrorException(StatusCodes.Status403Forbidden, ApiErrorCodes.Forbidden, "Scope не разрешён для проекта.");
+    }
+
+    var entitlementAllowed = await entitlementCheckClient.IsAllowedAsync(projectId, actorId, action, cancellationToken);
+    if (!entitlementAllowed)
+    {
+        throw new ApiErrorException(StatusCodes.Status403Forbidden, ApiErrorCodes.Forbidden, "Операция заблокирована entitlement policy.");
+    }
+
+    if (IntegrationKeys.ServiceIntegrations.Contains(normalizedIntegrationKey))
+    {
+        if (!integrationRegistry.TryGet(normalizedIntegrationKey, out var integrationClient))
+        {
+            throw new ApiErrorException(StatusCodes.Status503ServiceUnavailable, ApiErrorCodes.InternalError, "Integration client не зарегистрирован.");
+        }
+
+        var credential = await dbContext.ProjectServiceCredentials
+            .AsNoTracking()
+            .SingleOrDefaultAsync(
+                x => x.ProjectId == projectId && x.IntegrationKey == normalizedIntegrationKey,
+                cancellationToken);
+
+        if (credential is null || credential.Status != "active")
+        {
+            throw new ApiErrorException(StatusCodes.Status409Conflict, ApiErrorCodes.Conflict, "Сервисный токен ещё не активирован.");
+        }
+
+        var payload = request is null
+            ? new Dictionary<string, JsonElement>(StringComparer.Ordinal)
+            : request.ToDictionary(x => x.Key, x => x.Value.Clone(), StringComparer.Ordinal);
+        payload["projectToken"] = JsonSerializer.SerializeToElement(crypto.Decrypt(credential.SecretCiphertext));
+        return await integrationClient.InvokeAsync(projectId, normalizedScope, payload, idempotencyKey, cancellationToken);
+    }
+
+    var runtime = await dbContext.ProjectIntegrationWorkerRuntimes
+        .AsNoTracking()
+        .SingleOrDefaultAsync(
+            x => x.ProjectId == projectId && x.IntegrationKey == normalizedIntegrationKey,
+            cancellationToken);
+
+    if (runtime is null || runtime.Status != "active")
+    {
+        throw new ApiErrorException(StatusCodes.Status409Conflict, ApiErrorCodes.Conflict, "Интеграционный runtime ещё не активирован.");
+    }
+
+    if (string.IsNullOrWhiteSpace(authorizationHeader))
+    {
+        throw new ApiErrorException(StatusCodes.Status401Unauthorized, ApiErrorCodes.Unauthorized, "Отсутствует заголовок Authorization.");
+    }
+
+    var workerPayload = request is null
+        ? new Dictionary<string, JsonElement>(StringComparer.Ordinal)
+        : request.ToDictionary(x => x.Key, x => x.Value.Clone(), StringComparer.Ordinal);
+    workerPayload["projectId"] = JsonSerializer.SerializeToElement(projectId);
+
+    return await gatewayProxyClient.InvokeAccountApiActionAsync(
+        BuildRouteKey(runtime.RuntimeAccountId),
+        action,
+        workerPayload,
+        authorizationHeader,
+        idempotencyKey,
+        cancellationToken);
+}
+
+static T ReadRequiredProperty<T>(JsonElement element, string propertyName, string operation)
+{
+    if (!element.TryGetProperty(propertyName, out var property))
+    {
+        throw new ApiErrorException(
+            StatusCodes.Status502BadGateway,
+            ApiErrorCodes.InternalError,
+            $"{operation}: worker-ответ не содержит `{propertyName}`.");
+    }
+
+    try
+    {
+        var value = property.Deserialize<T>(new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        if (value is null)
+        {
+            throw new InvalidOperationException("null");
+        }
+
+        return value;
+    }
+    catch
+    {
+        throw new ApiErrorException(
+            StatusCodes.Status502BadGateway,
+            ApiErrorCodes.InternalError,
+            $"{operation}: не удалось десериализовать `{propertyName}`.");
+    }
+}
+
+static int? ReadOptionalIntProperty(JsonElement element, string propertyName)
+{
+    if (!element.TryGetProperty(propertyName, out var property))
+    {
+        return null;
+    }
+
+    return property.ValueKind == JsonValueKind.Number && property.TryGetInt32(out var value)
+        ? value
+        : null;
 }
 
 static string NormalizeBindingType(string? bindingType)
@@ -2795,12 +5512,16 @@ public sealed record AdminIntegrationGrantUpsertRequest(IReadOnlyCollection<stri
 
 public sealed record AdminIntegrationGrantDto(
     string IntegrationKey,
+    string IntegrationType,
     string Status,
     IReadOnlyCollection<string> Scopes,
     DateTimeOffset GrantedAtUtc,
     DateTimeOffset? RevokedAtUtc,
     string? CredentialStatus,
-    string? CredentialMasked);
+    string? CredentialMasked,
+    string? RuntimeStatus,
+    Guid? RuntimeAccountId,
+    string? RuntimeLastError);
 
 public sealed record AdminIntegrationGrantListResponse(
     string RequestId,
@@ -2838,12 +5559,41 @@ public sealed record AdminTelegramProxyProfileResponse(
     string RequestId,
     AdminTelegramProxyProfileDto Profile);
 
+public sealed record AdminTelegramTestMessageRequest(
+    string ChatId,
+    string? Message);
+
+public sealed record AdminTelegramTestMessageResponse(
+    string RequestId,
+    string Status,
+    string DeliveryPath,
+    string? ReasonCode);
+
+public sealed record AdminTelegramConnectivityResponse(
+    string RequestId,
+    string Status,
+    string EffectivePath,
+    bool ProxyAttempted,
+    bool ProxySucceeded,
+    bool DirectAttempted,
+    bool DirectSucceeded,
+    string? ReasonCode,
+    string? ProxyError,
+    string? DirectError,
+    string? BotId,
+    string? Username,
+    string? FirstName);
+
 public sealed record ProjectIntegrationStatusDto(
     string IntegrationKey,
+    string IntegrationType,
     string Status,
     IReadOnlyCollection<string> Scopes,
     string? CredentialStatus,
-    string? CredentialMasked);
+    string? CredentialMasked,
+    string? RuntimeStatus,
+    Guid? RuntimeAccountId,
+    string? RuntimeLastError);
 
 public sealed record TelegramBindingsSummaryDto(
     int GroupChats,
@@ -2853,6 +5603,281 @@ public sealed record ProjectIntegrationStatusResponse(
     string RequestId,
     IReadOnlyCollection<ProjectIntegrationStatusDto> Items,
     TelegramBindingsSummaryDto Telegram);
+
+public sealed record AdminCustomHttpAllowlistUpsertRequest(
+    string HostPattern,
+    bool IsActive,
+    string? Note);
+
+public sealed record AdminCustomHttpAllowlistEntryDto(
+    Guid Id,
+    string HostPattern,
+    bool IsActive,
+    string? Note,
+    DateTimeOffset UpdatedAtUtc);
+
+public sealed record AdminCustomHttpAllowlistResponse(
+    string RequestId,
+    AdminCustomHttpAllowlistEntryDto Entry);
+
+public sealed record AdminCustomHttpAllowlistListResponse(
+    string RequestId,
+    IReadOnlyCollection<AdminCustomHttpAllowlistEntryDto> Items);
+
+public sealed record ProjectCustomHttpIntegrationDto(
+    Guid Id,
+    string Name,
+    string BaseUrl,
+    string Status,
+    string BearerTokenMasked,
+    DateTimeOffset? LastTestedAtUtc,
+    DateTimeOffset UpdatedAtUtc);
+
+public sealed record ProjectCustomHttpIntegrationListResponse(
+    string RequestId,
+    IReadOnlyCollection<ProjectCustomHttpIntegrationDto> Items);
+
+public sealed record ProjectCustomHttpIntegrationResponse(
+    string RequestId,
+    ProjectCustomHttpIntegrationDto Integration);
+
+public sealed record ProjectCustomHttpIntegrationCreateRequest(
+    string Name,
+    string BaseUrl,
+    string BearerToken,
+    string? Status,
+    IReadOnlyDictionary<string, string>? DefaultHeaders);
+
+public sealed record ProjectCustomHttpIntegrationUpdateRequest(
+    string? Name,
+    string? BaseUrl,
+    string? BearerToken,
+    string? Status,
+    IReadOnlyDictionary<string, string>? DefaultHeaders);
+
+public sealed record ProjectCustomHttpIntegrationTestRequest(
+    string? Method,
+    string? Path,
+    IReadOnlyDictionary<string, string>? Headers,
+    IReadOnlyDictionary<string, object?>? Payload);
+
+public sealed record ProjectCustomHttpIntegrationTestResponse(
+    string RequestId,
+    int StatusCode,
+    string Endpoint,
+    string? Body);
+
+public sealed record OfferVariantUpsertRequest(
+    Guid AccountId,
+    string WorkerProductId,
+    string Platform,
+    string ObservedTitle,
+    string? ObservedDescription,
+    decimal ObservedPrice,
+    string ObservedCurrency,
+    int Priority,
+    bool IsActive);
+
+public sealed record OfferVariantsReplaceRequest(
+    IReadOnlyCollection<OfferVariantUpsertRequest>? Items);
+
+public sealed record OfferCreateRequest(
+    string Name,
+    string? Description,
+    string? Status);
+
+public sealed record OfferUpdateRequest(
+    string? Name,
+    string? Description,
+    string? Status);
+
+public sealed record OfferVariantDto(
+    Guid Id,
+    Guid AccountId,
+    string WorkerProductId,
+    string Platform,
+    string ObservedTitle,
+    string? ObservedDescription,
+    decimal ObservedPrice,
+    string ObservedCurrency,
+    int Priority,
+    bool IsActive);
+
+public sealed record OfferDto(
+    Guid Id,
+    string Name,
+    string? Description,
+    string Status,
+    decimal? MinPrice,
+    decimal? MaxPrice,
+    decimal? AveragePrice,
+    IReadOnlyCollection<string> Currencies,
+    int VariantCount,
+    IReadOnlyCollection<OfferVariantDto> Variants,
+    DateTimeOffset CreatedAtUtc,
+    DateTimeOffset UpdatedAtUtc);
+
+public sealed record OfferResponse(
+    string RequestId,
+    OfferDto Offer);
+
+public sealed record OfferListResponse(
+    string RequestId,
+    IReadOnlyCollection<OfferDto> Items);
+
+public sealed record WorkflowDraftResponse(
+    string RequestId,
+    WorkflowDraftModel Draft,
+    string Status,
+    int PublishedVersion,
+    DateTimeOffset? PublishedAtUtc);
+
+public sealed record WorkflowExecutionStepDto(
+    string NodeId,
+    string NodeType,
+    int StepIndex,
+    string Status,
+    DateTimeOffset StartedAtUtc,
+    DateTimeOffset? FinishedAtUtc,
+    string? OutputJson,
+    string? Error);
+
+public sealed record WorkflowExecutionDto(
+    Guid Id,
+    string SourceOrderId,
+    int WorkflowVersion,
+    string Status,
+    DateTimeOffset StartedAtUtc,
+    DateTimeOffset? FinishedAtUtc,
+    string? LastError,
+    IReadOnlyCollection<WorkflowExecutionStepDto> Steps);
+
+public sealed record WorkflowExecutionListResponse(
+    string RequestId,
+    IReadOnlyCollection<WorkflowExecutionDto> Items);
+
+public sealed record PurchaseWebhookRequest(
+    Guid ProjectId,
+    Guid OfferId,
+    string SourceOrderId,
+    string? BuyerId,
+    string? EventType,
+    string? Platform,
+    decimal? Quantity,
+    decimal? Amount,
+    string? Currency,
+    string? MessageText,
+    int? ReviewRating,
+    string? ReviewText,
+    IReadOnlyDictionary<string, object?>? Payload);
+
+public sealed record PurchaseWebhookAckResponse(
+    string RequestId,
+    string Status);
+
+public sealed record SteamIntegrationAccountUpsertRequest(
+    string LoginName,
+    string? DisplayName,
+    string? Email,
+    string? EmailLogin,
+    string? EmailPassword,
+    string? PhoneMasked,
+    string? Password,
+    string? LoginPassword,
+    string? SharedSecret,
+    string? IdentitySecret,
+    string? GuardRecoveryCode,
+    string? MaFilePayload,
+    string? AccessToken,
+    string? RefreshToken,
+    string? AuthSessionId,
+    string? SteamLoginSecure,
+    string? SteamRememberLogin,
+    string? WebCookie,
+    string? DeviceId,
+    string? MachineName,
+    string? FamilyViewPin,
+    string? CountryCode,
+    string? TimeZone,
+    string? SessionPayload,
+    string? RecoveryPayload,
+    string? SteamId64,
+    string? Proxy,
+    string? FolderName,
+    IReadOnlyDictionary<string, string>? AuthHeaders,
+    IReadOnlyCollection<string>? Tags,
+    string? Note,
+    IReadOnlyDictionary<string, string>? Metadata,
+    string? Status);
+
+public sealed record SteamIntegrationAccountDto(
+    Guid Id,
+    string LoginName,
+    string? DisplayName,
+    string? SteamId64,
+    string? Email,
+    string? PhoneMasked,
+    string? Proxy,
+    string? FolderName,
+    string? Status,
+    string? Note,
+    IReadOnlyCollection<string> Tags,
+    IReadOnlyDictionary<string, string> Metadata,
+    DateTimeOffset CreatedAt,
+    DateTimeOffset UpdatedAt);
+
+public sealed record SteamIntegrationAccountsResponse(
+    string RequestId,
+    IReadOnlyCollection<SteamIntegrationAccountDto> Items,
+    int TotalCount);
+
+public sealed record SteamIntegrationAccountResponse(
+    string RequestId,
+    SteamIntegrationAccountDto Account);
+
+public sealed record SteamIntegrationJobCreateRequest(
+    string Type,
+    IReadOnlyCollection<Guid> AccountIds,
+    bool DryRun,
+    int Parallelism,
+    int RetryCount,
+    IReadOnlyDictionary<string, string>? Payload);
+
+public sealed record SteamIntegrationJobItemDto(
+    Guid Id,
+    Guid JobId,
+    Guid AccountId,
+    string Status,
+    int Attempt,
+    string? ErrorText,
+    string? ReasonCode,
+    bool Retryable,
+    DateTimeOffset? StartedAt,
+    DateTimeOffset? FinishedAt,
+    IReadOnlyDictionary<string, string> Request,
+    IReadOnlyDictionary<string, string> Result);
+
+public sealed record SteamIntegrationJobDto(
+    Guid Id,
+    string Type,
+    string Status,
+    DateTimeOffset CreatedAt,
+    DateTimeOffset? StartedAt,
+    DateTimeOffset? FinishedAt,
+    int TotalCount,
+    int SuccessCount,
+    int FailureCount,
+    bool DryRun,
+    IReadOnlyDictionary<string, string> Payload,
+    IReadOnlyCollection<SteamIntegrationJobItemDto>? Items);
+
+public sealed record SteamIntegrationJobsResponse(
+    string RequestId,
+    IReadOnlyCollection<SteamIntegrationJobDto> Items);
+
+public sealed record SteamIntegrationJobResponse(
+    string RequestId,
+    SteamIntegrationJobDto Job);
 
 public sealed record TelegramLinkCodeCreateRequest(string? BindingType);
 
@@ -2881,6 +5906,16 @@ public sealed record ProxyResponse(string RequestId, JsonElement Result);
 public sealed record GenericObjectResponse(string RequestId, IDictionary<string, object?> Data);
 
 internal sealed record ProxyConfigPayload(string Host, int Port, string Login, string Password);
+
+internal sealed record TelegramConnectivityFailureInfo(
+    string EffectivePath,
+    bool ProxyAttempted,
+    bool ProxySucceeded,
+    bool DirectAttempted,
+    bool DirectSucceeded,
+    string ReasonCode,
+    string? ProxyError,
+    string? DirectError);
 
 internal sealed record MarketplaceAuthPayload(string Scheme, IReadOnlyDictionary<string, string> Credentials);
 

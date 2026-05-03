@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -8,11 +8,15 @@ import AccountManagerIntegrationsPage from "@/app/admin/account-manager/integrat
 import AccountManagerServersPage from "@/app/admin/account-manager/servers/page";
 import AccountManagerTemplatesPage from "@/app/admin/account-manager/templates/page";
 import {
+  checkAdminTelegramConnectivityRequest,
+  listProjectsRequest,
   listAdminProjectIntegrationGrantsRequest,
   listAdminTelegramProxyProfilesRequest,
   listAdminAccountTypesRequest,
   listAdminWorkerServersRequest,
   revokeAdminProjectIntegrationGrantRequest,
+  sendAdminTelegramTestMessageRequest,
+  triggerAdminIntegrationRuntimeRequest,
   upsertAdminProjectIntegrationGrantRequest,
   upsertAdminAccountTypeRequest,
   upsertAdminTelegramProxyProfileRequest,
@@ -32,7 +36,7 @@ const sessionState = {
       role: "owner" as const,
       authMode: "demo" as const,
       loggedInAt: new Date().toISOString(),
-      systemPermissions: ["system.accountManager.manage"],
+      systemPermissions: ["system.accountManager.manage", "system.integrations.manage"],
       isSystemAdmin: true,
     },
   },
@@ -57,13 +61,17 @@ vi.mock("@/lib/api-client", async () => {
     ...actual,
     listAdminWorkerServersRequest: vi.fn(),
     upsertAdminWorkerServerRequest: vi.fn(),
+    listProjectsRequest: vi.fn(),
     listAdminAccountTypesRequest: vi.fn(),
     upsertAdminAccountTypeRequest: vi.fn(),
     listAdminProjectIntegrationGrantsRequest: vi.fn(),
     upsertAdminProjectIntegrationGrantRequest: vi.fn(),
     revokeAdminProjectIntegrationGrantRequest: vi.fn(),
+    triggerAdminIntegrationRuntimeRequest: vi.fn(),
     listAdminTelegramProxyProfilesRequest: vi.fn(),
     upsertAdminTelegramProxyProfileRequest: vi.fn(),
+    sendAdminTelegramTestMessageRequest: vi.fn(),
+    checkAdminTelegramConnectivityRequest: vi.fn(),
   };
 });
 
@@ -91,21 +99,26 @@ describe("admin account-manager routes", () => {
         role: "owner",
         authMode: "demo",
         loggedInAt: new Date().toISOString(),
-        systemPermissions: ["system.accountManager.manage"],
+        systemPermissions: ["system.accountManager.manage", "system.integrations.manage"],
         isSystemAdmin: true,
       },
     };
 
     vi.mocked(listAdminWorkerServersRequest).mockReset();
     vi.mocked(upsertAdminWorkerServerRequest).mockReset();
+    vi.mocked(listProjectsRequest).mockReset();
     vi.mocked(listAdminAccountTypesRequest).mockReset();
     vi.mocked(upsertAdminAccountTypeRequest).mockReset();
     vi.mocked(listAdminProjectIntegrationGrantsRequest).mockReset();
     vi.mocked(upsertAdminProjectIntegrationGrantRequest).mockReset();
     vi.mocked(revokeAdminProjectIntegrationGrantRequest).mockReset();
+    vi.mocked(triggerAdminIntegrationRuntimeRequest).mockReset();
     vi.mocked(listAdminTelegramProxyProfilesRequest).mockReset();
     vi.mocked(upsertAdminTelegramProxyProfileRequest).mockReset();
+    vi.mocked(sendAdminTelegramTestMessageRequest).mockReset();
+    vi.mocked(checkAdminTelegramConnectivityRequest).mockReset();
 
+    vi.mocked(listProjectsRequest).mockResolvedValue([]);
     vi.mocked(listAdminWorkerServersRequest).mockResolvedValue([
       {
         serverId: "srv-default",
@@ -187,18 +200,20 @@ describe("admin account-manager routes", () => {
     });
     vi.mocked(listAdminProjectIntegrationGrantsRequest).mockResolvedValue([
       {
-        integrationKey: "platform.funpay",
+        integrationKey: "funpaystat",
+        integrationType: "service",
         status: "active",
-        scopes: ["use"],
+        scopes: ["read", "jobs"],
         grantedAtUtc: new Date().toISOString(),
         credentialStatus: null,
         credentialMasked: null,
       },
     ]);
     vi.mocked(upsertAdminProjectIntegrationGrantRequest).mockResolvedValue({
-      integrationKey: "platform.funpay",
+      integrationKey: "steam-accounts-manager",
+      integrationType: "worker",
       status: "active",
-      scopes: ["use"],
+      scopes: ["read", "jobs"],
       grantedAtUtc: new Date().toISOString(),
       credentialStatus: null,
       credentialMasked: null,
@@ -206,6 +221,10 @@ describe("admin account-manager routes", () => {
     vi.mocked(revokeAdminProjectIntegrationGrantRequest).mockResolvedValue({
       requestId: "req",
       status: "completed",
+    });
+    vi.mocked(triggerAdminIntegrationRuntimeRequest).mockResolvedValue({
+      requestId: "req",
+      status: "queued",
     });
     vi.mocked(listAdminTelegramProxyProfilesRequest).mockResolvedValue([
       {
@@ -228,6 +247,17 @@ describe("admin account-manager routes", () => {
       isActive: true,
       hasCredentials: true,
       updatedAtUtc: new Date().toISOString(),
+    });
+    vi.mocked(checkAdminTelegramConnectivityRequest).mockResolvedValue({
+      status: "ok",
+      effectivePath: "proxy",
+      proxyAttempted: true,
+      proxySucceeded: true,
+      directAttempted: false,
+      directSucceeded: false,
+      botId: "123456789",
+      username: "ddcrm_test_bot",
+      firstName: "DDCRM Test Bot",
     });
   });
 
@@ -309,6 +339,12 @@ describe("admin account-manager routes", () => {
       expect(listAdminTelegramProxyProfilesRequest).toHaveBeenCalled();
     });
 
+    const steamPresetCard = screen.getByText("Steam Runtime", { selector: "strong" }).closest("li");
+    expect(steamPresetCard).not.toBeNull();
+    await userEvent.click(within(steamPresetCard!).getByRole("button", { name: "Заполнить форму" }));
+    expect(screen.getByPlaceholderText("steam-accounts-manager")).toHaveValue("steam-accounts-manager");
+    expect(screen.getByPlaceholderText("read,jobs")).toHaveValue("read,jobs");
+
     await userEvent.click(screen.getByRole("button", { name: "Выдать/обновить" }));
     await waitFor(() => {
       expect(upsertAdminProjectIntegrationGrantRequest).toHaveBeenCalled();
@@ -318,5 +354,31 @@ describe("admin account-manager routes", () => {
     await waitFor(() => {
       expect(upsertAdminTelegramProxyProfileRequest).toHaveBeenCalled();
     });
+
+    await userEvent.type(screen.getByPlaceholderText("например: 123456789"), "123456789");
+    await userEvent.click(screen.getByRole("button", { name: "Отправить тест в Telegram" }));
+    await waitFor(() => {
+      expect(sendAdminTelegramTestMessageRequest).toHaveBeenCalled();
+    });
+
+    await userEvent.click(screen.getByRole("button", { name: "Проверить Telegram API (getMe)" }));
+    await waitFor(() => {
+      expect(checkAdminTelegramConnectivityRequest).toHaveBeenCalled();
+    });
+  });
+
+  it("integrations page показывает ошибку при отсутствии system.integrations.manage", async () => {
+    sessionState.value = {
+      ...sessionState.value,
+      profile: {
+        ...sessionState.value.profile,
+        systemPermissions: ["system.accountManager.manage"],
+        isSystemAdmin: true,
+      },
+    };
+
+    renderWithQuery(<AccountManagerIntegrationsPage />);
+    expect(screen.getByText("403 · Missing integrations permission")).toBeInTheDocument();
+    expect(screen.getByText(/system\.integrations\.manage/)).toBeInTheDocument();
   });
 });

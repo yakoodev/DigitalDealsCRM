@@ -22,6 +22,8 @@ tags:
   - name: billing
   - name: gateway-proxy
   - name: integrations
+  - name: offers
+  - name: workflows
 
 paths:
   /v1/projects:
@@ -401,6 +403,84 @@ paths:
         default:
           $ref: '#/components/responses/Error'
 
+  /v1/admin/integrations/projects/{projectId}/grants/{integrationKey}/runtime/provision:
+    post:
+      tags: [admin, integrations]
+      operationId: adminProvisionProjectIntegrationRuntime
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - name: integrationKey
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 2
+            maxLength: 120
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: Provision runtime поставлен в очередь
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AckResponse'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /v1/admin/integrations/projects/{projectId}/grants/{integrationKey}/runtime/deprovision:
+    post:
+      tags: [admin, integrations]
+      operationId: adminDeprovisionProjectIntegrationRuntime
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - name: integrationKey
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 2
+            maxLength: 120
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: Deprovision runtime поставлен в очередь
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AckResponse'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /v1/admin/integrations/projects/{projectId}/grants/{integrationKey}/runtime/restart:
+    post:
+      tags: [admin, integrations]
+      operationId: adminRestartProjectIntegrationRuntime
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - name: integrationKey
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 2
+            maxLength: 120
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: Restart runtime поставлен в очередь
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AckResponse'
+        default:
+          $ref: '#/components/responses/Error'
+
   /v1/admin/integrations/telegram/proxies:
     get:
       tags: [admin, integrations]
@@ -447,6 +527,44 @@ paths:
         default:
           $ref: '#/components/responses/Error'
 
+  /v1/admin/integrations/telegram/test-message:
+    post:
+      tags: [admin, integrations]
+      operationId: adminSendTelegramTestMessage
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminTelegramTestMessageRequest'
+      responses:
+        '200':
+          description: Тестовое сообщение отправлено
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminTelegramTestMessageResponse'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /v1/admin/integrations/telegram/test-connectivity:
+    post:
+      tags: [admin, integrations]
+      operationId: adminCheckTelegramConnectivity
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Диагностика доступности Telegram API через proxy/direct paths
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminTelegramConnectivityResponse'
+        default:
+          $ref: '#/components/responses/Error'
+
   /v1/projects/{projectId}/integrations/status:
     get:
       tags: [projects, integrations]
@@ -465,10 +583,279 @@ paths:
         default:
           $ref: '#/components/responses/Error'
 
+  /v1/projects/{projectId}/integrations/{integrationKey}/runtime/provision:
+    post:
+      tags: [projects, integrations]
+      operationId: provisionProjectIntegrationRuntime
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - name: integrationKey
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 2
+            maxLength: 120
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: Provision runtime поставлен в очередь
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AckResponse'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /v1/projects/{projectId}/integrations/{integrationKey}/runtime/deprovision:
+    post:
+      tags: [projects, integrations]
+      operationId: deprovisionProjectIntegrationRuntime
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - name: integrationKey
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 2
+            maxLength: 120
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: Deprovision runtime поставлен в очередь
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AckResponse'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /v1/projects/{projectId}/integrations/{integrationKey}/runtime/restart:
+    post:
+      tags: [projects, integrations]
+      operationId: restartProjectIntegrationRuntime
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - name: integrationKey
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 2
+            maxLength: 120
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: Restart runtime поставлен в очередь
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AckResponse'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /v1/projects/{projectId}/integrations/steam/accounts:
+    get:
+      tags: [projects, integrations]
+      operationId: listSteamIntegrationAccounts
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - name: query
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+        - name: pageSize
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+      responses:
+        '200':
+          description: Список Steam-аккаунтов интеграции проекта
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SteamIntegrationAccountsResponse'
+        default:
+          $ref: '#/components/responses/Error'
+    post:
+      tags: [projects, integrations]
+      operationId: createSteamIntegrationAccount
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SteamIntegrationAccountUpsertRequest'
+      responses:
+        '201':
+          description: Steam-аккаунт создан
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SteamIntegrationAccountResponse'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /v1/projects/{projectId}/integrations/steam/accounts/{accountId}:
+    patch:
+      tags: [projects, integrations]
+      operationId: updateSteamIntegrationAccount
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - name: accountId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SteamIntegrationAccountUpsertRequest'
+      responses:
+        '200':
+          description: Steam-аккаунт обновлен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SteamIntegrationAccountResponse'
+        default:
+          $ref: '#/components/responses/Error'
+    delete:
+      tags: [projects, integrations]
+      operationId: archiveSteamIntegrationAccount
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - name: accountId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: Steam-аккаунт архивирован
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AckResponse'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /v1/projects/{projectId}/integrations/steam/jobs:
+    get:
+      tags: [projects, integrations]
+      operationId: listSteamIntegrationJobs
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - name: take
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+      responses:
+        '200':
+          description: Список Steam jobs проекта
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SteamIntegrationJobsResponse'
+        default:
+          $ref: '#/components/responses/Error'
+    post:
+      tags: [projects, integrations]
+      operationId: createSteamIntegrationJob
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SteamIntegrationJobCreateRequest'
+      responses:
+        '201':
+          description: Steam jobs-задача создана
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SteamIntegrationJobResponse'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /v1/projects/{projectId}/integrations/steam/jobs/{jobId}/cancel:
+    post:
+      tags: [projects, integrations]
+      operationId: cancelSteamIntegrationJob
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - name: jobId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: Steam jobs-задача отменена
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AckResponse'
+        default:
+          $ref: '#/components/responses/Error'
+
   /v1/projects/{projectId}/integrations/{integrationKey}/actions/{scope}:
     post:
       tags: [projects, integrations]
-      operationId: invokeProjectServiceIntegration
+      operationId: invokeProjectIntegrationAction
       security:
         - bearerAuth: []
       parameters:
@@ -791,10 +1178,487 @@ paths:
         default:
           $ref: '#/components/responses/Error'
 
+  /v1/projects/{projectId}/offers:
+    get:
+      tags: [offers]
+      operationId: listOffers
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+      responses:
+        '200':
+          description: Список Offer в проекте
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OfferListResponse'
+        default:
+          $ref: '#/components/responses/Error'
+    post:
+      tags: [offers]
+      operationId: createOffer
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OfferCreateRequest'
+      responses:
+        '201':
+          description: Offer создан
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OfferResponse'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /v1/projects/{projectId}/offers/{offerId}:
+    get:
+      tags: [offers]
+      operationId: getOffer
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - name: offerId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Offer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OfferResponse'
+        default:
+          $ref: '#/components/responses/Error'
+    patch:
+      tags: [offers]
+      operationId: updateOffer
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - name: offerId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OfferUpdateRequest'
+      responses:
+        '200':
+          description: Offer обновлен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OfferResponse'
+        default:
+          $ref: '#/components/responses/Error'
+    delete:
+      tags: [offers]
+      operationId: deleteOffer
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - name: offerId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: Offer удален
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AckResponse'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /v1/projects/{projectId}/offers/{offerId}/variants:
+    put:
+      tags: [offers]
+      operationId: replaceOfferVariants
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - name: offerId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OfferVariantsReplaceRequest'
+      responses:
+        '200':
+          description: Варианты Offer обновлены
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OfferResponse'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /v1/projects/{projectId}/offers/{offerId}/workflow/draft:
+    get:
+      tags: [workflows]
+      operationId: getOfferWorkflowDraft
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - name: offerId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Draft workflow Offer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkflowDraftResponse'
+        default:
+          $ref: '#/components/responses/Error'
+    put:
+      tags: [workflows]
+      operationId: upsertOfferWorkflowDraft
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - name: offerId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WorkflowDraft'
+      responses:
+        '200':
+          description: Draft workflow сохранен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkflowDraftResponse'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /v1/projects/{projectId}/offers/{offerId}/workflow/publish:
+    post:
+      tags: [workflows]
+      operationId: publishOfferWorkflow
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - name: offerId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: Workflow опубликован
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkflowDraftResponse'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /v1/projects/{projectId}/offers/{offerId}/workflow/executions:
+    get:
+      tags: [workflows]
+      operationId: listOfferWorkflowExecutions
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - name: offerId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: История executions workflow Offer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkflowExecutionListResponse'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /v1/projects/{projectId}/integrations/custom-http:
+    get:
+      tags: [integrations]
+      operationId: listProjectCustomHttpIntegrations
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+      responses:
+        '200':
+          description: Список project-level custom HTTP интеграций
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectCustomHttpIntegrationListResponse'
+        default:
+          $ref: '#/components/responses/Error'
+    post:
+      tags: [integrations]
+      operationId: createProjectCustomHttpIntegration
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProjectCustomHttpIntegrationCreateRequest'
+      responses:
+        '201':
+          description: Custom HTTP интеграция создана
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectCustomHttpIntegrationResponse'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /v1/projects/{projectId}/integrations/custom-http/{integrationId}:
+    patch:
+      tags: [integrations]
+      operationId: updateProjectCustomHttpIntegration
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - name: integrationId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProjectCustomHttpIntegrationUpdateRequest'
+      responses:
+        '200':
+          description: Custom HTTP интеграция обновлена
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectCustomHttpIntegrationResponse'
+        default:
+          $ref: '#/components/responses/Error'
+    delete:
+      tags: [integrations]
+      operationId: deleteProjectCustomHttpIntegration
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - name: integrationId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: Custom HTTP интеграция удалена
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AckResponse'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /v1/projects/{projectId}/integrations/custom-http/{integrationId}/test:
+    post:
+      tags: [integrations]
+      operationId: testProjectCustomHttpIntegration
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - name: integrationId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProjectCustomHttpIntegrationTestRequest'
+      responses:
+        '200':
+          description: Результат test-вызова кастомной интеграции
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectCustomHttpIntegrationTestResponse'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /v1/integrations/workflow/purchase:
+    post:
+      tags: [workflows, integrations]
+      operationId: workflowPurchaseWebhook
+      parameters:
+        - name: X-Workflow-Purchase-Secret
+          in: header
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PurchaseWebhookRequest'
+      responses:
+        '200':
+          description: Duplicate webhook (already accepted)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PurchaseWebhookAckResponse'
+        '202':
+          description: Webhook принят в очередь исполнения workflow
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PurchaseWebhookAckResponse'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /v1/admin/integrations/custom-http/allowlist:
+    get:
+      tags: [admin, integrations]
+      operationId: adminListCustomHttpAllowlist
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Активные/неактивные allowlist записи custom HTTP
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminCustomHttpAllowlistListResponse'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /v1/admin/integrations/custom-http/allowlist/{entryId}:
+    put:
+      tags: [admin, integrations]
+      operationId: adminUpsertCustomHttpAllowlistEntry
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: entryId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminCustomHttpAllowlistUpsertRequest'
+      responses:
+        '200':
+          description: Allowlist запись сохранена
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminCustomHttpAllowlistResponse'
+        default:
+          $ref: '#/components/responses/Error'
+    delete:
+      tags: [admin, integrations]
+      operationId: adminDeleteCustomHttpAllowlistEntry
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: entryId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: Allowlist запись удалена
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AckResponse'
+        default:
+          $ref: '#/components/responses/Error'
+
   /v1/account-api/{routeKey}/{action}:
     post:
       tags: [gateway-proxy]
       operationId: proxyAccountApiAction
+      description: Generic proxy endpoint. `ext.integration.*` actions must be called via `/v1/projects/{projectId}/integrations/*`.
       security:
         - bearerAuth: []
       parameters:
@@ -1198,10 +2062,13 @@ components:
 
     AdminIntegrationGrant:
       type: object
-      required: [integrationKey, status, scopes, grantedAtUtc]
+      required: [integrationKey, integrationType, status, scopes, grantedAtUtc]
       properties:
         integrationKey:
           type: string
+        integrationType:
+          type: string
+          enum: [service, worker, notification, custom, platform, unknown]
         status:
           type: string
           enum: [active, revoked]
@@ -1219,6 +2086,14 @@ components:
           type: [string, 'null']
           enum: [pending_sync, active, revoking, revoked]
         credentialMasked:
+          type: [string, 'null']
+        runtimeStatus:
+          type: [string, 'null']
+          enum: [pending_provision, active, revoking, revoked]
+        runtimeAccountId:
+          type: [string, 'null']
+          format: uuid
+        runtimeLastError:
           type: [string, 'null']
 
     AdminIntegrationGrantResponse:
@@ -1310,12 +2185,352 @@ components:
               items:
                 $ref: '#/components/schemas/AdminTelegramProxyProfile'
 
+    AdminTelegramTestMessageRequest:
+      type: object
+      required: [chatId]
+      properties:
+        chatId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        message:
+          type: string
+          minLength: 1
+          maxLength: 4096
+
+    AdminTelegramTestMessageResponse:
+      allOf:
+        - $ref: '#/components/schemas/RequestMeta'
+        - type: object
+          required: [status, deliveryPath]
+          properties:
+            status:
+              type: string
+              enum: [completed]
+            deliveryPath:
+              type: string
+              enum: [proxy, direct, unknown]
+            reasonCode:
+              type: [string, 'null']
+
+    AdminTelegramConnectivityResponse:
+      allOf:
+        - $ref: '#/components/schemas/RequestMeta'
+        - type: object
+          required: [status, effectivePath, proxyAttempted, proxySucceeded, directAttempted, directSucceeded]
+          properties:
+            status:
+              type: string
+              enum: [ok, error]
+            effectivePath:
+              type: string
+              enum: [proxy, direct, none]
+            proxyAttempted:
+              type: boolean
+            proxySucceeded:
+              type: boolean
+            directAttempted:
+              type: boolean
+            directSucceeded:
+              type: boolean
+            reasonCode:
+              type: [string, 'null']
+            proxyError:
+              type: [string, 'null']
+            directError:
+              type: [string, 'null']
+            botId:
+              type: [string, 'null']
+            username:
+              type: [string, 'null']
+            firstName:
+              type: [string, 'null']
+
+    SteamIntegrationAccountUpsertRequest:
+      type: object
+      required: [loginName]
+      properties:
+        loginName:
+          type: string
+        displayName:
+          type: string
+        email:
+          type: string
+        emailLogin:
+          type: string
+          description: Логин email-провайдера (если отличается от email аккаунта).
+        emailPassword:
+          type: string
+          writeOnly: true
+        phoneMasked:
+          type: string
+        password:
+          type: string
+          writeOnly: true
+        loginPassword:
+          type: string
+          writeOnly: true
+        sharedSecret:
+          type: string
+          writeOnly: true
+        identitySecret:
+          type: string
+          writeOnly: true
+        guardRecoveryCode:
+          type: string
+          writeOnly: true
+        maFilePayload:
+          type: string
+          writeOnly: true
+        accessToken:
+          type: string
+          writeOnly: true
+        refreshToken:
+          type: string
+          writeOnly: true
+        authSessionId:
+          type: string
+          writeOnly: true
+        steamLoginSecure:
+          type: string
+          writeOnly: true
+        steamRememberLogin:
+          type: string
+          writeOnly: true
+        webCookie:
+          type: string
+          writeOnly: true
+        deviceId:
+          type: string
+        machineName:
+          type: string
+        familyViewPin:
+          type: string
+          writeOnly: true
+        countryCode:
+          type: string
+        timeZone:
+          type: string
+        sessionPayload:
+          type: string
+          writeOnly: true
+        recoveryPayload:
+          type: string
+          writeOnly: true
+        steamId64:
+          type: string
+        proxy:
+          type: string
+        folderName:
+          type: string
+        authHeaders:
+          type: object
+          additionalProperties:
+            type: string
+        tags:
+          type: array
+          items:
+            type: string
+        note:
+          type: string
+        metadata:
+          type: object
+          additionalProperties:
+            type: string
+        status:
+          type: string
+
+    SteamIntegrationAccount:
+      type: object
+      required: [id, loginName, createdAt, updatedAt, tags, metadata]
+      properties:
+        id:
+          type: string
+          format: uuid
+        loginName:
+          type: string
+        displayName:
+          type: [string, 'null']
+        steamId64:
+          type: [string, 'null']
+        email:
+          type: [string, 'null']
+        phoneMasked:
+          type: [string, 'null']
+        proxy:
+          type: [string, 'null']
+        folderName:
+          type: [string, 'null']
+        status:
+          type: [string, 'null']
+        note:
+          type: [string, 'null']
+        tags:
+          type: array
+          items:
+            type: string
+        metadata:
+          type: object
+          additionalProperties:
+            type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    SteamIntegrationAccountsResponse:
+      allOf:
+        - $ref: '#/components/schemas/RequestMeta'
+        - type: object
+          required: [items, totalCount]
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/SteamIntegrationAccount'
+            totalCount:
+              type: integer
+              minimum: 0
+
+    SteamIntegrationAccountResponse:
+      allOf:
+        - $ref: '#/components/schemas/RequestMeta'
+        - type: object
+          required: [account]
+          properties:
+            account:
+              $ref: '#/components/schemas/SteamIntegrationAccount'
+
+    SteamIntegrationJobCreateRequest:
+      type: object
+      required: [type, accountIds]
+      properties:
+        type:
+          type: string
+        accountIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+        dryRun:
+          type: boolean
+        parallelism:
+          type: integer
+          minimum: 1
+        retryCount:
+          type: integer
+          minimum: 0
+        payload:
+          type: object
+          additionalProperties:
+            type: string
+
+    SteamIntegrationJobItem:
+      type: object
+      required: [id, jobId, accountId, status, attempt, retryable, request, result]
+      properties:
+        id:
+          type: string
+          format: uuid
+        jobId:
+          type: string
+          format: uuid
+        accountId:
+          type: string
+          format: uuid
+        status:
+          type: string
+        attempt:
+          type: integer
+        errorText:
+          type: [string, 'null']
+        reasonCode:
+          type: [string, 'null']
+        retryable:
+          type: boolean
+        startedAt:
+          type: [string, 'null']
+          format: date-time
+        finishedAt:
+          type: [string, 'null']
+          format: date-time
+        request:
+          type: object
+          additionalProperties:
+            type: string
+        result:
+          type: object
+          additionalProperties:
+            type: string
+
+    SteamIntegrationJob:
+      type: object
+      required: [id, type, status, createdAt, totalCount, successCount, failureCount, dryRun, payload]
+      properties:
+        id:
+          type: string
+          format: uuid
+        type:
+          type: string
+        status:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        startedAt:
+          type: [string, 'null']
+          format: date-time
+        finishedAt:
+          type: [string, 'null']
+          format: date-time
+        totalCount:
+          type: integer
+        successCount:
+          type: integer
+        failureCount:
+          type: integer
+        dryRun:
+          type: boolean
+        payload:
+          type: object
+          additionalProperties:
+            type: string
+        items:
+          type: [array, 'null']
+          items:
+            $ref: '#/components/schemas/SteamIntegrationJobItem'
+
+    SteamIntegrationJobsResponse:
+      allOf:
+        - $ref: '#/components/schemas/RequestMeta'
+        - type: object
+          required: [items]
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/SteamIntegrationJob'
+
+    SteamIntegrationJobResponse:
+      allOf:
+        - $ref: '#/components/schemas/RequestMeta'
+        - type: object
+          required: [job]
+          properties:
+            job:
+              $ref: '#/components/schemas/SteamIntegrationJob'
+
     ProjectIntegrationStatus:
       type: object
-      required: [integrationKey, status, scopes]
+      required: [integrationKey, integrationType, status, scopes]
       properties:
         integrationKey:
           type: string
+        integrationType:
+          type: string
+          enum: [service, worker, notification, custom, platform, unknown]
         status:
           type: string
         scopes:
@@ -1325,6 +2540,14 @@ components:
         credentialStatus:
           type: [string, 'null']
         credentialMasked:
+          type: [string, 'null']
+        runtimeStatus:
+          type: [string, 'null']
+          enum: [pending_provision, active, revoking, revoked]
+        runtimeAccountId:
+          type: [string, 'null']
+          format: uuid
+        runtimeLastError:
           type: [string, 'null']
 
     TelegramBindingsSummary:
@@ -1350,6 +2573,604 @@ components:
                 $ref: '#/components/schemas/ProjectIntegrationStatus'
             telegram:
               $ref: '#/components/schemas/TelegramBindingsSummary'
+
+    AdminCustomHttpAllowlistUpsertRequest:
+      type: object
+      required: [hostPattern, isActive]
+      properties:
+        hostPattern:
+          type: string
+          minLength: 1
+          maxLength: 255
+        isActive:
+          type: boolean
+        note:
+          type: string
+          maxLength: 500
+
+    AdminCustomHttpAllowlistEntry:
+      type: object
+      required: [id, hostPattern, isActive, updatedAtUtc]
+      properties:
+        id:
+          type: string
+          format: uuid
+        hostPattern:
+          type: string
+        isActive:
+          type: boolean
+        note:
+          type: [string, 'null']
+        updatedAtUtc:
+          type: string
+          format: date-time
+
+    AdminCustomHttpAllowlistResponse:
+      allOf:
+        - $ref: '#/components/schemas/RequestMeta'
+        - type: object
+          required: [entry]
+          properties:
+            entry:
+              $ref: '#/components/schemas/AdminCustomHttpAllowlistEntry'
+
+    AdminCustomHttpAllowlistListResponse:
+      allOf:
+        - $ref: '#/components/schemas/RequestMeta'
+        - type: object
+          required: [items]
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/AdminCustomHttpAllowlistEntry'
+
+    ProjectCustomHttpIntegration:
+      type: object
+      required: [id, name, baseUrl, status, bearerTokenMasked, updatedAtUtc]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        baseUrl:
+          type: string
+        status:
+          type: string
+          enum: [active, disabled]
+        bearerTokenMasked:
+          type: string
+        lastTestedAtUtc:
+          type: [string, 'null']
+          format: date-time
+        updatedAtUtc:
+          type: string
+          format: date-time
+
+    ProjectCustomHttpIntegrationCreateRequest:
+      type: object
+      required: [name, baseUrl, bearerToken]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        baseUrl:
+          type: string
+          format: uri
+        bearerToken:
+          type: string
+          writeOnly: true
+        status:
+          type: string
+          enum: [active, disabled]
+        defaultHeaders:
+          type: object
+          additionalProperties:
+            type: string
+
+    ProjectCustomHttpIntegrationUpdateRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        baseUrl:
+          type: string
+          format: uri
+        bearerToken:
+          type: string
+          writeOnly: true
+        status:
+          type: string
+          enum: [active, disabled]
+        defaultHeaders:
+          type: object
+          additionalProperties:
+            type: string
+
+    ProjectCustomHttpIntegrationResponse:
+      allOf:
+        - $ref: '#/components/schemas/RequestMeta'
+        - type: object
+          required: [integration]
+          properties:
+            integration:
+              $ref: '#/components/schemas/ProjectCustomHttpIntegration'
+
+    ProjectCustomHttpIntegrationListResponse:
+      allOf:
+        - $ref: '#/components/schemas/RequestMeta'
+        - type: object
+          required: [items]
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/ProjectCustomHttpIntegration'
+
+    ProjectCustomHttpIntegrationTestRequest:
+      type: object
+      properties:
+        method:
+          type: string
+        path:
+          type: string
+        headers:
+          type: object
+          additionalProperties:
+            type: string
+        payload:
+          type: object
+          additionalProperties: true
+
+    ProjectCustomHttpIntegrationTestResponse:
+      allOf:
+        - $ref: '#/components/schemas/RequestMeta'
+        - type: object
+          required: [statusCode, endpoint]
+          properties:
+            statusCode:
+              type: integer
+            endpoint:
+              type: string
+              format: uri
+            body:
+              type: [string, 'null']
+
+    OfferVariant:
+      type: object
+      required: [id, accountId, workerProductId, platform, observedTitle, observedPrice, observedCurrency, priority, isActive]
+      properties:
+        id:
+          type: string
+          format: uuid
+        accountId:
+          type: string
+          format: uuid
+        workerProductId:
+          type: string
+        platform:
+          type: string
+        observedTitle:
+          type: string
+        observedDescription:
+          type: [string, 'null']
+        observedPrice:
+          type: number
+        observedCurrency:
+          type: string
+        priority:
+          type: integer
+        isActive:
+          type: boolean
+
+    OfferVariantUpsertRequest:
+      type: object
+      required: [accountId, workerProductId, platform, observedTitle, observedPrice, observedCurrency, priority, isActive]
+      properties:
+        accountId:
+          type: string
+          format: uuid
+        workerProductId:
+          type: string
+        platform:
+          type: string
+        observedTitle:
+          type: string
+        observedDescription:
+          type: string
+        observedPrice:
+          type: number
+        observedCurrency:
+          type: string
+        priority:
+          type: integer
+        isActive:
+          type: boolean
+
+    OfferVariantsReplaceRequest:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/OfferVariantUpsertRequest'
+
+    Offer:
+      type: object
+      required: [id, name, status, currencies, variantCount, variants, createdAtUtc, updatedAtUtc]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type: [string, 'null']
+        status:
+          type: string
+          enum: [active, paused, archived]
+        minPrice:
+          type: [number, 'null']
+        maxPrice:
+          type: [number, 'null']
+        averagePrice:
+          type: [number, 'null']
+        currencies:
+          type: array
+          items:
+            type: string
+        variantCount:
+          type: integer
+          minimum: 0
+        variants:
+          type: array
+          items:
+            $ref: '#/components/schemas/OfferVariant'
+        createdAtUtc:
+          type: string
+          format: date-time
+        updatedAtUtc:
+          type: string
+          format: date-time
+
+    OfferCreateRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+        description:
+          type: string
+          maxLength: 2000
+        status:
+          type: string
+          enum: [active, paused, archived]
+
+    OfferUpdateRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+        description:
+          type: string
+          maxLength: 2000
+        status:
+          type: string
+          enum: [active, paused, archived]
+
+    OfferResponse:
+      allOf:
+        - $ref: '#/components/schemas/RequestMeta'
+        - type: object
+          required: [offer]
+          properties:
+            offer:
+              $ref: '#/components/schemas/Offer'
+
+    OfferListResponse:
+      allOf:
+        - $ref: '#/components/schemas/RequestMeta'
+        - type: object
+          required: [items]
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/Offer'
+
+    WorkflowNode:
+      type: object
+      required: [id, type]
+      properties:
+        id:
+          type: string
+        type:
+          type: string
+          enum:
+            - PurchaseStart
+            - MessageStart
+            - ReviewStart
+            - Condition
+            - SetVariables
+            - LoadOffer
+            - SelectAccountPriorityFallback
+            - InvokeWorkerAction
+            - InvokeCustomHttp
+            - SteamAction
+            - Task
+            - SendBuyerResponse
+            - Notify
+            - End
+        name:
+          type: string
+        config:
+          type: object
+          additionalProperties: true
+        ui:
+          $ref: '#/components/schemas/WorkflowNodeUi'
+      example:
+        id: node-1
+        type: PurchaseStart
+        name: Покупка
+        config: {}
+        ui:
+          position:
+            x: 120
+            y: 80
+
+    WorkflowEdge:
+      type: object
+      required: [id, source, target]
+      properties:
+        id:
+          type: string
+        source:
+          type: string
+        sourceHandle:
+          type: string
+        target:
+          type: string
+        targetHandle:
+          type: string
+        condition:
+          type: string
+
+    WorkflowDraft:
+      type: object
+      properties:
+        version:
+          type: string
+        nodes:
+          type: array
+          items:
+            $ref: '#/components/schemas/WorkflowNode'
+        edges:
+          type: array
+          items:
+            $ref: '#/components/schemas/WorkflowEdge'
+        maxSteps:
+          type: integer
+          minimum: 1
+        maxDurationSeconds:
+          type: integer
+          minimum: 1
+        maxRetries:
+          type: integer
+          minimum: 0
+        ui:
+          $ref: '#/components/schemas/WorkflowDraftUi'
+      example:
+        version: v1
+        maxSteps: 128
+        maxDurationSeconds: 120
+        maxRetries: 3
+        nodes:
+          - id: node-1
+            type: PurchaseStart
+            ui:
+              position:
+                x: 80
+                y: 80
+          - id: node-2
+            type: End
+            ui:
+              position:
+                x: 360
+                y: 240
+        edges:
+          - id: edge-1
+            source: node-1
+            sourceHandle: out-flow
+            target: node-2
+            targetHandle: in-flow
+        ui:
+          viewport:
+            x: -40
+            y: 12
+            zoom: 1.1
+          entryNodeId: node-1
+
+    WorkflowNodeUi:
+      type: object
+      properties:
+        position:
+          $ref: '#/components/schemas/WorkflowNodePosition'
+
+    WorkflowNodePosition:
+      type: object
+      required: [x, y]
+      properties:
+        x:
+          type: number
+          format: double
+        y:
+          type: number
+          format: double
+
+    WorkflowDraftUi:
+      type: object
+      properties:
+        viewport:
+          $ref: '#/components/schemas/WorkflowViewport'
+        entryNodeId:
+          type: string
+
+    WorkflowViewport:
+      type: object
+      required: [x, y, zoom]
+      properties:
+        x:
+          type: number
+          format: double
+        y:
+          type: number
+          format: double
+        zoom:
+          type: number
+          format: double
+
+    WorkflowDraftResponse:
+      allOf:
+        - $ref: '#/components/schemas/RequestMeta'
+        - type: object
+          required: [draft, status, publishedVersion]
+          properties:
+            draft:
+              $ref: '#/components/schemas/WorkflowDraft'
+            status:
+              type: string
+              enum: [draft, published]
+            publishedVersion:
+              type: integer
+              minimum: 0
+            publishedAtUtc:
+              type: [string, 'null']
+              format: date-time
+
+    WorkflowExecutionStep:
+      type: object
+      required: [nodeId, nodeType, stepIndex, status, startedAtUtc]
+      properties:
+        nodeId:
+          type: string
+        nodeType:
+          type: string
+        stepIndex:
+          type: integer
+        status:
+          type: string
+        startedAtUtc:
+          type: string
+          format: date-time
+        finishedAtUtc:
+          type: [string, 'null']
+          format: date-time
+        outputJson:
+          type: [string, 'null']
+        error:
+          type: [string, 'null']
+
+    WorkflowExecution:
+      type: object
+      required: [id, sourceOrderId, workflowVersion, status, startedAtUtc, steps]
+      properties:
+        id:
+          type: string
+          format: uuid
+        sourceOrderId:
+          type: string
+        workflowVersion:
+          type: integer
+        status:
+          type: string
+        startedAtUtc:
+          type: string
+          format: date-time
+        finishedAtUtc:
+          type: [string, 'null']
+          format: date-time
+        lastError:
+          type: [string, 'null']
+        steps:
+          type: array
+          items:
+            $ref: '#/components/schemas/WorkflowExecutionStep'
+
+    WorkflowExecutionListResponse:
+      allOf:
+        - $ref: '#/components/schemas/RequestMeta'
+        - type: object
+          required: [items]
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/WorkflowExecution'
+
+    PurchaseWebhookRequest:
+      type: object
+      required: [projectId, offerId, sourceOrderId]
+      properties:
+        projectId:
+          type: string
+          format: uuid
+        offerId:
+          type: string
+          format: uuid
+        sourceOrderId:
+          type: string
+        buyerId:
+          type: string
+        eventType:
+          type: string
+          enum: [purchase, message, review]
+        platform:
+          type: string
+        quantity:
+          type: number
+        amount:
+          type: number
+        currency:
+          type: string
+        messageText:
+          type: string
+        reviewRating:
+          type: integer
+        reviewText:
+          type: string
+        payload:
+          type: object
+          additionalProperties: true
+      example:
+        projectId: 11111111-1111-1111-1111-111111111111
+        offerId: 22222222-2222-2222-2222-222222222222
+        sourceOrderId: order-123
+        buyerId: buyer-42
+        eventType: purchase
+        platform: steam
+        quantity: 1
+        amount: 399.0
+        currency: RUB
+        payload:
+          paymentId: pmt-7788
+
+    PurchaseWebhookAckResponse:
+      allOf:
+        - $ref: '#/components/schemas/RequestMeta'
+        - type: object
+          required: [status]
+          properties:
+            status:
+              type: string
+              enum: [accepted, duplicate]
 
     TelegramLinkCodeCreateRequest:
       type: object

@@ -13,7 +13,7 @@ x-external-api-env: &external-api-env
   EXTERNAL_API_CORS_ENABLED: "true"
   EXTERNAL_API_CORS_ALLOW_CREDENTIALS: "true"
   EXTERNAL_API_CORS_ALLOW_ORIGINS: http://localhost:3000,http://localhost:3400
-  EXTERNAL_API_CORS_ALLOW_METHODS: GET,POST,PATCH,DELETE,OPTIONS
+  EXTERNAL_API_CORS_ALLOW_METHODS: GET,POST,PUT,PATCH,DELETE,OPTIONS
   EXTERNAL_API_CORS_ALLOW_HEADERS: Authorization,Content-Type,Idempotency-Key,X-Request-Id
   EXTERNAL_API_CORS_EXPOSE_HEADERS: X-Request-Id
   EXTERNAL_API_CORS_MAX_AGE_SECONDS: "600"
@@ -73,11 +73,32 @@ services:
     environment:
       <<: [*service-auth-env, *external-api-env]
       CORE_DB_CONNECTION: Host=postgres;Port=5432;Database=ddcrm_core;Username=postgres;Password=postgres
+      CORE_SECRETS_ENCRYPTION_KEY: L1iAQcEeXXAELfCqPZFOw/QOCaMZ0cUtevTwPoaFlMJTyd+Ujyt/G59kA4XeHrsN
+      TELEGRAM_NOTIFICATION_BOT_TOKEN: 8749814838:AAGOUcEeypf4iDeTsIpGISKRw7Ts9FqYzn0
+      TELEGRAM_LINK_WEBHOOK_SECRET: bC1hXUbATZoGe1LRKfyPXktPH0FV9J2fWq4ZBBujJzY=
+      TelegramNotifications__Enabled: "true"
+      TelegramNotifications__ApiBaseUrl: https://api.telegram.org
+      TelegramNotifications__FallbackToDirectOnProxyFailure: "true"
+      TelegramNotifications__RequestTimeoutSeconds: "20"
+      TelegramNotifications__PollingEnabled: "true"
+      TelegramNotifications__PollingIntervalSeconds: "2"
+      TelegramNotifications__PollingTimeoutSeconds: "25"
+      TelegramNotifications__PollingBatchSize: "30"
+      FunPayStatClient__Enabled: "true"
+      FunPayStatClient__BaseUrl: http://host.docker.internal:8000
+      FUNPAYSTAT_INTEGRATION_SERVICE_TOKEN: svc-ddcrm-funpay-b3eb7b82771544adb71a364f6c39f2a5
+      EntitlementCheckClient__BaseUrl: http://entitlement-api:8080
       AccountsManagerClient__BaseUrl: http://accounts-manager-api:8080
       BillingClient__BaseUrl: http://billing-api:8080
       GatewayProxyClient__BaseUrl: http://gateway-api:8080
+      RouteRegistryClient__BaseUrl: http://route-registry-api:8080
+      WorkflowMessagePolling__OnlyUnreadConversations: "true"
+      WorkflowMessagePolling__MaxMessagesPerConversationPerPoll: "1"
+      WorkflowMessagePolling__SkipFirstMessagePerConversation: "true"
+      WorkflowMessagePolling__DispatchWorkerReplies: "true"
+      WORKFLOW_PURCHASE_WEBHOOK_SECRET: workflow-purchase-local-secret
     ports:
-      - "5073:8080"
+      - "15073:8080"
 
   iam-api:
     <<: *dotnet-service
@@ -91,7 +112,7 @@ services:
       <<: *service-auth-env
       CORE_DB_CONNECTION: Host=postgres;Port=5432;Database=ddcrm_core;Username=postgres;Password=postgres
     ports:
-      - "5120:8080"
+      - "15120:8080"
 
   route-registry-api:
     <<: *dotnet-service
@@ -105,7 +126,7 @@ services:
       <<: *service-auth-env
       ROUTE_REGISTRY_DB_CONNECTION: Host=postgres;Port=5432;Database=ddcrm_route_registry;Username=postgres;Password=postgres
     ports:
-      - "5110:8080"
+      - "15110:8080"
 
   accounts-manager-api:
     <<: *dotnet-service
@@ -123,6 +144,11 @@ services:
       WORKER_CONTROL_CLIENT_ENABLED: "true"
       WORKER_CONTROL_CLIENT_BASE_URL_TEMPLATE: http://worker-api:8080
       WORKER_CONTROL_CLIENT_PATH_PREFIX: /internal/v2/worker
+      WORKER_CONTROL_CLIENT_REQUEST_TIMEOUT_SECONDS: "20"
+      WORKER_CONTROL_CLIENT_IGNORE_NOT_FOUND_ON_APPLY_ACTIONS: "true"
+      ACCOUNTS_MANAGER_ENABLE_PLAYEROK_TEMPLATE: "false"
+      STEAM_INTEGRATION_RUNTIME_POSTGRES_CONNECTION: Host=host.docker.internal;Port=5433;Database=steamfleet;Username=steamfleet;Password=steamfleet
+      STEAM_INTEGRATION_RUNTIME_REDIS_CONNECTION: host.docker.internal:6380
       ACCOUNT_MANAGER_AUTOSPAWN_ENABLED: "true"
       ACCOUNT_MANAGER_AUTOSPAWN_DOCKER_ENDPOINT: unix:///var/run/docker.sock
       ACCOUNT_MANAGER_AUTOSPAWN_DOCKER_NETWORK: ddcrm_ddcrm
@@ -133,7 +159,7 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     ports:
-      - "5137:8080"
+      - "15137:8080"
 
   billing-api:
     <<: *dotnet-service
@@ -148,7 +174,7 @@ services:
       BILLING_DB_CONNECTION: Host=postgres;Port=5432;Database=ddcrm_billing;Username=postgres;Password=postgres
       EntitlementClient__BaseUrl: http://entitlement-api:8080
     ports:
-      - "5122:8080"
+      - "15122:8080"
 
   entitlement-api:
     <<: *dotnet-service
@@ -179,9 +205,10 @@ services:
       EntitlementClient__BaseUrl: http://entitlement-api:8080
       WorkerProxyClient__BaseUrlTemplate: http://{workerId}:8080
       WorkerProxyClient__PathPrefix: /internal/v2/worker
+      WorkerProxyClient__RequestTimeoutSeconds: "20"
       TEST_WORKER_EXT_ACTIONS_ENABLED: "true"
     ports:
-      - "5068:8080"
+      - "15068:8080"
 
   worker-api:
     <<: *dotnet-service
@@ -214,7 +241,7 @@ services:
       retries: 5
       start_period: 30s
     ports:
-      - "5072:8080"
+      - "15072:8080"
 
   ui:
     build:

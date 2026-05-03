@@ -36,6 +36,10 @@
 | `project.billing.changePlan` | ✅ | ✅ | ❌ |
 | `project.modules.operate` | ✅ | ✅ | ✅ |
 | `project.integrations.use` | ✅ | ✅ | ❌ |
+| `project.offers.manage` | ✅ | ✅ | ❌ |
+| `project.workflows.manage` | ✅ | ✅ | ❌ |
+| `project.workflows.run` | ✅ | ✅ | ❌ |
+| `project.integrations.custom.manage` | ✅ | ✅ | ❌ |
 
 ## 4. Системные админы DDCRM
 Это отдельная сущность, не совпадающая с проектными ролями.
@@ -82,3 +86,10 @@
 - для `ext.integration.*.read` требуется `project.integrations.use`;
 - для `ext.integration.*.jobs` требуется `project.integrations.use`;
 - Gateway обязан применять это сопоставление до проксирования запроса в worker.
+
+## 8. RBAC для Offer/Workflow/Custom HTTP API
+- `/v1/projects/{projectId}/offers*` требует `project.offers.manage`;
+- `/v1/projects/{projectId}/offers/{offerId}/workflow/*` требует `project.workflows.manage`;
+- `project.workflows.run` зарезервирован для запуска workflow-операций от имени пользователя (вебхук purchase выполняется без пользовательской роли, по секрету);
+- `/v1/projects/{projectId}/integrations/custom-http*` требует `project.integrations.custom.manage`;
+- для custom HTTP API дополнительно обязателен активный feature-grant `custom-http` со scope `use`.

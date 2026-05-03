@@ -11,7 +11,6 @@ vi.mock("@/lib/auth", async () => {
   return {
     ...actual,
     authenticateDemo: vi.fn(),
-    authenticateManual: vi.fn(),
   };
 });
 
@@ -29,17 +28,17 @@ const demoSession: PlatformSession = {
   token: "demo-token",
   baseUrl: "http://localhost:5073",
   profile: {
-    userId: "11111111-1111-1111-1111-111111111111",
-    email: "owner@ddcrm.local",
-    displayName: "Owner Demo",
-    role: "owner",
+    userId: "22222222-2222-2222-2222-222222222222",
+    email: "admin@ddcrm.local",
+    displayName: "System Admin",
+    role: "admin",
     authMode: "demo",
     loggedInAt: "2026-04-25T00:00:00.000Z",
   },
 };
 
 describe("AuthScreen", () => {
-  it("выполняет demo-вход и передает сессию наружу", async () => {
+  it("выполняет базовый парольный вход и передает сессию наружу", async () => {
     const user = userEvent.setup();
     const onAuthenticated = vi.fn();
     const authenticateDemoMock = vi.mocked(authLib.authenticateDemo);
@@ -52,42 +51,16 @@ describe("AuthScreen", () => {
     expect(screen.getByTestId("theme-option-light")).toBeInTheDocument();
     expect(screen.getByTestId("theme-option-dark")).toBeInTheDocument();
 
-    await user.click(screen.getByTestId("auth-demo-submit"));
+    await user.clear(screen.getByTestId("auth-email"));
+    await user.type(screen.getByTestId("auth-email"), "admin@ddcrm.local");
+    await user.clear(screen.getByTestId("auth-password"));
+    await user.type(screen.getByTestId("auth-password"), "Admin123!");
+    await user.click(screen.getByTestId("auth-submit"));
 
     await waitFor(() => {
       expect(authenticateDemoMock).toHaveBeenCalledTimes(1);
       expect(listProjectsRequestMock).toHaveBeenCalledTimes(1);
       expect(onAuthenticated).toHaveBeenCalledWith(demoSession);
-    });
-  });
-
-  it("поддерживает ручной JWT-вход", async () => {
-    const user = userEvent.setup();
-    const onAuthenticated = vi.fn();
-    const authenticateManualMock = vi.mocked(authLib.authenticateManual);
-    const listProjectsRequestMock = vi.mocked(apiClient.listProjectsRequest);
-    const manualSession: PlatformSession = {
-      ...demoSession,
-      token: "manual-token",
-      profile: {
-        ...demoSession.profile,
-        authMode: "manual",
-        role: "moderator",
-      },
-    };
-    authenticateManualMock.mockReturnValue(manualSession);
-    listProjectsRequestMock.mockResolvedValue([]);
-
-    render(<AuthScreen onAuthenticated={onAuthenticated} />);
-
-    await user.click(screen.getByTestId("auth-mode-manual"));
-    await user.type(screen.getByTestId("auth-manual-token"), "header.payload.signature");
-    await user.click(screen.getByTestId("auth-manual-submit"));
-
-    await waitFor(() => {
-      expect(authenticateManualMock).toHaveBeenCalledTimes(1);
-      expect(listProjectsRequestMock).toHaveBeenCalledTimes(1);
-      expect(onAuthenticated).toHaveBeenCalledWith(manualSession);
     });
   });
 });

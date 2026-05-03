@@ -43,6 +43,11 @@ public sealed class CoreApiFactory : WebApplicationFactory<Program>
                 ["EXTERNAL_API_CORS_MAX_AGE_SECONDS"] = "600",
                 ["EXTERNAL_API_SYSTEM_PERMISSION_CLAIM_TYPE"] = "ddcrm.system.permissions",
                 ["EXTERNAL_API_SYSTEM_PERMISSION_CLAIM_VALUE"] = "system.accountManager.manage",
+                ["EXTERNAL_API_SYSTEM_INTEGRATIONS_PERMISSION_CLAIM_VALUE"] = "system.integrations.manage",
+                ["FEATURE_OFFERS_ENABLED"] = "true",
+                ["FEATURE_WORKFLOWS_ENABLED"] = "true",
+                ["FEATURE_CUSTOM_HTTP_INTEGRATIONS_ENABLED"] = "true",
+                ["WORKFLOW_PURCHASE_WEBHOOK_SECRET"] = "workflow-secret-tests",
                 ["TEST_USE_INMEMORY_DB"] = "true",
                 ["TEST_INMEMORY_DB_NAME"] = $"core-tests-{Guid.NewGuid():N}",
             });

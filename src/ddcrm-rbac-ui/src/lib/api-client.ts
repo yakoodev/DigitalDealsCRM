@@ -105,12 +105,16 @@ export interface AdminAccountTypeUpsertPayload {
 
 export interface AdminIntegrationGrant {
   integrationKey: string;
+  integrationType: "service" | "worker" | "notification" | "custom" | "platform" | "unknown";
   status: "active" | "revoked";
   scopes: string[];
   grantedAtUtc: string;
   revokedAtUtc?: string | null;
   credentialStatus?: "pending_sync" | "active" | "revoking" | "revoked" | null;
   credentialMasked?: string | null;
+  runtimeStatus?: "pending_provision" | "active" | "revoking" | "revoked" | null;
+  runtimeAccountId?: string | null;
+  runtimeLastError?: string | null;
 }
 
 export interface AdminIntegrationGrantUpsertPayload {
@@ -137,6 +141,341 @@ export interface AdminTelegramProxyProfileUpsertPayload {
   clearCredentials: boolean;
   login?: string;
   password?: string;
+}
+
+export interface AdminTelegramTestMessagePayload {
+  chatId: string;
+  message?: string;
+}
+
+export interface AdminTelegramConnectivityResult {
+  status: "ok" | "error";
+  effectivePath: string;
+  proxyAttempted: boolean;
+  proxySucceeded: boolean;
+  directAttempted: boolean;
+  directSucceeded: boolean;
+  reasonCode?: string | null;
+  proxyError?: string | null;
+  directError?: string | null;
+  botId?: string | null;
+  username?: string | null;
+  firstName?: string | null;
+}
+
+export interface ProjectIntegrationStatus {
+  integrationKey: string;
+  integrationType: "service" | "worker" | "notification" | "custom" | "platform" | "unknown";
+  status: string;
+  scopes: string[];
+  credentialStatus?: "pending_sync" | "active" | "revoking" | "revoked" | null;
+  credentialMasked?: string | null;
+  runtimeStatus?: "pending_provision" | "active" | "revoking" | "revoked" | null;
+  runtimeAccountId?: string | null;
+  runtimeLastError?: string | null;
+}
+
+export interface ProjectTelegramBindingsSummary {
+  groupChats: number;
+  userDmChats: number;
+}
+
+export interface ProjectIntegrationsStatusEnvelopeData {
+  items: ProjectIntegrationStatus[];
+  telegram: ProjectTelegramBindingsSummary;
+}
+
+export interface SteamIntegrationAccount {
+  id: string;
+  loginName: string;
+  displayName?: string | null;
+  steamId64?: string | null;
+  email?: string | null;
+  phoneMasked?: string | null;
+  proxy?: string | null;
+  folderName?: string | null;
+  status?: string | null;
+  note?: string | null;
+  tags: string[];
+  metadata: Record<string, string>;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SteamIntegrationAccountUpsertPayload {
+  loginName: string;
+  displayName?: string;
+  email?: string;
+  emailLogin?: string;
+  emailPassword?: string;
+  phoneMasked?: string;
+  password?: string;
+  loginPassword?: string;
+  sharedSecret?: string;
+  identitySecret?: string;
+  guardRecoveryCode?: string;
+  maFilePayload?: string;
+  accessToken?: string;
+  refreshToken?: string;
+  authSessionId?: string;
+  steamLoginSecure?: string;
+  steamRememberLogin?: string;
+  webCookie?: string;
+  deviceId?: string;
+  machineName?: string;
+  familyViewPin?: string;
+  countryCode?: string;
+  timeZone?: string;
+  sessionPayload?: string;
+  recoveryPayload?: string;
+  steamId64?: string;
+  proxy?: string;
+  folderName?: string;
+  authHeaders?: Record<string, string>;
+  tags?: string[];
+  note?: string;
+  metadata?: Record<string, string>;
+  status?: string;
+}
+
+export interface SteamIntegrationJobCreatePayload {
+  type: string;
+  accountIds: string[];
+  dryRun?: boolean;
+  parallelism?: number;
+  retryCount?: number;
+  payload?: Record<string, string>;
+}
+
+export interface SteamIntegrationJobItem {
+  id: string;
+  jobId: string;
+  accountId: string;
+  status: string;
+  attempt: number;
+  errorText?: string | null;
+  reasonCode?: string | null;
+  retryable: boolean;
+  startedAt?: string | null;
+  finishedAt?: string | null;
+  request: Record<string, string>;
+  result: Record<string, string>;
+}
+
+export interface SteamIntegrationJob {
+  id: string;
+  type: string;
+  status: string;
+  createdAt: string;
+  startedAt?: string | null;
+  finishedAt?: string | null;
+  totalCount: number;
+  successCount: number;
+  failureCount: number;
+  dryRun: boolean;
+  payload: Record<string, string>;
+  items?: SteamIntegrationJobItem[] | null;
+}
+
+export interface OfferVariant {
+  id: string;
+  accountId: string;
+  workerProductId: string;
+  platform: string;
+  observedTitle: string;
+  observedDescription?: string | null;
+  observedPrice: number;
+  observedCurrency: string;
+  priority: number;
+  isActive: boolean;
+}
+
+export interface Offer {
+  id: string;
+  name: string;
+  description?: string | null;
+  status: "active" | "paused" | "archived";
+  minPrice?: number | null;
+  maxPrice?: number | null;
+  averagePrice?: number | null;
+  currencies: string[];
+  variantCount: number;
+  variants: OfferVariant[];
+  createdAtUtc: string;
+  updatedAtUtc: string;
+}
+
+export interface OfferCreatePayload {
+  name: string;
+  description?: string;
+  status?: Offer["status"];
+}
+
+export interface OfferUpdatePayload {
+  name?: string;
+  description?: string;
+  status?: Offer["status"];
+}
+
+export interface OfferVariantUpsertPayload {
+  accountId: string;
+  workerProductId: string;
+  platform: string;
+  observedTitle: string;
+  observedDescription?: string;
+  observedPrice: number;
+  observedCurrency: string;
+  priority: number;
+  isActive: boolean;
+}
+
+export interface WorkflowNode {
+  id: string;
+  type:
+    | "PurchaseStart"
+    | "MessageStart"
+    | "ReviewStart"
+    | "Condition"
+    | "SetVariables"
+    | "LoadOffer"
+    | "SelectAccountPriorityFallback"
+    | "InvokeWorkerAction"
+    | "InvokeCustomHttp"
+    | "SteamAction"
+    | "Task"
+    | "SendBuyerResponse"
+    | "Notify"
+    | "End";
+  name?: string;
+  config?: Record<string, unknown>;
+  ui?: WorkflowNodeUi;
+}
+
+export interface WorkflowEdge {
+  id: string;
+  source: string;
+  sourceHandle?: string;
+  target: string;
+  targetHandle?: string;
+  condition?: string;
+}
+
+export interface WorkflowNodeUi {
+  position?: {
+    x: number;
+    y: number;
+  };
+}
+
+export interface WorkflowDraftUi {
+  viewport?: {
+    x: number;
+    y: number;
+    zoom: number;
+  };
+  entryNodeId?: string;
+}
+
+export interface WorkflowDraft {
+  version: string;
+  nodes: WorkflowNode[];
+  edges: WorkflowEdge[];
+  maxSteps: number;
+  maxDurationSeconds: number;
+  maxRetries: number;
+  ui?: WorkflowDraftUi;
+}
+
+export interface WorkflowExecutionStep {
+  nodeId: string;
+  nodeType: string;
+  stepIndex: number;
+  status: string;
+  startedAtUtc: string;
+  finishedAtUtc?: string | null;
+  outputJson?: string | null;
+  error?: string | null;
+}
+
+export interface WorkflowExecution {
+  id: string;
+  sourceOrderId: string;
+  workflowVersion: number;
+  status: string;
+  startedAtUtc: string;
+  finishedAtUtc?: string | null;
+  lastError?: string | null;
+  steps: WorkflowExecutionStep[];
+}
+
+export interface WorkflowDraftEnvelopeData {
+  draft: WorkflowDraft;
+  status: "draft" | "published";
+  publishedVersion: number;
+  publishedAtUtc?: string | null;
+}
+
+export interface ProjectCustomHttpIntegration {
+  id: string;
+  name: string;
+  baseUrl: string;
+  status: "active" | "disabled";
+  bearerTokenMasked: string;
+  lastTestedAtUtc?: string | null;
+  updatedAtUtc: string;
+}
+
+export interface ProjectCustomHttpIntegrationCreatePayload {
+  name: string;
+  baseUrl: string;
+  bearerToken: string;
+  status?: ProjectCustomHttpIntegration["status"];
+  defaultHeaders?: Record<string, string>;
+}
+
+export interface ProjectCustomHttpIntegrationUpdatePayload {
+  name?: string;
+  baseUrl?: string;
+  bearerToken?: string;
+  status?: ProjectCustomHttpIntegration["status"];
+  defaultHeaders?: Record<string, string>;
+}
+
+export interface ProjectCustomHttpIntegrationTestPayload {
+  method?: string;
+  path?: string;
+  headers?: Record<string, string>;
+  payload?: Record<string, unknown>;
+}
+
+export interface ProjectCustomHttpIntegrationTestResult {
+  statusCode: number;
+  endpoint: string;
+  body?: string | null;
+}
+
+export interface AdminCustomHttpAllowlistEntry {
+  id: string;
+  hostPattern: string;
+  isActive: boolean;
+  note?: string | null;
+  updatedAtUtc: string;
+}
+
+export interface AdminCustomHttpAllowlistUpsertPayload {
+  hostPattern: string;
+  isActive: boolean;
+  note?: string;
+}
+
+export interface TelegramLinkCodeCreatePayload {
+  bindingType?: "group" | "user";
+}
+
+export interface TelegramLinkCodePayload {
+  code: string;
+  bindingType: "group" | "user";
+  expiresAtUtc: string;
 }
 
 interface ProxyCredentialsUpdateInput {
@@ -192,6 +531,106 @@ interface AdminTelegramProxyProfileEnvelope {
 interface AdminTelegramProxyProfileListEnvelope {
   requestId: string;
   items: AdminTelegramProxyProfile[];
+}
+
+interface AdminTelegramConnectivityEnvelope {
+  requestId: string;
+  status: string;
+  effectivePath: string;
+  proxyAttempted: boolean;
+  proxySucceeded: boolean;
+  directAttempted: boolean;
+  directSucceeded: boolean;
+  reasonCode?: string | null;
+  proxyError?: string | null;
+  directError?: string | null;
+  botId?: string | null;
+  username?: string | null;
+  firstName?: string | null;
+}
+
+interface ProjectIntegrationsStatusEnvelope {
+  requestId: string;
+  items: ProjectIntegrationStatus[];
+  telegram: ProjectTelegramBindingsSummary;
+}
+
+interface OfferEnvelope {
+  requestId: string;
+  offer: Offer;
+}
+
+interface OfferListEnvelope {
+  requestId: string;
+  items: Offer[];
+}
+
+interface WorkflowDraftEnvelope {
+  requestId: string;
+  draft: WorkflowDraft;
+  status: "draft" | "published";
+  publishedVersion: number;
+  publishedAtUtc?: string | null;
+}
+
+interface WorkflowExecutionListEnvelope {
+  requestId: string;
+  items: WorkflowExecution[];
+}
+
+interface ProjectCustomHttpIntegrationEnvelope {
+  requestId: string;
+  integration: ProjectCustomHttpIntegration;
+}
+
+interface ProjectCustomHttpIntegrationListEnvelope {
+  requestId: string;
+  items: ProjectCustomHttpIntegration[];
+}
+
+interface ProjectCustomHttpIntegrationTestEnvelope {
+  requestId: string;
+  statusCode: number;
+  endpoint: string;
+  body?: string | null;
+}
+
+interface AdminCustomHttpAllowlistEnvelope {
+  requestId: string;
+  entry: AdminCustomHttpAllowlistEntry;
+}
+
+interface AdminCustomHttpAllowlistListEnvelope {
+  requestId: string;
+  items: AdminCustomHttpAllowlistEntry[];
+}
+
+interface TelegramLinkCodeEnvelope {
+  requestId: string;
+  code: string;
+  bindingType: "group" | "user";
+  expiresAtUtc: string;
+}
+
+interface SteamIntegrationAccountsEnvelope {
+  requestId: string;
+  items: SteamIntegrationAccount[];
+  totalCount: number;
+}
+
+interface SteamIntegrationAccountEnvelope {
+  requestId: string;
+  account: SteamIntegrationAccount;
+}
+
+interface SteamIntegrationJobsEnvelope {
+  requestId: string;
+  items: SteamIntegrationJob[];
+}
+
+interface SteamIntegrationJobEnvelope {
+  requestId: string;
+  job: SteamIntegrationJob;
 }
 
 function resolveRequestId(headers: Headers, fallback?: string) {
@@ -288,11 +727,11 @@ function unwrapOrThrow<TSuccess>(response: ApiResponseEnvelope<TSuccess>): TSucc
   throw new Error(`${errorCode}: ${message} (requestId: ${requestId})`);
 }
 
-async function requestAdminEnvelope<TSuccess>(
+async function requestAuthedEnvelope<TSuccess>(
   session: ApiSession,
   path: string,
   init: {
-    method: "GET" | "PUT" | "POST" | "DELETE";
+    method: "GET" | "PUT" | "POST" | "DELETE" | "PATCH";
     body?: unknown;
     idempotent?: boolean;
   },
@@ -318,6 +757,18 @@ async function requestAdminEnvelope<TSuccess>(
     status: response.status,
     headers: response.headers,
   });
+}
+
+async function requestAdminEnvelope<TSuccess>(
+  session: ApiSession,
+  path: string,
+  init: {
+    method: "GET" | "PUT" | "POST" | "DELETE" | "PATCH";
+    body?: unknown;
+    idempotent?: boolean;
+  },
+) {
+  return requestAuthedEnvelope<TSuccess>(session, path, init);
 }
 
 export async function listProjectsRequest(session: ApiSession): Promise<Project[]> {
@@ -558,6 +1009,603 @@ export async function upsertAdminTelegramProxyProfileRequest(
   );
 
   return response.profile;
+}
+
+export async function triggerAdminIntegrationRuntimeRequest(
+  session: ApiSession,
+  projectId: string,
+  integrationKey: string,
+  operation: "provision" | "deprovision" | "restart",
+) {
+  return requestAdminEnvelope<{ requestId: string; status: string }>(
+    session,
+    `/v1/admin/integrations/projects/${encodeURIComponent(projectId)}/grants/${encodeURIComponent(integrationKey)}/runtime/${operation}`,
+    {
+      method: "POST",
+      idempotent: true,
+    },
+  );
+}
+
+export async function sendAdminTelegramTestMessageRequest(
+  session: ApiSession,
+  payload: AdminTelegramTestMessagePayload,
+) {
+  return requestAdminEnvelope<{ requestId: string; status: string }>(
+    session,
+    "/v1/admin/integrations/telegram/test-message",
+    {
+      method: "POST",
+      body: payload,
+    },
+  );
+}
+
+export async function checkAdminTelegramConnectivityRequest(
+  session: ApiSession,
+): Promise<AdminTelegramConnectivityResult> {
+  const response = await requestAdminEnvelope<AdminTelegramConnectivityEnvelope>(
+    session,
+    "/v1/admin/integrations/telegram/test-connectivity",
+    {
+      method: "POST",
+    },
+  );
+
+  return {
+    status: response.status === "error" ? "error" : "ok",
+    effectivePath: response.effectivePath,
+    proxyAttempted: response.proxyAttempted,
+    proxySucceeded: response.proxySucceeded,
+    directAttempted: response.directAttempted,
+    directSucceeded: response.directSucceeded,
+    reasonCode: response.reasonCode,
+    proxyError: response.proxyError,
+    directError: response.directError,
+    botId: response.botId,
+    username: response.username,
+    firstName: response.firstName,
+  };
+}
+
+export async function listProjectIntegrationsStatusRequest(
+  session: ApiSession,
+  projectId: string,
+): Promise<ProjectIntegrationsStatusEnvelopeData> {
+  const response = await requestAuthedEnvelope<ProjectIntegrationsStatusEnvelope>(
+    session,
+    `/v1/projects/${encodeURIComponent(projectId)}/integrations/status`,
+    {
+      method: "GET",
+    },
+  );
+
+  return {
+    items: response.items ?? [],
+    telegram: response.telegram ?? { groupChats: 0, userDmChats: 0 },
+  };
+}
+
+export async function listSteamIntegrationAccountsRequest(
+  session: ApiSession,
+  projectId: string,
+  params?: {
+    query?: string;
+    status?: string;
+    page?: number;
+    pageSize?: number;
+  },
+) {
+  const search = new URLSearchParams();
+  if (params?.query?.trim()) {
+    search.set("query", params.query.trim());
+  }
+
+  if (params?.status?.trim()) {
+    search.set("status", params.status.trim());
+  }
+
+  if (typeof params?.page === "number") {
+    search.set("page", String(params.page));
+  }
+
+  if (typeof params?.pageSize === "number") {
+    search.set("pageSize", String(params.pageSize));
+  }
+
+  const query = search.size > 0 ? `?${search.toString()}` : "";
+  const response = await requestAuthedEnvelope<SteamIntegrationAccountsEnvelope>(
+    session,
+    `/v1/projects/${encodeURIComponent(projectId)}/integrations/steam/accounts${query}`,
+    {
+      method: "GET",
+    },
+  );
+
+  return {
+    items: response.items ?? [],
+    totalCount: response.totalCount ?? response.items?.length ?? 0,
+  };
+}
+
+export async function createSteamIntegrationAccountRequest(
+  session: ApiSession,
+  projectId: string,
+  payload: SteamIntegrationAccountUpsertPayload,
+) {
+  const response = await requestAuthedEnvelope<SteamIntegrationAccountEnvelope>(
+    session,
+    `/v1/projects/${encodeURIComponent(projectId)}/integrations/steam/accounts`,
+    {
+      method: "POST",
+      body: payload,
+      idempotent: true,
+    },
+  );
+
+  return response.account;
+}
+
+export async function updateSteamIntegrationAccountRequest(
+  session: ApiSession,
+  projectId: string,
+  accountId: string,
+  payload: SteamIntegrationAccountUpsertPayload,
+) {
+  const response = await requestAuthedEnvelope<SteamIntegrationAccountEnvelope>(
+    session,
+    `/v1/projects/${encodeURIComponent(projectId)}/integrations/steam/accounts/${encodeURIComponent(accountId)}`,
+    {
+      method: "PATCH",
+      body: payload,
+      idempotent: true,
+    },
+  );
+
+  return response.account;
+}
+
+export async function archiveSteamIntegrationAccountRequest(
+  session: ApiSession,
+  projectId: string,
+  accountId: string,
+) {
+  return requestAuthedEnvelope<{ requestId: string; status: string }>(
+    session,
+    `/v1/projects/${encodeURIComponent(projectId)}/integrations/steam/accounts/${encodeURIComponent(accountId)}`,
+    {
+      method: "DELETE",
+      idempotent: true,
+    },
+  );
+}
+
+export async function listSteamIntegrationJobsRequest(
+  session: ApiSession,
+  projectId: string,
+  take = 30,
+) {
+  const response = await requestAuthedEnvelope<SteamIntegrationJobsEnvelope>(
+    session,
+    `/v1/projects/${encodeURIComponent(projectId)}/integrations/steam/jobs?take=${encodeURIComponent(String(take))}`,
+    {
+      method: "GET",
+    },
+  );
+
+  return response.items ?? [];
+}
+
+export async function createSteamIntegrationJobRequest(
+  session: ApiSession,
+  projectId: string,
+  payload: SteamIntegrationJobCreatePayload,
+) {
+  const response = await requestAuthedEnvelope<SteamIntegrationJobEnvelope>(
+    session,
+    `/v1/projects/${encodeURIComponent(projectId)}/integrations/steam/jobs`,
+    {
+      method: "POST",
+      body: payload,
+      idempotent: true,
+    },
+  );
+
+  return response.job;
+}
+
+export async function cancelSteamIntegrationJobRequest(
+  session: ApiSession,
+  projectId: string,
+  jobId: string,
+) {
+  return requestAuthedEnvelope<{ requestId: string; status: string }>(
+    session,
+    `/v1/projects/${encodeURIComponent(projectId)}/integrations/steam/jobs/${encodeURIComponent(jobId)}/cancel`,
+    {
+      method: "POST",
+      idempotent: true,
+    },
+  );
+}
+
+export async function triggerProjectIntegrationRuntimeRequest(
+  session: ApiSession,
+  projectId: string,
+  integrationKey: string,
+  operation: "provision" | "deprovision" | "restart",
+) {
+  return requestAuthedEnvelope<{ requestId: string; status: string }>(
+    session,
+    `/v1/projects/${encodeURIComponent(projectId)}/integrations/${encodeURIComponent(integrationKey)}/runtime/${operation}`,
+    {
+      method: "POST",
+      idempotent: true,
+    },
+  );
+}
+
+export async function invokeProjectIntegrationActionRequest(
+  session: ApiSession,
+  projectId: string,
+  integrationKey: string,
+  scope: "read" | "jobs",
+  payload?: Record<string, unknown>,
+) {
+  const response = await requestAuthedEnvelope<{ requestId: string; result: Record<string, unknown> }>(
+    session,
+    `/v1/projects/${encodeURIComponent(projectId)}/integrations/${encodeURIComponent(integrationKey)}/actions/${scope}`,
+    {
+      method: "POST",
+      body: payload,
+      idempotent: true,
+    },
+  );
+
+  return response.result ?? {};
+}
+
+export async function createTelegramLinkCodeRequest(
+  session: ApiSession,
+  projectId: string,
+  payload: TelegramLinkCodeCreatePayload,
+): Promise<TelegramLinkCodePayload> {
+  const response = await requestAuthedEnvelope<TelegramLinkCodeEnvelope>(
+    session,
+    `/v1/projects/${encodeURIComponent(projectId)}/integrations/telegram/link-codes`,
+    {
+      method: "POST",
+      body: payload,
+      idempotent: true,
+    },
+  );
+
+  return {
+    code: response.code,
+    bindingType: response.bindingType,
+    expiresAtUtc: response.expiresAtUtc,
+  };
+}
+
+export async function listOffersRequest(
+  session: ApiSession,
+  projectId: string,
+): Promise<Offer[]> {
+  const response = await requestAuthedEnvelope<OfferListEnvelope>(
+    session,
+    `/v1/projects/${encodeURIComponent(projectId)}/offers`,
+    {
+      method: "GET",
+    },
+  );
+
+  return response.items ?? [];
+}
+
+export async function createOfferRequest(
+  session: ApiSession,
+  projectId: string,
+  payload: OfferCreatePayload,
+): Promise<Offer> {
+  const response = await requestAuthedEnvelope<OfferEnvelope>(
+    session,
+    `/v1/projects/${encodeURIComponent(projectId)}/offers`,
+    {
+      method: "POST",
+      body: payload,
+      idempotent: true,
+    },
+  );
+
+  return response.offer;
+}
+
+export async function getOfferRequest(
+  session: ApiSession,
+  projectId: string,
+  offerId: string,
+): Promise<Offer> {
+  const response = await requestAuthedEnvelope<OfferEnvelope>(
+    session,
+    `/v1/projects/${encodeURIComponent(projectId)}/offers/${encodeURIComponent(offerId)}`,
+    {
+      method: "GET",
+    },
+  );
+
+  return response.offer;
+}
+
+export async function updateOfferRequest(
+  session: ApiSession,
+  projectId: string,
+  offerId: string,
+  payload: OfferUpdatePayload,
+): Promise<Offer> {
+  const response = await requestAuthedEnvelope<OfferEnvelope>(
+    session,
+    `/v1/projects/${encodeURIComponent(projectId)}/offers/${encodeURIComponent(offerId)}`,
+    {
+      method: "PATCH",
+      body: payload,
+      idempotent: true,
+    },
+  );
+
+  return response.offer;
+}
+
+export async function deleteOfferRequest(
+  session: ApiSession,
+  projectId: string,
+  offerId: string,
+) {
+  return requestAuthedEnvelope<{ requestId: string; status: string }>(
+    session,
+    `/v1/projects/${encodeURIComponent(projectId)}/offers/${encodeURIComponent(offerId)}`,
+    {
+      method: "DELETE",
+      idempotent: true,
+    },
+  );
+}
+
+export async function replaceOfferVariantsRequest(
+  session: ApiSession,
+  projectId: string,
+  offerId: string,
+  items: OfferVariantUpsertPayload[],
+): Promise<Offer> {
+  const response = await requestAuthedEnvelope<OfferEnvelope>(
+    session,
+    `/v1/projects/${encodeURIComponent(projectId)}/offers/${encodeURIComponent(offerId)}/variants`,
+    {
+      method: "PUT",
+      body: { items },
+      idempotent: true,
+    },
+  );
+
+  return response.offer;
+}
+
+export async function getOfferWorkflowDraftRequest(
+  session: ApiSession,
+  projectId: string,
+  offerId: string,
+): Promise<WorkflowDraftEnvelopeData> {
+  const response = await requestAuthedEnvelope<WorkflowDraftEnvelope>(
+    session,
+    `/v1/projects/${encodeURIComponent(projectId)}/offers/${encodeURIComponent(offerId)}/workflow/draft`,
+    {
+      method: "GET",
+    },
+  );
+
+  return {
+    draft: response.draft,
+    status: response.status,
+    publishedVersion: response.publishedVersion,
+    publishedAtUtc: response.publishedAtUtc,
+  };
+}
+
+export async function saveOfferWorkflowDraftRequest(
+  session: ApiSession,
+  projectId: string,
+  offerId: string,
+  draft: WorkflowDraft,
+): Promise<WorkflowDraftEnvelopeData> {
+  const response = await requestAuthedEnvelope<WorkflowDraftEnvelope>(
+    session,
+    `/v1/projects/${encodeURIComponent(projectId)}/offers/${encodeURIComponent(offerId)}/workflow/draft`,
+    {
+      method: "PUT",
+      body: draft,
+      idempotent: true,
+    },
+  );
+
+  return {
+    draft: response.draft,
+    status: response.status,
+    publishedVersion: response.publishedVersion,
+    publishedAtUtc: response.publishedAtUtc,
+  };
+}
+
+export async function publishOfferWorkflowRequest(
+  session: ApiSession,
+  projectId: string,
+  offerId: string,
+): Promise<WorkflowDraftEnvelopeData> {
+  const response = await requestAuthedEnvelope<WorkflowDraftEnvelope>(
+    session,
+    `/v1/projects/${encodeURIComponent(projectId)}/offers/${encodeURIComponent(offerId)}/workflow/publish`,
+    {
+      method: "POST",
+      idempotent: true,
+    },
+  );
+
+  return {
+    draft: response.draft,
+    status: response.status,
+    publishedVersion: response.publishedVersion,
+    publishedAtUtc: response.publishedAtUtc,
+  };
+}
+
+export async function listOfferWorkflowExecutionsRequest(
+  session: ApiSession,
+  projectId: string,
+  offerId: string,
+): Promise<WorkflowExecution[]> {
+  const response = await requestAuthedEnvelope<WorkflowExecutionListEnvelope>(
+    session,
+    `/v1/projects/${encodeURIComponent(projectId)}/offers/${encodeURIComponent(offerId)}/workflow/executions`,
+    {
+      method: "GET",
+    },
+  );
+
+  return response.items ?? [];
+}
+
+export async function listProjectCustomHttpIntegrationsRequest(
+  session: ApiSession,
+  projectId: string,
+): Promise<ProjectCustomHttpIntegration[]> {
+  const response = await requestAuthedEnvelope<ProjectCustomHttpIntegrationListEnvelope>(
+    session,
+    `/v1/projects/${encodeURIComponent(projectId)}/integrations/custom-http`,
+    {
+      method: "GET",
+    },
+  );
+
+  return response.items ?? [];
+}
+
+export async function createProjectCustomHttpIntegrationRequest(
+  session: ApiSession,
+  projectId: string,
+  payload: ProjectCustomHttpIntegrationCreatePayload,
+): Promise<ProjectCustomHttpIntegration> {
+  const response = await requestAuthedEnvelope<ProjectCustomHttpIntegrationEnvelope>(
+    session,
+    `/v1/projects/${encodeURIComponent(projectId)}/integrations/custom-http`,
+    {
+      method: "POST",
+      body: payload,
+      idempotent: true,
+    },
+  );
+
+  return response.integration;
+}
+
+export async function updateProjectCustomHttpIntegrationRequest(
+  session: ApiSession,
+  projectId: string,
+  integrationId: string,
+  payload: ProjectCustomHttpIntegrationUpdatePayload,
+): Promise<ProjectCustomHttpIntegration> {
+  const response = await requestAuthedEnvelope<ProjectCustomHttpIntegrationEnvelope>(
+    session,
+    `/v1/projects/${encodeURIComponent(projectId)}/integrations/custom-http/${encodeURIComponent(integrationId)}`,
+    {
+      method: "PATCH",
+      body: payload,
+      idempotent: true,
+    },
+  );
+
+  return response.integration;
+}
+
+export async function deleteProjectCustomHttpIntegrationRequest(
+  session: ApiSession,
+  projectId: string,
+  integrationId: string,
+) {
+  return requestAuthedEnvelope<{ requestId: string; status: string }>(
+    session,
+    `/v1/projects/${encodeURIComponent(projectId)}/integrations/custom-http/${encodeURIComponent(integrationId)}`,
+    {
+      method: "DELETE",
+      idempotent: true,
+    },
+  );
+}
+
+export async function testProjectCustomHttpIntegrationRequest(
+  session: ApiSession,
+  projectId: string,
+  integrationId: string,
+  payload: ProjectCustomHttpIntegrationTestPayload,
+): Promise<ProjectCustomHttpIntegrationTestResult> {
+  const response = await requestAuthedEnvelope<ProjectCustomHttpIntegrationTestEnvelope>(
+    session,
+    `/v1/projects/${encodeURIComponent(projectId)}/integrations/custom-http/${encodeURIComponent(integrationId)}/test`,
+    {
+      method: "POST",
+      body: payload,
+      idempotent: true,
+    },
+  );
+
+  return {
+    statusCode: response.statusCode,
+    endpoint: response.endpoint,
+    body: response.body,
+  };
+}
+
+export async function listAdminCustomHttpAllowlistRequest(
+  session: ApiSession,
+): Promise<AdminCustomHttpAllowlistEntry[]> {
+  const response = await requestAdminEnvelope<AdminCustomHttpAllowlistListEnvelope>(
+    session,
+    "/v1/admin/integrations/custom-http/allowlist",
+    {
+      method: "GET",
+    },
+  );
+
+  return response.items ?? [];
+}
+
+export async function upsertAdminCustomHttpAllowlistEntryRequest(
+  session: ApiSession,
+  entryId: string,
+  payload: AdminCustomHttpAllowlistUpsertPayload,
+): Promise<AdminCustomHttpAllowlistEntry> {
+  const response = await requestAdminEnvelope<AdminCustomHttpAllowlistEnvelope>(
+    session,
+    `/v1/admin/integrations/custom-http/allowlist/${encodeURIComponent(entryId)}`,
+    {
+      method: "PUT",
+      body: payload,
+      idempotent: true,
+    },
+  );
+
+  return response.entry;
+}
+
+export async function deleteAdminCustomHttpAllowlistEntryRequest(
+  session: ApiSession,
+  entryId: string,
+) {
+  return requestAdminEnvelope<{ requestId: string; status: string }>(
+    session,
+    `/v1/admin/integrations/custom-http/allowlist/${encodeURIComponent(entryId)}`,
+    {
+      method: "DELETE",
+      idempotent: true,
+    },
+  );
 }
 
 export async function createAccountRequest(

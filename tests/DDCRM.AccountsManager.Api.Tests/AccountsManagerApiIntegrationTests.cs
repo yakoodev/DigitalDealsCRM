@@ -24,19 +24,19 @@ public sealed class AccountsManagerApiIntegrationTests
             .EnumerateArray()
             .ToArray();
 
-        Assert.Equal(4, items.Length);
+        Assert.Equal(2, items.Length);
 
         var accountTypeIds = items
             .Select(x => x.GetProperty("accountTypeId").GetString() ?? string.Empty)
             .ToArray();
         Assert.Equal(
-            ["test-worker.funpay", "test-worker.playerok", "test-worker.ggsell", "test-worker.platimarket"],
+            ["test-worker.funpay", "test-worker.playerok"],
             accountTypeIds);
 
         var platforms = items
             .Select(x => x.GetProperty("platform").GetString() ?? string.Empty)
             .ToArray();
-        Assert.Equal(["funpay", "playerok", "ggsell", "platimarket"], platforms);
+        Assert.Equal(["funpay", "playerok"], platforms);
 
         foreach (var item in items)
         {
@@ -552,7 +552,7 @@ public sealed class AccountsManagerApiIntegrationTests
             {
                 accountId,
                 projectId,
-                platform = "ggsell",
+                platform = "playerok",
                 proxyConfig = new
                 {
                     host = "127.0.0.1",
@@ -742,7 +742,7 @@ public sealed class AccountsManagerApiIntegrationTests
             {
                 accountId,
                 projectId = Guid.NewGuid(),
-                platform = "platimarket",
+                platform = "funpay",
                 proxyConfig = new
                 {
                     host = "127.0.0.1",
@@ -776,7 +776,7 @@ public sealed class AccountsManagerApiIntegrationTests
             {
                 accountId,
                 projectId = Guid.NewGuid(),
-                platform = "platimarket",
+                platform = "funpay",
                 proxyConfig = new
                 {
                     host = "127.0.0.1",

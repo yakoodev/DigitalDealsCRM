@@ -58,6 +58,12 @@
 - CORS runtime-настройки external API читаются по `docs/standards/runtime-configuration.md`
 - service-auth runtime-настройки internal API читаются по `docs/standards/runtime-configuration.md`
 - service-auth runtime-настройки worker API читаются по `docs/standards/runtime-configuration.md`
+- Offer CRUD и привязка variants работают без расхождений в агрегированной read-модели цены (`min/max/average/currencies`)
+- workflow draft/publish и асинхронное исполнение через outbox покрыты сценариями успеха/повтора/ошибки
+- purchase webhook (`/v1/integrations/workflow/purchase`) идемпотентен по `projectId + sourceOrderId` и не создаёт дубликаты trigger events
+- custom HTTP integrations проверяют HTTPS + allowlist + SSRF hardening; вызовы в private/loopback сети отклоняются
+- custom HTTP CRUD/test/invoke блокируются без активного grant `custom-http` (`scope=use`)
+- модератору запрещены `project.offers.manage`, `project.workflows.manage`, `project.workflows.run`, `project.integrations.custom.manage`
 
 ## 4. Технические требования к тестам
 - все mutating API покрываются тестами идемпотентности

@@ -25,6 +25,20 @@ public sealed class ProjectEntity
 
     public List<ProjectServiceCredentialEntity> ServiceCredentials { get; set; } = [];
 
+    public List<ProjectIntegrationWorkerRuntimeEntity> IntegrationWorkerRuntimes { get; set; } = [];
+
+    public List<ProjectCustomHttpIntegrationEntity> CustomHttpIntegrations { get; set; } = [];
+
+    public List<OfferEntity> Offers { get; set; } = [];
+
+    public List<OfferVariantEntity> OfferVariants { get; set; } = [];
+
+    public List<WorkflowDefinitionEntity> WorkflowDefinitions { get; set; } = [];
+
+    public List<WorkflowTriggerEventEntity> WorkflowTriggerEvents { get; set; } = [];
+
+    public List<WorkflowExecutionEntity> WorkflowExecutions { get; set; } = [];
+
     public List<TelegramChatBindingEntity> TelegramChatBindings { get; set; } = [];
 
     public List<TelegramLinkCodeEntity> TelegramLinkCodes { get; set; } = [];

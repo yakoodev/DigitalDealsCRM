@@ -21,6 +21,28 @@ public sealed class CoreDbContext(DbContextOptions<CoreDbContext> options)
 
     public DbSet<ProjectServiceCredentialEntity> ProjectServiceCredentials => Set<ProjectServiceCredentialEntity>();
 
+    public DbSet<ProjectIntegrationWorkerRuntimeEntity> ProjectIntegrationWorkerRuntimes => Set<ProjectIntegrationWorkerRuntimeEntity>();
+
+    public DbSet<ProjectCustomHttpIntegrationEntity> ProjectCustomHttpIntegrations => Set<ProjectCustomHttpIntegrationEntity>();
+
+    public DbSet<OfferEntity> Offers => Set<OfferEntity>();
+
+    public DbSet<OfferVariantEntity> OfferVariants => Set<OfferVariantEntity>();
+
+    public DbSet<WorkflowDefinitionEntity> WorkflowDefinitions => Set<WorkflowDefinitionEntity>();
+
+    public DbSet<WorkflowTriggerEventEntity> WorkflowTriggerEvents => Set<WorkflowTriggerEventEntity>();
+
+    public DbSet<WorkflowOutboxEntity> WorkflowOutbox => Set<WorkflowOutboxEntity>();
+
+    public DbSet<WorkflowExecutionEntity> WorkflowExecutions => Set<WorkflowExecutionEntity>();
+
+    public DbSet<WorkflowExecutionStepEntity> WorkflowExecutionSteps => Set<WorkflowExecutionStepEntity>();
+
+    public DbSet<WorkflowMessageCursorEntity> WorkflowMessageCursors => Set<WorkflowMessageCursorEntity>();
+
+    public DbSet<AdminCustomHttpAllowlistEntity> AdminCustomHttpAllowlist => Set<AdminCustomHttpAllowlistEntity>();
+
     public DbSet<TelegramProxyProfileEntity> TelegramProxyProfiles => Set<TelegramProxyProfileEntity>();
 
     public DbSet<TelegramChatBindingEntity> TelegramChatBindings => Set<TelegramChatBindingEntity>();
@@ -30,6 +52,8 @@ public sealed class CoreDbContext(DbContextOptions<CoreDbContext> options)
     public DbSet<NotificationOutboxEntity> NotificationOutbox => Set<NotificationOutboxEntity>();
 
     public DbSet<ServiceCredentialSyncOutboxEntity> ServiceCredentialSyncOutbox => Set<ServiceCredentialSyncOutboxEntity>();
+
+    public DbSet<IntegrationWorkerRuntimeOutboxEntity> IntegrationWorkerRuntimeOutbox => Set<IntegrationWorkerRuntimeOutboxEntity>();
 
     public DbSet<IdempotencyRecord> IdempotencyRecords => Set<IdempotencyRecord>();
 
@@ -46,6 +70,13 @@ public sealed class CoreDbContext(DbContextOptions<CoreDbContext> options)
             entity.HasMany(x => x.Accounts).WithOne(x => x.Project).HasForeignKey(x => x.ProjectId);
             entity.HasMany(x => x.IntegrationGrants).WithOne(x => x.Project).HasForeignKey(x => x.ProjectId);
             entity.HasMany(x => x.ServiceCredentials).WithOne(x => x.Project).HasForeignKey(x => x.ProjectId);
+            entity.HasMany(x => x.IntegrationWorkerRuntimes).WithOne(x => x.Project).HasForeignKey(x => x.ProjectId);
+            entity.HasMany(x => x.CustomHttpIntegrations).WithOne(x => x.Project).HasForeignKey(x => x.ProjectId);
+            entity.HasMany(x => x.Offers).WithOne(x => x.Project).HasForeignKey(x => x.ProjectId);
+            entity.HasMany(x => x.OfferVariants).WithOne().HasForeignKey(x => x.ProjectId);
+            entity.HasMany(x => x.WorkflowDefinitions).WithOne(x => x.Project).HasForeignKey(x => x.ProjectId);
+            entity.HasMany(x => x.WorkflowTriggerEvents).WithOne(x => x.Project).HasForeignKey(x => x.ProjectId);
+            entity.HasMany(x => x.WorkflowExecutions).WithOne(x => x.Project).HasForeignKey(x => x.ProjectId);
             entity.HasMany(x => x.TelegramChatBindings).WithOne(x => x.Project).HasForeignKey(x => x.ProjectId);
             entity.HasMany(x => x.TelegramLinkCodes).WithOne(x => x.Project).HasForeignKey(x => x.ProjectId);
             entity.HasMany(x => x.NotificationOutboxItems).WithOne(x => x.Project).HasForeignKey(x => x.ProjectId);
@@ -119,6 +150,154 @@ public sealed class CoreDbContext(DbContextOptions<CoreDbContext> options)
             entity.HasIndex(x => new { x.ProjectId, x.IntegrationKey }).IsUnique();
         });
 
+        modelBuilder.Entity<ProjectIntegrationWorkerRuntimeEntity>(entity =>
+        {
+            entity.ToTable("project_integration_worker_runtimes");
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.IntegrationKey).HasMaxLength(80).IsRequired();
+            entity.Property(x => x.Status).HasMaxLength(32).IsRequired();
+            entity.Property(x => x.LastError).HasMaxLength(1000);
+            entity.Property(x => x.CreatedAtUtc).HasDefaultValueSql("NOW()");
+            entity.Property(x => x.UpdatedAtUtc).HasDefaultValueSql("NOW()");
+            entity.HasIndex(x => new { x.ProjectId, x.IntegrationKey }).IsUnique();
+            entity.HasIndex(x => x.RuntimeAccountId).IsUnique();
+        });
+
+        modelBuilder.Entity<ProjectCustomHttpIntegrationEntity>(entity =>
+        {
+            entity.ToTable("project_custom_http_integrations");
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Name).HasMaxLength(120).IsRequired();
+            entity.Property(x => x.BaseUrl).HasMaxLength(1000).IsRequired();
+            entity.Property(x => x.Status).HasMaxLength(32).IsRequired();
+            entity.Property(x => x.BearerTokenMasked).HasMaxLength(24).IsRequired();
+            entity.Property(x => x.CreatedAtUtc).HasDefaultValueSql("NOW()");
+            entity.Property(x => x.UpdatedAtUtc).HasDefaultValueSql("NOW()");
+            entity.HasIndex(x => new { x.ProjectId, x.Name }).IsUnique();
+            entity.HasIndex(x => new { x.ProjectId, x.Status });
+        });
+
+        modelBuilder.Entity<OfferEntity>(entity =>
+        {
+            entity.ToTable("offers");
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Name).HasMaxLength(200).IsRequired();
+            entity.Property(x => x.Description).HasMaxLength(2000);
+            entity.Property(x => x.Status).HasMaxLength(32).IsRequired();
+            entity.Property(x => x.CreatedAtUtc).HasDefaultValueSql("NOW()");
+            entity.Property(x => x.UpdatedAtUtc).HasDefaultValueSql("NOW()");
+            entity.HasIndex(x => new { x.ProjectId, x.Name });
+        });
+
+        modelBuilder.Entity<OfferVariantEntity>(entity =>
+        {
+            entity.ToTable("offer_variants");
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.WorkerProductId).HasMaxLength(200).IsRequired();
+            entity.Property(x => x.Platform).HasMaxLength(80).IsRequired();
+            entity.Property(x => x.ObservedTitle).HasMaxLength(400).IsRequired();
+            entity.Property(x => x.ObservedDescription).HasMaxLength(4000);
+            entity.Property(x => x.ObservedCurrency).HasMaxLength(8).IsRequired();
+            entity.Property(x => x.ObservedPrice).HasPrecision(18, 2);
+            entity.Property(x => x.CreatedAtUtc).HasDefaultValueSql("NOW()");
+            entity.Property(x => x.UpdatedAtUtc).HasDefaultValueSql("NOW()");
+            entity.HasIndex(x => new { x.OfferId, x.AccountId, x.WorkerProductId }).IsUnique();
+            entity.HasIndex(x => new { x.ProjectId, x.AccountId });
+            entity.HasOne(x => x.Offer).WithMany(x => x.Variants).HasForeignKey(x => x.OfferId);
+        });
+
+        modelBuilder.Entity<WorkflowDefinitionEntity>(entity =>
+        {
+            entity.ToTable("workflow_definitions");
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.DraftJson).IsRequired();
+            entity.Property(x => x.Status).HasMaxLength(32).IsRequired();
+            entity.Property(x => x.CreatedAtUtc).HasDefaultValueSql("NOW()");
+            entity.Property(x => x.UpdatedAtUtc).HasDefaultValueSql("NOW()");
+            entity.HasIndex(x => x.OfferId).IsUnique();
+            entity.HasOne(x => x.Offer).WithMany(x => x.WorkflowDefinitions).HasForeignKey(x => x.OfferId);
+        });
+
+        modelBuilder.Entity<WorkflowTriggerEventEntity>(entity =>
+        {
+            entity.ToTable("workflow_trigger_events");
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Source).HasMaxLength(80).IsRequired();
+            entity.Property(x => x.SourceOrderId).HasMaxLength(160).IsRequired();
+            entity.Property(x => x.BuyerId).HasMaxLength(160);
+            entity.Property(x => x.PayloadJson).IsRequired();
+            entity.Property(x => x.Status).HasMaxLength(32).IsRequired();
+            entity.Property(x => x.CreatedAtUtc).HasDefaultValueSql("NOW()");
+            entity.HasIndex(x => new { x.ProjectId, x.SourceOrderId }).IsUnique();
+            entity.HasIndex(x => new { x.ProjectId, x.OfferId, x.CreatedAtUtc });
+            entity.HasOne(x => x.Offer).WithMany(x => x.WorkflowTriggerEvents).HasForeignKey(x => x.OfferId);
+        });
+
+        modelBuilder.Entity<WorkflowOutboxEntity>(entity =>
+        {
+            entity.ToTable("workflow_outbox");
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Status).HasMaxLength(32).IsRequired();
+            entity.Property(x => x.LastError).HasMaxLength(1000);
+            entity.Property(x => x.CreatedAtUtc).HasDefaultValueSql("NOW()");
+            entity.HasIndex(x => new { x.Status, x.NextAttemptAtUtc });
+            entity.HasIndex(x => x.TriggerEventId);
+            entity.HasOne(x => x.TriggerEvent).WithMany(x => x.OutboxItems).HasForeignKey(x => x.TriggerEventId);
+        });
+
+        modelBuilder.Entity<WorkflowExecutionEntity>(entity =>
+        {
+            entity.ToTable("workflow_executions");
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.SourceOrderId).HasMaxLength(160).IsRequired();
+            entity.Property(x => x.Status).HasMaxLength(32).IsRequired();
+            entity.Property(x => x.LastError).HasMaxLength(1000);
+            entity.Property(x => x.StartedAtUtc).HasDefaultValueSql("NOW()");
+            entity.HasIndex(x => new { x.ProjectId, x.OfferId, x.StartedAtUtc });
+            entity.HasIndex(x => x.TriggerEventId);
+            entity.HasOne(x => x.Offer).WithMany(x => x.WorkflowExecutions).HasForeignKey(x => x.OfferId);
+            entity.HasOne(x => x.WorkflowDefinition).WithMany(x => x.Executions).HasForeignKey(x => x.WorkflowDefinitionId);
+            entity.HasOne(x => x.TriggerEvent).WithMany(x => x.Executions).HasForeignKey(x => x.TriggerEventId);
+        });
+
+        modelBuilder.Entity<WorkflowExecutionStepEntity>(entity =>
+        {
+            entity.ToTable("workflow_execution_steps");
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.NodeId).HasMaxLength(120).IsRequired();
+            entity.Property(x => x.NodeType).HasMaxLength(80).IsRequired();
+            entity.Property(x => x.Status).HasMaxLength(32).IsRequired();
+            entity.Property(x => x.Error).HasMaxLength(1000);
+            entity.Property(x => x.StartedAtUtc).HasDefaultValueSql("NOW()");
+            entity.HasIndex(x => new { x.ExecutionId, x.StepIndex });
+            entity.HasOne(x => x.Execution).WithMany(x => x.Steps).HasForeignKey(x => x.ExecutionId);
+        });
+
+        modelBuilder.Entity<WorkflowMessageCursorEntity>(entity =>
+        {
+            entity.ToTable("workflow_message_cursors");
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.ConversationId).HasMaxLength(160).IsRequired();
+            entity.Property(x => x.LastSeenMessageId).HasMaxLength(200).IsRequired();
+            entity.Property(x => x.CreatedAtUtc).HasDefaultValueSql("NOW()");
+            entity.Property(x => x.UpdatedAtUtc).HasDefaultValueSql("NOW()");
+            entity.HasIndex(x => new { x.ProjectId, x.AccountId, x.ConversationId }).IsUnique();
+            entity.HasIndex(x => new { x.ProjectId, x.UpdatedAtUtc });
+            entity.HasOne(x => x.Project).WithMany().HasForeignKey(x => x.ProjectId);
+        });
+
+        modelBuilder.Entity<AdminCustomHttpAllowlistEntity>(entity =>
+        {
+            entity.ToTable("admin_custom_http_allowlist");
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.HostPattern).HasMaxLength(255).IsRequired();
+            entity.Property(x => x.Note).HasMaxLength(500);
+            entity.Property(x => x.CreatedAtUtc).HasDefaultValueSql("NOW()");
+            entity.Property(x => x.UpdatedAtUtc).HasDefaultValueSql("NOW()");
+            entity.HasIndex(x => x.HostPattern).IsUnique();
+            entity.HasIndex(x => x.IsActive);
+        });
+
         modelBuilder.Entity<TelegramProxyProfileEntity>(entity =>
         {
             entity.ToTable("telegram_proxy_profiles");
@@ -173,6 +352,19 @@ public sealed class CoreDbContext(DbContextOptions<CoreDbContext> options)
         modelBuilder.Entity<ServiceCredentialSyncOutboxEntity>(entity =>
         {
             entity.ToTable("service_credential_sync_outbox");
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.IntegrationKey).HasMaxLength(80).IsRequired();
+            entity.Property(x => x.Operation).HasMaxLength(32).IsRequired();
+            entity.Property(x => x.Status).HasMaxLength(32).IsRequired();
+            entity.Property(x => x.LastError).HasMaxLength(1000);
+            entity.Property(x => x.CreatedAtUtc).HasDefaultValueSql("NOW()");
+            entity.HasIndex(x => new { x.Status, x.NextAttemptAtUtc });
+            entity.HasIndex(x => new { x.ProjectId, x.IntegrationKey, x.Operation });
+        });
+
+        modelBuilder.Entity<IntegrationWorkerRuntimeOutboxEntity>(entity =>
+        {
+            entity.ToTable("integration_worker_runtime_outbox");
             entity.HasKey(x => x.Id);
             entity.Property(x => x.IntegrationKey).HasMaxLength(80).IsRequired();
             entity.Property(x => x.Operation).HasMaxLength(32).IsRequired();

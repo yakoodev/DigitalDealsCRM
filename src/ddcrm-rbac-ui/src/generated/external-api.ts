@@ -261,6 +261,822 @@ export type AdminWorkerServerListResponse = RequestMeta & {
   items: AdminWorkerServer[];
 };
 
+export interface AdminIntegrationGrantUpsertRequest {
+  scopes?: string[];
+}
+
+export type AdminIntegrationGrantIntegrationType = typeof AdminIntegrationGrantIntegrationType[keyof typeof AdminIntegrationGrantIntegrationType];
+
+
+export const AdminIntegrationGrantIntegrationType = {
+  service: 'service',
+  worker: 'worker',
+  notification: 'notification',
+  custom: 'custom',
+  platform: 'platform',
+  unknown: 'unknown',
+} as const;
+
+export type AdminIntegrationGrantStatus = typeof AdminIntegrationGrantStatus[keyof typeof AdminIntegrationGrantStatus];
+
+
+export const AdminIntegrationGrantStatus = {
+  active: 'active',
+  revoked: 'revoked',
+} as const;
+
+/**
+ * @nullable
+ */
+export type AdminIntegrationGrantCredentialStatus = typeof AdminIntegrationGrantCredentialStatus[keyof typeof AdminIntegrationGrantCredentialStatus] | null;
+
+
+export const AdminIntegrationGrantCredentialStatus = {
+  pending_sync: 'pending_sync',
+  active: 'active',
+  revoking: 'revoking',
+  revoked: 'revoked',
+} as const;
+
+/**
+ * @nullable
+ */
+export type AdminIntegrationGrantRuntimeStatus = typeof AdminIntegrationGrantRuntimeStatus[keyof typeof AdminIntegrationGrantRuntimeStatus] | null;
+
+
+export const AdminIntegrationGrantRuntimeStatus = {
+  pending_provision: 'pending_provision',
+  active: 'active',
+  revoking: 'revoking',
+  revoked: 'revoked',
+} as const;
+
+export interface AdminIntegrationGrant {
+  integrationKey: string;
+  integrationType: AdminIntegrationGrantIntegrationType;
+  status: AdminIntegrationGrantStatus;
+  scopes: string[];
+  grantedAtUtc: string;
+  /** @nullable */
+  revokedAtUtc?: string | null;
+  /** @nullable */
+  credentialStatus?: AdminIntegrationGrantCredentialStatus;
+  /** @nullable */
+  credentialMasked?: string | null;
+  /** @nullable */
+  runtimeStatus?: AdminIntegrationGrantRuntimeStatus;
+  /** @nullable */
+  runtimeAccountId?: string | null;
+  /** @nullable */
+  runtimeLastError?: string | null;
+}
+
+export type AdminIntegrationGrantResponse = RequestMeta & {
+  grant: AdminIntegrationGrant;
+};
+
+export type AdminIntegrationGrantListResponse = RequestMeta & {
+  items: AdminIntegrationGrant[];
+};
+
+export type AdminTelegramProxyProfileUpsertRequestProxyType = typeof AdminTelegramProxyProfileUpsertRequestProxyType[keyof typeof AdminTelegramProxyProfileUpsertRequestProxyType];
+
+
+export const AdminTelegramProxyProfileUpsertRequestProxyType = {
+  http: 'http',
+  https: 'https',
+  socks5: 'socks5',
+} as const;
+
+export interface AdminTelegramProxyProfileUpsertRequest {
+  name: string;
+  proxyType?: AdminTelegramProxyProfileUpsertRequestProxyType;
+  host: string;
+  /**
+     * @minimum 1
+     * @maximum 65535
+     */
+  port: number;
+  setActive: boolean;
+  clearCredentials: boolean;
+  login?: string;
+  password?: string;
+}
+
+export interface AdminTelegramProxyProfile {
+  id: string;
+  name: string;
+  proxyType: string;
+  host: string;
+  port: number;
+  isActive: boolean;
+  hasCredentials: boolean;
+  updatedAtUtc: string;
+}
+
+export type AdminTelegramProxyProfileResponse = RequestMeta & {
+  profile: AdminTelegramProxyProfile;
+};
+
+export type AdminTelegramProxyProfileListResponse = RequestMeta & {
+  items: AdminTelegramProxyProfile[];
+};
+
+export interface AdminTelegramTestMessageRequest {
+  /**
+     * @minLength 1
+     * @maxLength 128
+     */
+  chatId: string;
+  /**
+     * @minLength 1
+     * @maxLength 4096
+     */
+  message?: string;
+}
+
+export type AdminTelegramTestMessageResponseStatus = typeof AdminTelegramTestMessageResponseStatus[keyof typeof AdminTelegramTestMessageResponseStatus];
+
+
+export const AdminTelegramTestMessageResponseStatus = {
+  completed: 'completed',
+} as const;
+
+export type AdminTelegramTestMessageResponseDeliveryPath = typeof AdminTelegramTestMessageResponseDeliveryPath[keyof typeof AdminTelegramTestMessageResponseDeliveryPath];
+
+
+export const AdminTelegramTestMessageResponseDeliveryPath = {
+  proxy: 'proxy',
+  direct: 'direct',
+  unknown: 'unknown',
+} as const;
+
+export type AdminTelegramTestMessageResponse = RequestMeta & ({
+  status: AdminTelegramTestMessageResponseStatus;
+  deliveryPath: AdminTelegramTestMessageResponseDeliveryPath;
+  /** @nullable */
+  reasonCode?: string | null;
+});
+
+export type AdminTelegramConnectivityResponseStatus = typeof AdminTelegramConnectivityResponseStatus[keyof typeof AdminTelegramConnectivityResponseStatus];
+
+
+export const AdminTelegramConnectivityResponseStatus = {
+  ok: 'ok',
+  error: 'error',
+} as const;
+
+export type AdminTelegramConnectivityResponseEffectivePath = typeof AdminTelegramConnectivityResponseEffectivePath[keyof typeof AdminTelegramConnectivityResponseEffectivePath];
+
+
+export const AdminTelegramConnectivityResponseEffectivePath = {
+  proxy: 'proxy',
+  direct: 'direct',
+  none: 'none',
+} as const;
+
+export type AdminTelegramConnectivityResponse = RequestMeta & ({
+  status: AdminTelegramConnectivityResponseStatus;
+  effectivePath: AdminTelegramConnectivityResponseEffectivePath;
+  proxyAttempted: boolean;
+  proxySucceeded: boolean;
+  directAttempted: boolean;
+  directSucceeded: boolean;
+  /** @nullable */
+  reasonCode?: string | null;
+  /** @nullable */
+  proxyError?: string | null;
+  /** @nullable */
+  directError?: string | null;
+  /** @nullable */
+  botId?: string | null;
+  /** @nullable */
+  username?: string | null;
+  /** @nullable */
+  firstName?: string | null;
+});
+
+export type SteamIntegrationAccountUpsertRequestAuthHeaders = {[key: string]: string};
+
+export type SteamIntegrationAccountUpsertRequestMetadata = {[key: string]: string};
+
+export interface SteamIntegrationAccountUpsertRequest {
+  loginName: string;
+  displayName?: string;
+  email?: string;
+  /** Логин email-провайдера (если отличается от email аккаунта). */
+  emailLogin?: string;
+  emailPassword?: string;
+  phoneMasked?: string;
+  password?: string;
+  loginPassword?: string;
+  sharedSecret?: string;
+  identitySecret?: string;
+  guardRecoveryCode?: string;
+  maFilePayload?: string;
+  accessToken?: string;
+  refreshToken?: string;
+  authSessionId?: string;
+  steamLoginSecure?: string;
+  steamRememberLogin?: string;
+  webCookie?: string;
+  deviceId?: string;
+  machineName?: string;
+  familyViewPin?: string;
+  countryCode?: string;
+  timeZone?: string;
+  sessionPayload?: string;
+  recoveryPayload?: string;
+  steamId64?: string;
+  proxy?: string;
+  folderName?: string;
+  authHeaders?: SteamIntegrationAccountUpsertRequestAuthHeaders;
+  tags?: string[];
+  note?: string;
+  metadata?: SteamIntegrationAccountUpsertRequestMetadata;
+  status?: string;
+}
+
+export type SteamIntegrationAccountMetadata = {[key: string]: string};
+
+export interface SteamIntegrationAccount {
+  id: string;
+  loginName: string;
+  /** @nullable */
+  displayName?: string | null;
+  /** @nullable */
+  steamId64?: string | null;
+  /** @nullable */
+  email?: string | null;
+  /** @nullable */
+  phoneMasked?: string | null;
+  /** @nullable */
+  proxy?: string | null;
+  /** @nullable */
+  folderName?: string | null;
+  /** @nullable */
+  status?: string | null;
+  /** @nullable */
+  note?: string | null;
+  tags: string[];
+  metadata: SteamIntegrationAccountMetadata;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type SteamIntegrationAccountsResponse = RequestMeta & {
+  items: SteamIntegrationAccount[];
+  /** @minimum 0 */
+  totalCount: number;
+};
+
+export type SteamIntegrationAccountResponse = RequestMeta & {
+  account: SteamIntegrationAccount;
+};
+
+export type SteamIntegrationJobCreateRequestPayload = {[key: string]: string};
+
+export interface SteamIntegrationJobCreateRequest {
+  type: string;
+  accountIds: string[];
+  dryRun?: boolean;
+  /** @minimum 1 */
+  parallelism?: number;
+  /** @minimum 0 */
+  retryCount?: number;
+  payload?: SteamIntegrationJobCreateRequestPayload;
+}
+
+export type SteamIntegrationJobItemRequest = {[key: string]: string};
+
+export type SteamIntegrationJobItemResult = {[key: string]: string};
+
+export interface SteamIntegrationJobItem {
+  id: string;
+  jobId: string;
+  accountId: string;
+  status: string;
+  attempt: number;
+  /** @nullable */
+  errorText?: string | null;
+  /** @nullable */
+  reasonCode?: string | null;
+  retryable: boolean;
+  /** @nullable */
+  startedAt?: string | null;
+  /** @nullable */
+  finishedAt?: string | null;
+  request: SteamIntegrationJobItemRequest;
+  result: SteamIntegrationJobItemResult;
+}
+
+export type SteamIntegrationJobPayload = {[key: string]: string};
+
+export interface SteamIntegrationJob {
+  id: string;
+  type: string;
+  status: string;
+  createdAt: string;
+  /** @nullable */
+  startedAt?: string | null;
+  /** @nullable */
+  finishedAt?: string | null;
+  totalCount: number;
+  successCount: number;
+  failureCount: number;
+  dryRun: boolean;
+  payload: SteamIntegrationJobPayload;
+  /** @nullable */
+  items?: SteamIntegrationJobItem[] | null;
+}
+
+export type SteamIntegrationJobsResponse = RequestMeta & {
+  items: SteamIntegrationJob[];
+};
+
+export type SteamIntegrationJobResponse = RequestMeta & {
+  job: SteamIntegrationJob;
+};
+
+export type ProjectIntegrationStatusIntegrationType = typeof ProjectIntegrationStatusIntegrationType[keyof typeof ProjectIntegrationStatusIntegrationType];
+
+
+export const ProjectIntegrationStatusIntegrationType = {
+  service: 'service',
+  worker: 'worker',
+  notification: 'notification',
+  custom: 'custom',
+  platform: 'platform',
+  unknown: 'unknown',
+} as const;
+
+/**
+ * @nullable
+ */
+export type ProjectIntegrationStatusRuntimeStatus = typeof ProjectIntegrationStatusRuntimeStatus[keyof typeof ProjectIntegrationStatusRuntimeStatus] | null;
+
+
+export const ProjectIntegrationStatusRuntimeStatus = {
+  pending_provision: 'pending_provision',
+  active: 'active',
+  revoking: 'revoking',
+  revoked: 'revoked',
+} as const;
+
+export interface ProjectIntegrationStatus {
+  integrationKey: string;
+  integrationType: ProjectIntegrationStatusIntegrationType;
+  status: string;
+  scopes: string[];
+  /** @nullable */
+  credentialStatus?: string | null;
+  /** @nullable */
+  credentialMasked?: string | null;
+  /** @nullable */
+  runtimeStatus?: ProjectIntegrationStatusRuntimeStatus;
+  /** @nullable */
+  runtimeAccountId?: string | null;
+  /** @nullable */
+  runtimeLastError?: string | null;
+}
+
+export interface TelegramBindingsSummary {
+  /** @minimum 0 */
+  groupChats: number;
+  /** @minimum 0 */
+  userDmChats: number;
+}
+
+export type ProjectIntegrationStatusResponse = RequestMeta & {
+  items: ProjectIntegrationStatus[];
+  telegram: TelegramBindingsSummary;
+};
+
+export interface AdminCustomHttpAllowlistUpsertRequest {
+  /**
+     * @minLength 1
+     * @maxLength 255
+     */
+  hostPattern: string;
+  isActive: boolean;
+  /** @maxLength 500 */
+  note?: string;
+}
+
+export interface AdminCustomHttpAllowlistEntry {
+  id: string;
+  hostPattern: string;
+  isActive: boolean;
+  /** @nullable */
+  note?: string | null;
+  updatedAtUtc: string;
+}
+
+export type AdminCustomHttpAllowlistResponse = RequestMeta & {
+  entry: AdminCustomHttpAllowlistEntry;
+};
+
+export type AdminCustomHttpAllowlistListResponse = RequestMeta & {
+  items: AdminCustomHttpAllowlistEntry[];
+};
+
+export type ProjectCustomHttpIntegrationStatus = typeof ProjectCustomHttpIntegrationStatus[keyof typeof ProjectCustomHttpIntegrationStatus];
+
+
+export const ProjectCustomHttpIntegrationStatus = {
+  active: 'active',
+  disabled: 'disabled',
+} as const;
+
+export interface ProjectCustomHttpIntegration {
+  id: string;
+  name: string;
+  baseUrl: string;
+  status: ProjectCustomHttpIntegrationStatus;
+  bearerTokenMasked: string;
+  /** @nullable */
+  lastTestedAtUtc?: string | null;
+  updatedAtUtc: string;
+}
+
+export type ProjectCustomHttpIntegrationCreateRequestStatus = typeof ProjectCustomHttpIntegrationCreateRequestStatus[keyof typeof ProjectCustomHttpIntegrationCreateRequestStatus];
+
+
+export const ProjectCustomHttpIntegrationCreateRequestStatus = {
+  active: 'active',
+  disabled: 'disabled',
+} as const;
+
+export type ProjectCustomHttpIntegrationCreateRequestDefaultHeaders = {[key: string]: string};
+
+export interface ProjectCustomHttpIntegrationCreateRequest {
+  /**
+     * @minLength 1
+     * @maxLength 120
+     */
+  name: string;
+  baseUrl: string;
+  bearerToken: string;
+  status?: ProjectCustomHttpIntegrationCreateRequestStatus;
+  defaultHeaders?: ProjectCustomHttpIntegrationCreateRequestDefaultHeaders;
+}
+
+export type ProjectCustomHttpIntegrationUpdateRequestStatus = typeof ProjectCustomHttpIntegrationUpdateRequestStatus[keyof typeof ProjectCustomHttpIntegrationUpdateRequestStatus];
+
+
+export const ProjectCustomHttpIntegrationUpdateRequestStatus = {
+  active: 'active',
+  disabled: 'disabled',
+} as const;
+
+export type ProjectCustomHttpIntegrationUpdateRequestDefaultHeaders = {[key: string]: string};
+
+export interface ProjectCustomHttpIntegrationUpdateRequest {
+  /**
+     * @minLength 1
+     * @maxLength 120
+     */
+  name?: string;
+  baseUrl?: string;
+  bearerToken?: string;
+  status?: ProjectCustomHttpIntegrationUpdateRequestStatus;
+  defaultHeaders?: ProjectCustomHttpIntegrationUpdateRequestDefaultHeaders;
+}
+
+export type ProjectCustomHttpIntegrationResponse = RequestMeta & {
+  integration: ProjectCustomHttpIntegration;
+};
+
+export type ProjectCustomHttpIntegrationListResponse = RequestMeta & {
+  items: ProjectCustomHttpIntegration[];
+};
+
+export type ProjectCustomHttpIntegrationTestRequestHeaders = {[key: string]: string};
+
+export type ProjectCustomHttpIntegrationTestRequestPayload = { [key: string]: unknown };
+
+export interface ProjectCustomHttpIntegrationTestRequest {
+  method?: string;
+  path?: string;
+  headers?: ProjectCustomHttpIntegrationTestRequestHeaders;
+  payload?: ProjectCustomHttpIntegrationTestRequestPayload;
+}
+
+export type ProjectCustomHttpIntegrationTestResponse = RequestMeta & ({
+  statusCode: number;
+  endpoint: string;
+  /** @nullable */
+  body?: string | null;
+});
+
+export interface OfferVariant {
+  id: string;
+  accountId: string;
+  workerProductId: string;
+  platform: string;
+  observedTitle: string;
+  /** @nullable */
+  observedDescription?: string | null;
+  observedPrice: number;
+  observedCurrency: string;
+  priority: number;
+  isActive: boolean;
+}
+
+export interface OfferVariantUpsertRequest {
+  accountId: string;
+  workerProductId: string;
+  platform: string;
+  observedTitle: string;
+  observedDescription?: string;
+  observedPrice: number;
+  observedCurrency: string;
+  priority: number;
+  isActive: boolean;
+}
+
+export interface OfferVariantsReplaceRequest {
+  items?: OfferVariantUpsertRequest[];
+}
+
+export type OfferStatus = typeof OfferStatus[keyof typeof OfferStatus];
+
+
+export const OfferStatus = {
+  active: 'active',
+  paused: 'paused',
+  archived: 'archived',
+} as const;
+
+export interface Offer {
+  id: string;
+  name: string;
+  /** @nullable */
+  description?: string | null;
+  status: OfferStatus;
+  /** @nullable */
+  minPrice?: number | null;
+  /** @nullable */
+  maxPrice?: number | null;
+  /** @nullable */
+  averagePrice?: number | null;
+  currencies: string[];
+  /** @minimum 0 */
+  variantCount: number;
+  variants: OfferVariant[];
+  createdAtUtc: string;
+  updatedAtUtc: string;
+}
+
+export type OfferCreateRequestStatus = typeof OfferCreateRequestStatus[keyof typeof OfferCreateRequestStatus];
+
+
+export const OfferCreateRequestStatus = {
+  active: 'active',
+  paused: 'paused',
+  archived: 'archived',
+} as const;
+
+export interface OfferCreateRequest {
+  /**
+     * @minLength 1
+     * @maxLength 200
+     */
+  name: string;
+  /** @maxLength 2000 */
+  description?: string;
+  status?: OfferCreateRequestStatus;
+}
+
+export type OfferUpdateRequestStatus = typeof OfferUpdateRequestStatus[keyof typeof OfferUpdateRequestStatus];
+
+
+export const OfferUpdateRequestStatus = {
+  active: 'active',
+  paused: 'paused',
+  archived: 'archived',
+} as const;
+
+export interface OfferUpdateRequest {
+  /**
+     * @minLength 1
+     * @maxLength 200
+     */
+  name?: string;
+  /** @maxLength 2000 */
+  description?: string;
+  status?: OfferUpdateRequestStatus;
+}
+
+export type OfferResponse = RequestMeta & {
+  offer: Offer;
+};
+
+export type OfferListResponse = RequestMeta & {
+  items: Offer[];
+};
+
+export type WorkflowNodeType = typeof WorkflowNodeType[keyof typeof WorkflowNodeType];
+
+
+export const WorkflowNodeType = {
+  PurchaseStart: 'PurchaseStart',
+  MessageStart: 'MessageStart',
+  ReviewStart: 'ReviewStart',
+  Condition: 'Condition',
+  SetVariables: 'SetVariables',
+  LoadOffer: 'LoadOffer',
+  SelectAccountPriorityFallback: 'SelectAccountPriorityFallback',
+  InvokeWorkerAction: 'InvokeWorkerAction',
+  InvokeCustomHttp: 'InvokeCustomHttp',
+  SteamAction: 'SteamAction',
+  Task: 'Task',
+  SendBuyerResponse: 'SendBuyerResponse',
+  Notify: 'Notify',
+  End: 'End',
+} as const;
+
+export type WorkflowNodeConfig = { [key: string]: unknown };
+
+export interface WorkflowNodePosition {
+  x: number;
+  y: number;
+}
+
+export interface WorkflowNodeUi {
+  position?: WorkflowNodePosition;
+}
+
+export interface WorkflowNode {
+  id: string;
+  type: WorkflowNodeType;
+  name?: string;
+  config?: WorkflowNodeConfig;
+  ui?: WorkflowNodeUi;
+}
+
+export interface WorkflowEdge {
+  id: string;
+  source: string;
+  sourceHandle?: string;
+  target: string;
+  targetHandle?: string;
+  condition?: string;
+}
+
+export interface WorkflowViewport {
+  x: number;
+  y: number;
+  zoom: number;
+}
+
+export interface WorkflowDraftUi {
+  viewport?: WorkflowViewport;
+  entryNodeId?: string;
+}
+
+export interface WorkflowDraft {
+  version?: string;
+  nodes?: WorkflowNode[];
+  edges?: WorkflowEdge[];
+  /** @minimum 1 */
+  maxSteps?: number;
+  /** @minimum 1 */
+  maxDurationSeconds?: number;
+  /** @minimum 0 */
+  maxRetries?: number;
+  ui?: WorkflowDraftUi;
+}
+
+export type WorkflowDraftResponseStatus = typeof WorkflowDraftResponseStatus[keyof typeof WorkflowDraftResponseStatus];
+
+
+export const WorkflowDraftResponseStatus = {
+  draft: 'draft',
+  published: 'published',
+} as const;
+
+export type WorkflowDraftResponse = RequestMeta & ({
+  draft: WorkflowDraft;
+  status: WorkflowDraftResponseStatus;
+  /** @minimum 0 */
+  publishedVersion: number;
+  /** @nullable */
+  publishedAtUtc?: string | null;
+});
+
+export interface WorkflowExecutionStep {
+  nodeId: string;
+  nodeType: string;
+  stepIndex: number;
+  status: string;
+  startedAtUtc: string;
+  /** @nullable */
+  finishedAtUtc?: string | null;
+  /** @nullable */
+  outputJson?: string | null;
+  /** @nullable */
+  error?: string | null;
+}
+
+export interface WorkflowExecution {
+  id: string;
+  sourceOrderId: string;
+  workflowVersion: number;
+  status: string;
+  startedAtUtc: string;
+  /** @nullable */
+  finishedAtUtc?: string | null;
+  /** @nullable */
+  lastError?: string | null;
+  steps: WorkflowExecutionStep[];
+}
+
+export type WorkflowExecutionListResponse = RequestMeta & {
+  items: WorkflowExecution[];
+};
+
+export type PurchaseWebhookRequestEventType = typeof PurchaseWebhookRequestEventType[keyof typeof PurchaseWebhookRequestEventType];
+
+
+export const PurchaseWebhookRequestEventType = {
+  purchase: 'purchase',
+  message: 'message',
+  review: 'review',
+} as const;
+
+export type PurchaseWebhookRequestPayload = { [key: string]: unknown };
+
+export interface PurchaseWebhookRequest {
+  projectId: string;
+  offerId: string;
+  sourceOrderId: string;
+  buyerId?: string;
+  eventType?: PurchaseWebhookRequestEventType;
+  platform?: string;
+  quantity?: number;
+  amount?: number;
+  currency?: string;
+  messageText?: string;
+  reviewRating?: number;
+  reviewText?: string;
+  payload?: PurchaseWebhookRequestPayload;
+}
+
+export type PurchaseWebhookAckResponseStatus = typeof PurchaseWebhookAckResponseStatus[keyof typeof PurchaseWebhookAckResponseStatus];
+
+
+export const PurchaseWebhookAckResponseStatus = {
+  accepted: 'accepted',
+  duplicate: 'duplicate',
+} as const;
+
+export type PurchaseWebhookAckResponse = RequestMeta & {
+  status: PurchaseWebhookAckResponseStatus;
+};
+
+export type TelegramLinkCodeCreateRequestBindingType = typeof TelegramLinkCodeCreateRequestBindingType[keyof typeof TelegramLinkCodeCreateRequestBindingType];
+
+
+export const TelegramLinkCodeCreateRequestBindingType = {
+  group: 'group',
+  user: 'user',
+} as const;
+
+export interface TelegramLinkCodeCreateRequest {
+  bindingType?: TelegramLinkCodeCreateRequestBindingType;
+}
+
+export type TelegramLinkCodeResponseBindingType = typeof TelegramLinkCodeResponseBindingType[keyof typeof TelegramLinkCodeResponseBindingType];
+
+
+export const TelegramLinkCodeResponseBindingType = {
+  group: 'group',
+  user: 'user',
+} as const;
+
+export type TelegramLinkCodeResponse = RequestMeta & {
+  code: string;
+  bindingType: TelegramLinkCodeResponseBindingType;
+  expiresAtUtc: string;
+};
+
+export interface TelegramUserBindRequest {
+  chatId: string;
+  chatTitle?: string;
+}
+
+export interface TelegramLinkConfirmRequest {
+  code: string;
+  chatId: string;
+  chatTitle?: string;
+}
+
+export interface CriticalNotificationRequest {
+  eventType: string;
+  message: string;
+}
+
 export interface Account {
   id: string;
   projectId: string;
@@ -366,6 +1182,28 @@ export interface WorkerErrorResponse {
 }
 
 export type IdempotencyKeyParameter = string;
+
+export type ListSteamIntegrationAccountsParams = {
+query?: string;
+status?: string;
+/**
+ * @minimum 1
+ */
+page?: number;
+/**
+ * @minimum 1
+ * @maximum 200
+ */
+pageSize?: number;
+};
+
+export type ListSteamIntegrationJobsParams = {
+/**
+ * @minimum 1
+ * @maximum 200
+ */
+take?: number;
+};
 
 export type HTTPStatusCode1xx = 100 | 101 | 102 | 103;
 export type HTTPStatusCode2xx = 200 | 201 | 202 | 203 | 204 | 205 | 206 | 207;
@@ -1049,6 +1887,1292 @@ export const adminUpsertAccountType = async (accountTypeId: string,
 
 
 
+export type adminListProjectIntegrationGrantsResponse200 = {
+  data: AdminIntegrationGrantListResponse
+  status: 200
+}
+
+export type adminListProjectIntegrationGrantsResponseDefault = {
+  data: ErrorResponse
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type adminListProjectIntegrationGrantsResponseSuccess = (adminListProjectIntegrationGrantsResponse200) & {
+  headers: Headers;
+};
+export type adminListProjectIntegrationGrantsResponseError = (adminListProjectIntegrationGrantsResponseDefault) & {
+  headers: Headers;
+};
+
+export type adminListProjectIntegrationGrantsResponse = (adminListProjectIntegrationGrantsResponseSuccess | adminListProjectIntegrationGrantsResponseError)
+
+export const getAdminListProjectIntegrationGrantsUrl = (projectId: string,) => {
+
+
+
+
+  return `/v1/admin/integrations/projects/${projectId}/grants`
+}
+
+export const adminListProjectIntegrationGrants = async (projectId: string, options?: RequestInit, fetchFn?: typeof globalThis.fetch): Promise<adminListProjectIntegrationGrantsResponse> => {
+
+  const res = await (fetchFn ?? fetch)(getAdminListProjectIntegrationGrantsUrl(projectId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: adminListProjectIntegrationGrantsResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as adminListProjectIntegrationGrantsResponse
+}
+
+
+
+export type adminUpsertProjectIntegrationGrantResponse200 = {
+  data: AdminIntegrationGrantResponse
+  status: 200
+}
+
+export type adminUpsertProjectIntegrationGrantResponseDefault = {
+  data: ErrorResponse
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type adminUpsertProjectIntegrationGrantResponseSuccess = (adminUpsertProjectIntegrationGrantResponse200) & {
+  headers: Headers;
+};
+export type adminUpsertProjectIntegrationGrantResponseError = (adminUpsertProjectIntegrationGrantResponseDefault) & {
+  headers: Headers;
+};
+
+export type adminUpsertProjectIntegrationGrantResponse = (adminUpsertProjectIntegrationGrantResponseSuccess | adminUpsertProjectIntegrationGrantResponseError)
+
+export const getAdminUpsertProjectIntegrationGrantUrl = (projectId: string,
+    integrationKey: string,) => {
+
+
+
+
+  return `/v1/admin/integrations/projects/${projectId}/grants/${integrationKey}`
+}
+
+export const adminUpsertProjectIntegrationGrant = async (projectId: string,
+    integrationKey: string,
+    adminIntegrationGrantUpsertRequest: AdminIntegrationGrantUpsertRequest, options?: RequestInit, fetchFn?: typeof globalThis.fetch): Promise<adminUpsertProjectIntegrationGrantResponse> => {
+
+  const res = await (fetchFn ?? fetch)(getAdminUpsertProjectIntegrationGrantUrl(projectId,integrationKey),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      adminIntegrationGrantUpsertRequest,)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: adminUpsertProjectIntegrationGrantResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as adminUpsertProjectIntegrationGrantResponse
+}
+
+
+
+export type adminRevokeProjectIntegrationGrantResponse200 = {
+  data: AckResponse
+  status: 200
+}
+
+export type adminRevokeProjectIntegrationGrantResponseDefault = {
+  data: ErrorResponse
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type adminRevokeProjectIntegrationGrantResponseSuccess = (adminRevokeProjectIntegrationGrantResponse200) & {
+  headers: Headers;
+};
+export type adminRevokeProjectIntegrationGrantResponseError = (adminRevokeProjectIntegrationGrantResponseDefault) & {
+  headers: Headers;
+};
+
+export type adminRevokeProjectIntegrationGrantResponse = (adminRevokeProjectIntegrationGrantResponseSuccess | adminRevokeProjectIntegrationGrantResponseError)
+
+export const getAdminRevokeProjectIntegrationGrantUrl = (projectId: string,
+    integrationKey: string,) => {
+
+
+
+
+  return `/v1/admin/integrations/projects/${projectId}/grants/${integrationKey}`
+}
+
+export const adminRevokeProjectIntegrationGrant = async (projectId: string,
+    integrationKey: string, options?: RequestInit, fetchFn?: typeof globalThis.fetch): Promise<adminRevokeProjectIntegrationGrantResponse> => {
+
+  const res = await (fetchFn ?? fetch)(getAdminRevokeProjectIntegrationGrantUrl(projectId,integrationKey),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: adminRevokeProjectIntegrationGrantResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as adminRevokeProjectIntegrationGrantResponse
+}
+
+
+
+export type adminProvisionProjectIntegrationRuntimeResponse200 = {
+  data: AckResponse
+  status: 200
+}
+
+export type adminProvisionProjectIntegrationRuntimeResponseDefault = {
+  data: ErrorResponse
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type adminProvisionProjectIntegrationRuntimeResponseSuccess = (adminProvisionProjectIntegrationRuntimeResponse200) & {
+  headers: Headers;
+};
+export type adminProvisionProjectIntegrationRuntimeResponseError = (adminProvisionProjectIntegrationRuntimeResponseDefault) & {
+  headers: Headers;
+};
+
+export type adminProvisionProjectIntegrationRuntimeResponse = (adminProvisionProjectIntegrationRuntimeResponseSuccess | adminProvisionProjectIntegrationRuntimeResponseError)
+
+export const getAdminProvisionProjectIntegrationRuntimeUrl = (projectId: string,
+    integrationKey: string,) => {
+
+
+
+
+  return `/v1/admin/integrations/projects/${projectId}/grants/${integrationKey}/runtime/provision`
+}
+
+export const adminProvisionProjectIntegrationRuntime = async (projectId: string,
+    integrationKey: string, options?: RequestInit, fetchFn?: typeof globalThis.fetch): Promise<adminProvisionProjectIntegrationRuntimeResponse> => {
+
+  const res = await (fetchFn ?? fetch)(getAdminProvisionProjectIntegrationRuntimeUrl(projectId,integrationKey),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: adminProvisionProjectIntegrationRuntimeResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as adminProvisionProjectIntegrationRuntimeResponse
+}
+
+
+
+export type adminDeprovisionProjectIntegrationRuntimeResponse200 = {
+  data: AckResponse
+  status: 200
+}
+
+export type adminDeprovisionProjectIntegrationRuntimeResponseDefault = {
+  data: ErrorResponse
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type adminDeprovisionProjectIntegrationRuntimeResponseSuccess = (adminDeprovisionProjectIntegrationRuntimeResponse200) & {
+  headers: Headers;
+};
+export type adminDeprovisionProjectIntegrationRuntimeResponseError = (adminDeprovisionProjectIntegrationRuntimeResponseDefault) & {
+  headers: Headers;
+};
+
+export type adminDeprovisionProjectIntegrationRuntimeResponse = (adminDeprovisionProjectIntegrationRuntimeResponseSuccess | adminDeprovisionProjectIntegrationRuntimeResponseError)
+
+export const getAdminDeprovisionProjectIntegrationRuntimeUrl = (projectId: string,
+    integrationKey: string,) => {
+
+
+
+
+  return `/v1/admin/integrations/projects/${projectId}/grants/${integrationKey}/runtime/deprovision`
+}
+
+export const adminDeprovisionProjectIntegrationRuntime = async (projectId: string,
+    integrationKey: string, options?: RequestInit, fetchFn?: typeof globalThis.fetch): Promise<adminDeprovisionProjectIntegrationRuntimeResponse> => {
+
+  const res = await (fetchFn ?? fetch)(getAdminDeprovisionProjectIntegrationRuntimeUrl(projectId,integrationKey),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: adminDeprovisionProjectIntegrationRuntimeResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as adminDeprovisionProjectIntegrationRuntimeResponse
+}
+
+
+
+export type adminRestartProjectIntegrationRuntimeResponse200 = {
+  data: AckResponse
+  status: 200
+}
+
+export type adminRestartProjectIntegrationRuntimeResponseDefault = {
+  data: ErrorResponse
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type adminRestartProjectIntegrationRuntimeResponseSuccess = (adminRestartProjectIntegrationRuntimeResponse200) & {
+  headers: Headers;
+};
+export type adminRestartProjectIntegrationRuntimeResponseError = (adminRestartProjectIntegrationRuntimeResponseDefault) & {
+  headers: Headers;
+};
+
+export type adminRestartProjectIntegrationRuntimeResponse = (adminRestartProjectIntegrationRuntimeResponseSuccess | adminRestartProjectIntegrationRuntimeResponseError)
+
+export const getAdminRestartProjectIntegrationRuntimeUrl = (projectId: string,
+    integrationKey: string,) => {
+
+
+
+
+  return `/v1/admin/integrations/projects/${projectId}/grants/${integrationKey}/runtime/restart`
+}
+
+export const adminRestartProjectIntegrationRuntime = async (projectId: string,
+    integrationKey: string, options?: RequestInit, fetchFn?: typeof globalThis.fetch): Promise<adminRestartProjectIntegrationRuntimeResponse> => {
+
+  const res = await (fetchFn ?? fetch)(getAdminRestartProjectIntegrationRuntimeUrl(projectId,integrationKey),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: adminRestartProjectIntegrationRuntimeResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as adminRestartProjectIntegrationRuntimeResponse
+}
+
+
+
+export type adminListTelegramProxyProfilesResponse200 = {
+  data: AdminTelegramProxyProfileListResponse
+  status: 200
+}
+
+export type adminListTelegramProxyProfilesResponseDefault = {
+  data: ErrorResponse
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type adminListTelegramProxyProfilesResponseSuccess = (adminListTelegramProxyProfilesResponse200) & {
+  headers: Headers;
+};
+export type adminListTelegramProxyProfilesResponseError = (adminListTelegramProxyProfilesResponseDefault) & {
+  headers: Headers;
+};
+
+export type adminListTelegramProxyProfilesResponse = (adminListTelegramProxyProfilesResponseSuccess | adminListTelegramProxyProfilesResponseError)
+
+export const getAdminListTelegramProxyProfilesUrl = () => {
+
+
+
+
+  return `/v1/admin/integrations/telegram/proxies`
+}
+
+export const adminListTelegramProxyProfiles = async ( options?: RequestInit, fetchFn?: typeof globalThis.fetch): Promise<adminListTelegramProxyProfilesResponse> => {
+
+  const res = await (fetchFn ?? fetch)(getAdminListTelegramProxyProfilesUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: adminListTelegramProxyProfilesResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as adminListTelegramProxyProfilesResponse
+}
+
+
+
+export type adminUpsertTelegramProxyProfileResponse200 = {
+  data: AdminTelegramProxyProfileResponse
+  status: 200
+}
+
+export type adminUpsertTelegramProxyProfileResponseDefault = {
+  data: ErrorResponse
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type adminUpsertTelegramProxyProfileResponseSuccess = (adminUpsertTelegramProxyProfileResponse200) & {
+  headers: Headers;
+};
+export type adminUpsertTelegramProxyProfileResponseError = (adminUpsertTelegramProxyProfileResponseDefault) & {
+  headers: Headers;
+};
+
+export type adminUpsertTelegramProxyProfileResponse = (adminUpsertTelegramProxyProfileResponseSuccess | adminUpsertTelegramProxyProfileResponseError)
+
+export const getAdminUpsertTelegramProxyProfileUrl = (proxyId: string,) => {
+
+
+
+
+  return `/v1/admin/integrations/telegram/proxies/${proxyId}`
+}
+
+export const adminUpsertTelegramProxyProfile = async (proxyId: string,
+    adminTelegramProxyProfileUpsertRequest: AdminTelegramProxyProfileUpsertRequest, options?: RequestInit, fetchFn?: typeof globalThis.fetch): Promise<adminUpsertTelegramProxyProfileResponse> => {
+
+  const res = await (fetchFn ?? fetch)(getAdminUpsertTelegramProxyProfileUrl(proxyId),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      adminTelegramProxyProfileUpsertRequest,)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: adminUpsertTelegramProxyProfileResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as adminUpsertTelegramProxyProfileResponse
+}
+
+
+
+export type adminSendTelegramTestMessageResponse200 = {
+  data: AdminTelegramTestMessageResponse
+  status: 200
+}
+
+export type adminSendTelegramTestMessageResponseDefault = {
+  data: ErrorResponse
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type adminSendTelegramTestMessageResponseSuccess = (adminSendTelegramTestMessageResponse200) & {
+  headers: Headers;
+};
+export type adminSendTelegramTestMessageResponseError = (adminSendTelegramTestMessageResponseDefault) & {
+  headers: Headers;
+};
+
+export type adminSendTelegramTestMessageResponse = (adminSendTelegramTestMessageResponseSuccess | adminSendTelegramTestMessageResponseError)
+
+export const getAdminSendTelegramTestMessageUrl = () => {
+
+
+
+
+  return `/v1/admin/integrations/telegram/test-message`
+}
+
+export const adminSendTelegramTestMessage = async (adminTelegramTestMessageRequest: AdminTelegramTestMessageRequest, options?: RequestInit, fetchFn?: typeof globalThis.fetch): Promise<adminSendTelegramTestMessageResponse> => {
+
+  const res = await (fetchFn ?? fetch)(getAdminSendTelegramTestMessageUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      adminTelegramTestMessageRequest,)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: adminSendTelegramTestMessageResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as adminSendTelegramTestMessageResponse
+}
+
+
+
+export type adminCheckTelegramConnectivityResponse200 = {
+  data: AdminTelegramConnectivityResponse
+  status: 200
+}
+
+export type adminCheckTelegramConnectivityResponseDefault = {
+  data: ErrorResponse
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type adminCheckTelegramConnectivityResponseSuccess = (adminCheckTelegramConnectivityResponse200) & {
+  headers: Headers;
+};
+export type adminCheckTelegramConnectivityResponseError = (adminCheckTelegramConnectivityResponseDefault) & {
+  headers: Headers;
+};
+
+export type adminCheckTelegramConnectivityResponse = (adminCheckTelegramConnectivityResponseSuccess | adminCheckTelegramConnectivityResponseError)
+
+export const getAdminCheckTelegramConnectivityUrl = () => {
+
+
+
+
+  return `/v1/admin/integrations/telegram/test-connectivity`
+}
+
+export const adminCheckTelegramConnectivity = async ( options?: RequestInit, fetchFn?: typeof globalThis.fetch): Promise<adminCheckTelegramConnectivityResponse> => {
+
+  const res = await (fetchFn ?? fetch)(getAdminCheckTelegramConnectivityUrl(),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: adminCheckTelegramConnectivityResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as adminCheckTelegramConnectivityResponse
+}
+
+
+
+export type getProjectIntegrationsStatusResponse200 = {
+  data: ProjectIntegrationStatusResponse
+  status: 200
+}
+
+export type getProjectIntegrationsStatusResponseDefault = {
+  data: ErrorResponse
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type getProjectIntegrationsStatusResponseSuccess = (getProjectIntegrationsStatusResponse200) & {
+  headers: Headers;
+};
+export type getProjectIntegrationsStatusResponseError = (getProjectIntegrationsStatusResponseDefault) & {
+  headers: Headers;
+};
+
+export type getProjectIntegrationsStatusResponse = (getProjectIntegrationsStatusResponseSuccess | getProjectIntegrationsStatusResponseError)
+
+export const getGetProjectIntegrationsStatusUrl = (projectId: string,) => {
+
+
+
+
+  return `/v1/projects/${projectId}/integrations/status`
+}
+
+export const getProjectIntegrationsStatus = async (projectId: string, options?: RequestInit, fetchFn?: typeof globalThis.fetch): Promise<getProjectIntegrationsStatusResponse> => {
+
+  const res = await (fetchFn ?? fetch)(getGetProjectIntegrationsStatusUrl(projectId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getProjectIntegrationsStatusResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getProjectIntegrationsStatusResponse
+}
+
+
+
+export type provisionProjectIntegrationRuntimeResponse200 = {
+  data: AckResponse
+  status: 200
+}
+
+export type provisionProjectIntegrationRuntimeResponseDefault = {
+  data: ErrorResponse
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type provisionProjectIntegrationRuntimeResponseSuccess = (provisionProjectIntegrationRuntimeResponse200) & {
+  headers: Headers;
+};
+export type provisionProjectIntegrationRuntimeResponseError = (provisionProjectIntegrationRuntimeResponseDefault) & {
+  headers: Headers;
+};
+
+export type provisionProjectIntegrationRuntimeResponse = (provisionProjectIntegrationRuntimeResponseSuccess | provisionProjectIntegrationRuntimeResponseError)
+
+export const getProvisionProjectIntegrationRuntimeUrl = (projectId: string,
+    integrationKey: string,) => {
+
+
+
+
+  return `/v1/projects/${projectId}/integrations/${integrationKey}/runtime/provision`
+}
+
+export const provisionProjectIntegrationRuntime = async (projectId: string,
+    integrationKey: string, options?: RequestInit, fetchFn?: typeof globalThis.fetch): Promise<provisionProjectIntegrationRuntimeResponse> => {
+
+  const res = await (fetchFn ?? fetch)(getProvisionProjectIntegrationRuntimeUrl(projectId,integrationKey),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: provisionProjectIntegrationRuntimeResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as provisionProjectIntegrationRuntimeResponse
+}
+
+
+
+export type deprovisionProjectIntegrationRuntimeResponse200 = {
+  data: AckResponse
+  status: 200
+}
+
+export type deprovisionProjectIntegrationRuntimeResponseDefault = {
+  data: ErrorResponse
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type deprovisionProjectIntegrationRuntimeResponseSuccess = (deprovisionProjectIntegrationRuntimeResponse200) & {
+  headers: Headers;
+};
+export type deprovisionProjectIntegrationRuntimeResponseError = (deprovisionProjectIntegrationRuntimeResponseDefault) & {
+  headers: Headers;
+};
+
+export type deprovisionProjectIntegrationRuntimeResponse = (deprovisionProjectIntegrationRuntimeResponseSuccess | deprovisionProjectIntegrationRuntimeResponseError)
+
+export const getDeprovisionProjectIntegrationRuntimeUrl = (projectId: string,
+    integrationKey: string,) => {
+
+
+
+
+  return `/v1/projects/${projectId}/integrations/${integrationKey}/runtime/deprovision`
+}
+
+export const deprovisionProjectIntegrationRuntime = async (projectId: string,
+    integrationKey: string, options?: RequestInit, fetchFn?: typeof globalThis.fetch): Promise<deprovisionProjectIntegrationRuntimeResponse> => {
+
+  const res = await (fetchFn ?? fetch)(getDeprovisionProjectIntegrationRuntimeUrl(projectId,integrationKey),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: deprovisionProjectIntegrationRuntimeResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as deprovisionProjectIntegrationRuntimeResponse
+}
+
+
+
+export type restartProjectIntegrationRuntimeResponse200 = {
+  data: AckResponse
+  status: 200
+}
+
+export type restartProjectIntegrationRuntimeResponseDefault = {
+  data: ErrorResponse
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type restartProjectIntegrationRuntimeResponseSuccess = (restartProjectIntegrationRuntimeResponse200) & {
+  headers: Headers;
+};
+export type restartProjectIntegrationRuntimeResponseError = (restartProjectIntegrationRuntimeResponseDefault) & {
+  headers: Headers;
+};
+
+export type restartProjectIntegrationRuntimeResponse = (restartProjectIntegrationRuntimeResponseSuccess | restartProjectIntegrationRuntimeResponseError)
+
+export const getRestartProjectIntegrationRuntimeUrl = (projectId: string,
+    integrationKey: string,) => {
+
+
+
+
+  return `/v1/projects/${projectId}/integrations/${integrationKey}/runtime/restart`
+}
+
+export const restartProjectIntegrationRuntime = async (projectId: string,
+    integrationKey: string, options?: RequestInit, fetchFn?: typeof globalThis.fetch): Promise<restartProjectIntegrationRuntimeResponse> => {
+
+  const res = await (fetchFn ?? fetch)(getRestartProjectIntegrationRuntimeUrl(projectId,integrationKey),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: restartProjectIntegrationRuntimeResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as restartProjectIntegrationRuntimeResponse
+}
+
+
+
+export type listSteamIntegrationAccountsResponse200 = {
+  data: SteamIntegrationAccountsResponse
+  status: 200
+}
+
+export type listSteamIntegrationAccountsResponseDefault = {
+  data: ErrorResponse
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type listSteamIntegrationAccountsResponseSuccess = (listSteamIntegrationAccountsResponse200) & {
+  headers: Headers;
+};
+export type listSteamIntegrationAccountsResponseError = (listSteamIntegrationAccountsResponseDefault) & {
+  headers: Headers;
+};
+
+export type listSteamIntegrationAccountsResponse = (listSteamIntegrationAccountsResponseSuccess | listSteamIntegrationAccountsResponseError)
+
+export const getListSteamIntegrationAccountsUrl = (projectId: string,
+    params?: ListSteamIntegrationAccountsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/v1/projects/${projectId}/integrations/steam/accounts?${stringifiedParams}` : `/v1/projects/${projectId}/integrations/steam/accounts`
+}
+
+export const listSteamIntegrationAccounts = async (projectId: string,
+    params?: ListSteamIntegrationAccountsParams, options?: RequestInit, fetchFn?: typeof globalThis.fetch): Promise<listSteamIntegrationAccountsResponse> => {
+
+  const res = await (fetchFn ?? fetch)(getListSteamIntegrationAccountsUrl(projectId,params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: listSteamIntegrationAccountsResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listSteamIntegrationAccountsResponse
+}
+
+
+
+export type createSteamIntegrationAccountResponse201 = {
+  data: SteamIntegrationAccountResponse
+  status: 201
+}
+
+export type createSteamIntegrationAccountResponseDefault = {
+  data: ErrorResponse
+  status: Exclude<HTTPStatusCodes, 201>
+}
+
+export type createSteamIntegrationAccountResponseSuccess = (createSteamIntegrationAccountResponse201) & {
+  headers: Headers;
+};
+export type createSteamIntegrationAccountResponseError = (createSteamIntegrationAccountResponseDefault) & {
+  headers: Headers;
+};
+
+export type createSteamIntegrationAccountResponse = (createSteamIntegrationAccountResponseSuccess | createSteamIntegrationAccountResponseError)
+
+export const getCreateSteamIntegrationAccountUrl = (projectId: string,) => {
+
+
+
+
+  return `/v1/projects/${projectId}/integrations/steam/accounts`
+}
+
+export const createSteamIntegrationAccount = async (projectId: string,
+    steamIntegrationAccountUpsertRequest: SteamIntegrationAccountUpsertRequest, options?: RequestInit, fetchFn?: typeof globalThis.fetch): Promise<createSteamIntegrationAccountResponse> => {
+
+  const res = await (fetchFn ?? fetch)(getCreateSteamIntegrationAccountUrl(projectId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      steamIntegrationAccountUpsertRequest,)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: createSteamIntegrationAccountResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as createSteamIntegrationAccountResponse
+}
+
+
+
+export type updateSteamIntegrationAccountResponse200 = {
+  data: SteamIntegrationAccountResponse
+  status: 200
+}
+
+export type updateSteamIntegrationAccountResponseDefault = {
+  data: ErrorResponse
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type updateSteamIntegrationAccountResponseSuccess = (updateSteamIntegrationAccountResponse200) & {
+  headers: Headers;
+};
+export type updateSteamIntegrationAccountResponseError = (updateSteamIntegrationAccountResponseDefault) & {
+  headers: Headers;
+};
+
+export type updateSteamIntegrationAccountResponse = (updateSteamIntegrationAccountResponseSuccess | updateSteamIntegrationAccountResponseError)
+
+export const getUpdateSteamIntegrationAccountUrl = (projectId: string,
+    accountId: string,) => {
+
+
+
+
+  return `/v1/projects/${projectId}/integrations/steam/accounts/${accountId}`
+}
+
+export const updateSteamIntegrationAccount = async (projectId: string,
+    accountId: string,
+    steamIntegrationAccountUpsertRequest: SteamIntegrationAccountUpsertRequest, options?: RequestInit, fetchFn?: typeof globalThis.fetch): Promise<updateSteamIntegrationAccountResponse> => {
+
+  const res = await (fetchFn ?? fetch)(getUpdateSteamIntegrationAccountUrl(projectId,accountId),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      steamIntegrationAccountUpsertRequest,)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: updateSteamIntegrationAccountResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as updateSteamIntegrationAccountResponse
+}
+
+
+
+export type archiveSteamIntegrationAccountResponse200 = {
+  data: AckResponse
+  status: 200
+}
+
+export type archiveSteamIntegrationAccountResponseDefault = {
+  data: ErrorResponse
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type archiveSteamIntegrationAccountResponseSuccess = (archiveSteamIntegrationAccountResponse200) & {
+  headers: Headers;
+};
+export type archiveSteamIntegrationAccountResponseError = (archiveSteamIntegrationAccountResponseDefault) & {
+  headers: Headers;
+};
+
+export type archiveSteamIntegrationAccountResponse = (archiveSteamIntegrationAccountResponseSuccess | archiveSteamIntegrationAccountResponseError)
+
+export const getArchiveSteamIntegrationAccountUrl = (projectId: string,
+    accountId: string,) => {
+
+
+
+
+  return `/v1/projects/${projectId}/integrations/steam/accounts/${accountId}`
+}
+
+export const archiveSteamIntegrationAccount = async (projectId: string,
+    accountId: string, options?: RequestInit, fetchFn?: typeof globalThis.fetch): Promise<archiveSteamIntegrationAccountResponse> => {
+
+  const res = await (fetchFn ?? fetch)(getArchiveSteamIntegrationAccountUrl(projectId,accountId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: archiveSteamIntegrationAccountResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as archiveSteamIntegrationAccountResponse
+}
+
+
+
+export type listSteamIntegrationJobsResponse200 = {
+  data: SteamIntegrationJobsResponse
+  status: 200
+}
+
+export type listSteamIntegrationJobsResponseDefault = {
+  data: ErrorResponse
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type listSteamIntegrationJobsResponseSuccess = (listSteamIntegrationJobsResponse200) & {
+  headers: Headers;
+};
+export type listSteamIntegrationJobsResponseError = (listSteamIntegrationJobsResponseDefault) & {
+  headers: Headers;
+};
+
+export type listSteamIntegrationJobsResponse = (listSteamIntegrationJobsResponseSuccess | listSteamIntegrationJobsResponseError)
+
+export const getListSteamIntegrationJobsUrl = (projectId: string,
+    params?: ListSteamIntegrationJobsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/v1/projects/${projectId}/integrations/steam/jobs?${stringifiedParams}` : `/v1/projects/${projectId}/integrations/steam/jobs`
+}
+
+export const listSteamIntegrationJobs = async (projectId: string,
+    params?: ListSteamIntegrationJobsParams, options?: RequestInit, fetchFn?: typeof globalThis.fetch): Promise<listSteamIntegrationJobsResponse> => {
+
+  const res = await (fetchFn ?? fetch)(getListSteamIntegrationJobsUrl(projectId,params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: listSteamIntegrationJobsResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listSteamIntegrationJobsResponse
+}
+
+
+
+export type createSteamIntegrationJobResponse201 = {
+  data: SteamIntegrationJobResponse
+  status: 201
+}
+
+export type createSteamIntegrationJobResponseDefault = {
+  data: ErrorResponse
+  status: Exclude<HTTPStatusCodes, 201>
+}
+
+export type createSteamIntegrationJobResponseSuccess = (createSteamIntegrationJobResponse201) & {
+  headers: Headers;
+};
+export type createSteamIntegrationJobResponseError = (createSteamIntegrationJobResponseDefault) & {
+  headers: Headers;
+};
+
+export type createSteamIntegrationJobResponse = (createSteamIntegrationJobResponseSuccess | createSteamIntegrationJobResponseError)
+
+export const getCreateSteamIntegrationJobUrl = (projectId: string,) => {
+
+
+
+
+  return `/v1/projects/${projectId}/integrations/steam/jobs`
+}
+
+export const createSteamIntegrationJob = async (projectId: string,
+    steamIntegrationJobCreateRequest: SteamIntegrationJobCreateRequest, options?: RequestInit, fetchFn?: typeof globalThis.fetch): Promise<createSteamIntegrationJobResponse> => {
+
+  const res = await (fetchFn ?? fetch)(getCreateSteamIntegrationJobUrl(projectId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      steamIntegrationJobCreateRequest,)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: createSteamIntegrationJobResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as createSteamIntegrationJobResponse
+}
+
+
+
+export type cancelSteamIntegrationJobResponse200 = {
+  data: AckResponse
+  status: 200
+}
+
+export type cancelSteamIntegrationJobResponseDefault = {
+  data: ErrorResponse
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type cancelSteamIntegrationJobResponseSuccess = (cancelSteamIntegrationJobResponse200) & {
+  headers: Headers;
+};
+export type cancelSteamIntegrationJobResponseError = (cancelSteamIntegrationJobResponseDefault) & {
+  headers: Headers;
+};
+
+export type cancelSteamIntegrationJobResponse = (cancelSteamIntegrationJobResponseSuccess | cancelSteamIntegrationJobResponseError)
+
+export const getCancelSteamIntegrationJobUrl = (projectId: string,
+    jobId: string,) => {
+
+
+
+
+  return `/v1/projects/${projectId}/integrations/steam/jobs/${jobId}/cancel`
+}
+
+export const cancelSteamIntegrationJob = async (projectId: string,
+    jobId: string, options?: RequestInit, fetchFn?: typeof globalThis.fetch): Promise<cancelSteamIntegrationJobResponse> => {
+
+  const res = await (fetchFn ?? fetch)(getCancelSteamIntegrationJobUrl(projectId,jobId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: cancelSteamIntegrationJobResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as cancelSteamIntegrationJobResponse
+}
+
+
+
+export type invokeProjectIntegrationActionResponse200 = {
+  data: ProxyResponse
+  status: 200
+}
+
+export type invokeProjectIntegrationActionResponseDefault = {
+  data: ErrorResponse
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type invokeProjectIntegrationActionResponseSuccess = (invokeProjectIntegrationActionResponse200) & {
+  headers: Headers;
+};
+export type invokeProjectIntegrationActionResponseError = (invokeProjectIntegrationActionResponseDefault) & {
+  headers: Headers;
+};
+
+export type invokeProjectIntegrationActionResponse = (invokeProjectIntegrationActionResponseSuccess | invokeProjectIntegrationActionResponseError)
+
+export const getInvokeProjectIntegrationActionUrl = (projectId: string,
+    integrationKey: string,
+    scope: 'read' | 'jobs',) => {
+
+
+
+
+  return `/v1/projects/${projectId}/integrations/${integrationKey}/actions/${scope}`
+}
+
+export const invokeProjectIntegrationAction = async (projectId: string,
+    integrationKey: string,
+    scope: 'read' | 'jobs',
+    genericObjectRequest?: GenericObjectRequest, options?: RequestInit, fetchFn?: typeof globalThis.fetch): Promise<invokeProjectIntegrationActionResponse> => {
+
+  const res = await (fetchFn ?? fetch)(getInvokeProjectIntegrationActionUrl(projectId,integrationKey,scope),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      genericObjectRequest,)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: invokeProjectIntegrationActionResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as invokeProjectIntegrationActionResponse
+}
+
+
+
+export type createTelegramLinkCodeResponse200 = {
+  data: TelegramLinkCodeResponse
+  status: 200
+}
+
+export type createTelegramLinkCodeResponseDefault = {
+  data: ErrorResponse
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type createTelegramLinkCodeResponseSuccess = (createTelegramLinkCodeResponse200) & {
+  headers: Headers;
+};
+export type createTelegramLinkCodeResponseError = (createTelegramLinkCodeResponseDefault) & {
+  headers: Headers;
+};
+
+export type createTelegramLinkCodeResponse = (createTelegramLinkCodeResponseSuccess | createTelegramLinkCodeResponseError)
+
+export const getCreateTelegramLinkCodeUrl = (projectId: string,) => {
+
+
+
+
+  return `/v1/projects/${projectId}/integrations/telegram/link-codes`
+}
+
+export const createTelegramLinkCode = async (projectId: string,
+    telegramLinkCodeCreateRequest: TelegramLinkCodeCreateRequest, options?: RequestInit, fetchFn?: typeof globalThis.fetch): Promise<createTelegramLinkCodeResponse> => {
+
+  const res = await (fetchFn ?? fetch)(getCreateTelegramLinkCodeUrl(projectId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      telegramLinkCodeCreateRequest,)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: createTelegramLinkCodeResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as createTelegramLinkCodeResponse
+}
+
+
+
+export type bindTelegramUserChatResponse200 = {
+  data: AckResponse
+  status: 200
+}
+
+export type bindTelegramUserChatResponseDefault = {
+  data: ErrorResponse
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type bindTelegramUserChatResponseSuccess = (bindTelegramUserChatResponse200) & {
+  headers: Headers;
+};
+export type bindTelegramUserChatResponseError = (bindTelegramUserChatResponseDefault) & {
+  headers: Headers;
+};
+
+export type bindTelegramUserChatResponse = (bindTelegramUserChatResponseSuccess | bindTelegramUserChatResponseError)
+
+export const getBindTelegramUserChatUrl = (projectId: string,) => {
+
+
+
+
+  return `/v1/projects/${projectId}/integrations/telegram/user-bind`
+}
+
+export const bindTelegramUserChat = async (projectId: string,
+    telegramUserBindRequest: TelegramUserBindRequest, options?: RequestInit, fetchFn?: typeof globalThis.fetch): Promise<bindTelegramUserChatResponse> => {
+
+  const res = await (fetchFn ?? fetch)(getBindTelegramUserChatUrl(projectId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      telegramUserBindRequest,)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: bindTelegramUserChatResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as bindTelegramUserChatResponse
+}
+
+
+
+export type confirmTelegramGroupLinkResponse200 = {
+  data: AckResponse
+  status: 200
+}
+
+export type confirmTelegramGroupLinkResponseDefault = {
+  data: ErrorResponse
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type confirmTelegramGroupLinkResponseSuccess = (confirmTelegramGroupLinkResponse200) & {
+  headers: Headers;
+};
+export type confirmTelegramGroupLinkResponseError = (confirmTelegramGroupLinkResponseDefault) & {
+  headers: Headers;
+};
+
+export type confirmTelegramGroupLinkResponse = (confirmTelegramGroupLinkResponseSuccess | confirmTelegramGroupLinkResponseError)
+
+export const getConfirmTelegramGroupLinkUrl = () => {
+
+
+
+
+  return `/v1/integrations/telegram/link/confirm`
+}
+
+export const confirmTelegramGroupLink = async (telegramLinkConfirmRequest: TelegramLinkConfirmRequest, options?: RequestInit, fetchFn?: typeof globalThis.fetch): Promise<confirmTelegramGroupLinkResponse> => {
+
+  const res = await (fetchFn ?? fetch)(getConfirmTelegramGroupLinkUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      telegramLinkConfirmRequest,)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: confirmTelegramGroupLinkResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as confirmTelegramGroupLinkResponse
+}
+
+
+
+export type enqueueCriticalNotificationResponse202 = {
+  data: AckResponse
+  status: 202
+}
+
+export type enqueueCriticalNotificationResponseDefault = {
+  data: ErrorResponse
+  status: Exclude<HTTPStatusCodes, 202>
+}
+
+export type enqueueCriticalNotificationResponseSuccess = (enqueueCriticalNotificationResponse202) & {
+  headers: Headers;
+};
+export type enqueueCriticalNotificationResponseError = (enqueueCriticalNotificationResponseDefault) & {
+  headers: Headers;
+};
+
+export type enqueueCriticalNotificationResponse = (enqueueCriticalNotificationResponseSuccess | enqueueCriticalNotificationResponseError)
+
+export const getEnqueueCriticalNotificationUrl = (projectId: string,) => {
+
+
+
+
+  return `/v1/projects/${projectId}/integrations/notifications/critical`
+}
+
+export const enqueueCriticalNotification = async (projectId: string,
+    criticalNotificationRequest: CriticalNotificationRequest, options?: RequestInit, fetchFn?: typeof globalThis.fetch): Promise<enqueueCriticalNotificationResponse> => {
+
+  const res = await (fetchFn ?? fetch)(getEnqueueCriticalNotificationUrl(projectId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      criticalNotificationRequest,)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: enqueueCriticalNotificationResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as enqueueCriticalNotificationResponse
+}
+
+
+
 export type updateAccountResponse200 = {
   data: AccountResponse
   status: 200
@@ -1458,6 +3582,946 @@ export const changePlan = async (projectId: string,
 
 
 
+export type listOffersResponse200 = {
+  data: OfferListResponse
+  status: 200
+}
+
+export type listOffersResponseDefault = {
+  data: ErrorResponse
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type listOffersResponseSuccess = (listOffersResponse200) & {
+  headers: Headers;
+};
+export type listOffersResponseError = (listOffersResponseDefault) & {
+  headers: Headers;
+};
+
+export type listOffersResponse = (listOffersResponseSuccess | listOffersResponseError)
+
+export const getListOffersUrl = (projectId: string,) => {
+
+
+
+
+  return `/v1/projects/${projectId}/offers`
+}
+
+export const listOffers = async (projectId: string, options?: RequestInit, fetchFn?: typeof globalThis.fetch): Promise<listOffersResponse> => {
+
+  const res = await (fetchFn ?? fetch)(getListOffersUrl(projectId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: listOffersResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listOffersResponse
+}
+
+
+
+export type createOfferResponse201 = {
+  data: OfferResponse
+  status: 201
+}
+
+export type createOfferResponseDefault = {
+  data: ErrorResponse
+  status: Exclude<HTTPStatusCodes, 201>
+}
+
+export type createOfferResponseSuccess = (createOfferResponse201) & {
+  headers: Headers;
+};
+export type createOfferResponseError = (createOfferResponseDefault) & {
+  headers: Headers;
+};
+
+export type createOfferResponse = (createOfferResponseSuccess | createOfferResponseError)
+
+export const getCreateOfferUrl = (projectId: string,) => {
+
+
+
+
+  return `/v1/projects/${projectId}/offers`
+}
+
+export const createOffer = async (projectId: string,
+    offerCreateRequest: OfferCreateRequest, options?: RequestInit, fetchFn?: typeof globalThis.fetch): Promise<createOfferResponse> => {
+
+  const res = await (fetchFn ?? fetch)(getCreateOfferUrl(projectId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      offerCreateRequest,)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: createOfferResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as createOfferResponse
+}
+
+
+
+export type getOfferResponse200 = {
+  data: OfferResponse
+  status: 200
+}
+
+export type getOfferResponseDefault = {
+  data: ErrorResponse
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type getOfferResponseSuccess = (getOfferResponse200) & {
+  headers: Headers;
+};
+export type getOfferResponseError = (getOfferResponseDefault) & {
+  headers: Headers;
+};
+
+export type getOfferResponse = (getOfferResponseSuccess | getOfferResponseError)
+
+export const getGetOfferUrl = (projectId: string,
+    offerId: string,) => {
+
+
+
+
+  return `/v1/projects/${projectId}/offers/${offerId}`
+}
+
+export const getOffer = async (projectId: string,
+    offerId: string, options?: RequestInit, fetchFn?: typeof globalThis.fetch): Promise<getOfferResponse> => {
+
+  const res = await (fetchFn ?? fetch)(getGetOfferUrl(projectId,offerId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getOfferResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getOfferResponse
+}
+
+
+
+export type updateOfferResponse200 = {
+  data: OfferResponse
+  status: 200
+}
+
+export type updateOfferResponseDefault = {
+  data: ErrorResponse
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type updateOfferResponseSuccess = (updateOfferResponse200) & {
+  headers: Headers;
+};
+export type updateOfferResponseError = (updateOfferResponseDefault) & {
+  headers: Headers;
+};
+
+export type updateOfferResponse = (updateOfferResponseSuccess | updateOfferResponseError)
+
+export const getUpdateOfferUrl = (projectId: string,
+    offerId: string,) => {
+
+
+
+
+  return `/v1/projects/${projectId}/offers/${offerId}`
+}
+
+export const updateOffer = async (projectId: string,
+    offerId: string,
+    offerUpdateRequest: OfferUpdateRequest, options?: RequestInit, fetchFn?: typeof globalThis.fetch): Promise<updateOfferResponse> => {
+
+  const res = await (fetchFn ?? fetch)(getUpdateOfferUrl(projectId,offerId),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      offerUpdateRequest,)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: updateOfferResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as updateOfferResponse
+}
+
+
+
+export type deleteOfferResponse200 = {
+  data: AckResponse
+  status: 200
+}
+
+export type deleteOfferResponseDefault = {
+  data: ErrorResponse
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type deleteOfferResponseSuccess = (deleteOfferResponse200) & {
+  headers: Headers;
+};
+export type deleteOfferResponseError = (deleteOfferResponseDefault) & {
+  headers: Headers;
+};
+
+export type deleteOfferResponse = (deleteOfferResponseSuccess | deleteOfferResponseError)
+
+export const getDeleteOfferUrl = (projectId: string,
+    offerId: string,) => {
+
+
+
+
+  return `/v1/projects/${projectId}/offers/${offerId}`
+}
+
+export const deleteOffer = async (projectId: string,
+    offerId: string, options?: RequestInit, fetchFn?: typeof globalThis.fetch): Promise<deleteOfferResponse> => {
+
+  const res = await (fetchFn ?? fetch)(getDeleteOfferUrl(projectId,offerId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: deleteOfferResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as deleteOfferResponse
+}
+
+
+
+export type replaceOfferVariantsResponse200 = {
+  data: OfferResponse
+  status: 200
+}
+
+export type replaceOfferVariantsResponseDefault = {
+  data: ErrorResponse
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type replaceOfferVariantsResponseSuccess = (replaceOfferVariantsResponse200) & {
+  headers: Headers;
+};
+export type replaceOfferVariantsResponseError = (replaceOfferVariantsResponseDefault) & {
+  headers: Headers;
+};
+
+export type replaceOfferVariantsResponse = (replaceOfferVariantsResponseSuccess | replaceOfferVariantsResponseError)
+
+export const getReplaceOfferVariantsUrl = (projectId: string,
+    offerId: string,) => {
+
+
+
+
+  return `/v1/projects/${projectId}/offers/${offerId}/variants`
+}
+
+export const replaceOfferVariants = async (projectId: string,
+    offerId: string,
+    offerVariantsReplaceRequest: OfferVariantsReplaceRequest, options?: RequestInit, fetchFn?: typeof globalThis.fetch): Promise<replaceOfferVariantsResponse> => {
+
+  const res = await (fetchFn ?? fetch)(getReplaceOfferVariantsUrl(projectId,offerId),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      offerVariantsReplaceRequest,)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: replaceOfferVariantsResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as replaceOfferVariantsResponse
+}
+
+
+
+export type getOfferWorkflowDraftResponse200 = {
+  data: WorkflowDraftResponse
+  status: 200
+}
+
+export type getOfferWorkflowDraftResponseDefault = {
+  data: ErrorResponse
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type getOfferWorkflowDraftResponseSuccess = (getOfferWorkflowDraftResponse200) & {
+  headers: Headers;
+};
+export type getOfferWorkflowDraftResponseError = (getOfferWorkflowDraftResponseDefault) & {
+  headers: Headers;
+};
+
+export type getOfferWorkflowDraftResponse = (getOfferWorkflowDraftResponseSuccess | getOfferWorkflowDraftResponseError)
+
+export const getGetOfferWorkflowDraftUrl = (projectId: string,
+    offerId: string,) => {
+
+
+
+
+  return `/v1/projects/${projectId}/offers/${offerId}/workflow/draft`
+}
+
+export const getOfferWorkflowDraft = async (projectId: string,
+    offerId: string, options?: RequestInit, fetchFn?: typeof globalThis.fetch): Promise<getOfferWorkflowDraftResponse> => {
+
+  const res = await (fetchFn ?? fetch)(getGetOfferWorkflowDraftUrl(projectId,offerId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getOfferWorkflowDraftResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getOfferWorkflowDraftResponse
+}
+
+
+
+export type upsertOfferWorkflowDraftResponse200 = {
+  data: WorkflowDraftResponse
+  status: 200
+}
+
+export type upsertOfferWorkflowDraftResponseDefault = {
+  data: ErrorResponse
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type upsertOfferWorkflowDraftResponseSuccess = (upsertOfferWorkflowDraftResponse200) & {
+  headers: Headers;
+};
+export type upsertOfferWorkflowDraftResponseError = (upsertOfferWorkflowDraftResponseDefault) & {
+  headers: Headers;
+};
+
+export type upsertOfferWorkflowDraftResponse = (upsertOfferWorkflowDraftResponseSuccess | upsertOfferWorkflowDraftResponseError)
+
+export const getUpsertOfferWorkflowDraftUrl = (projectId: string,
+    offerId: string,) => {
+
+
+
+
+  return `/v1/projects/${projectId}/offers/${offerId}/workflow/draft`
+}
+
+export const upsertOfferWorkflowDraft = async (projectId: string,
+    offerId: string,
+    workflowDraft: WorkflowDraft, options?: RequestInit, fetchFn?: typeof globalThis.fetch): Promise<upsertOfferWorkflowDraftResponse> => {
+
+  const res = await (fetchFn ?? fetch)(getUpsertOfferWorkflowDraftUrl(projectId,offerId),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      workflowDraft,)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: upsertOfferWorkflowDraftResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as upsertOfferWorkflowDraftResponse
+}
+
+
+
+export type publishOfferWorkflowResponse200 = {
+  data: WorkflowDraftResponse
+  status: 200
+}
+
+export type publishOfferWorkflowResponseDefault = {
+  data: ErrorResponse
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type publishOfferWorkflowResponseSuccess = (publishOfferWorkflowResponse200) & {
+  headers: Headers;
+};
+export type publishOfferWorkflowResponseError = (publishOfferWorkflowResponseDefault) & {
+  headers: Headers;
+};
+
+export type publishOfferWorkflowResponse = (publishOfferWorkflowResponseSuccess | publishOfferWorkflowResponseError)
+
+export const getPublishOfferWorkflowUrl = (projectId: string,
+    offerId: string,) => {
+
+
+
+
+  return `/v1/projects/${projectId}/offers/${offerId}/workflow/publish`
+}
+
+export const publishOfferWorkflow = async (projectId: string,
+    offerId: string, options?: RequestInit, fetchFn?: typeof globalThis.fetch): Promise<publishOfferWorkflowResponse> => {
+
+  const res = await (fetchFn ?? fetch)(getPublishOfferWorkflowUrl(projectId,offerId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: publishOfferWorkflowResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as publishOfferWorkflowResponse
+}
+
+
+
+export type listOfferWorkflowExecutionsResponse200 = {
+  data: WorkflowExecutionListResponse
+  status: 200
+}
+
+export type listOfferWorkflowExecutionsResponseDefault = {
+  data: ErrorResponse
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type listOfferWorkflowExecutionsResponseSuccess = (listOfferWorkflowExecutionsResponse200) & {
+  headers: Headers;
+};
+export type listOfferWorkflowExecutionsResponseError = (listOfferWorkflowExecutionsResponseDefault) & {
+  headers: Headers;
+};
+
+export type listOfferWorkflowExecutionsResponse = (listOfferWorkflowExecutionsResponseSuccess | listOfferWorkflowExecutionsResponseError)
+
+export const getListOfferWorkflowExecutionsUrl = (projectId: string,
+    offerId: string,) => {
+
+
+
+
+  return `/v1/projects/${projectId}/offers/${offerId}/workflow/executions`
+}
+
+export const listOfferWorkflowExecutions = async (projectId: string,
+    offerId: string, options?: RequestInit, fetchFn?: typeof globalThis.fetch): Promise<listOfferWorkflowExecutionsResponse> => {
+
+  const res = await (fetchFn ?? fetch)(getListOfferWorkflowExecutionsUrl(projectId,offerId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: listOfferWorkflowExecutionsResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listOfferWorkflowExecutionsResponse
+}
+
+
+
+export type listProjectCustomHttpIntegrationsResponse200 = {
+  data: ProjectCustomHttpIntegrationListResponse
+  status: 200
+}
+
+export type listProjectCustomHttpIntegrationsResponseDefault = {
+  data: ErrorResponse
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type listProjectCustomHttpIntegrationsResponseSuccess = (listProjectCustomHttpIntegrationsResponse200) & {
+  headers: Headers;
+};
+export type listProjectCustomHttpIntegrationsResponseError = (listProjectCustomHttpIntegrationsResponseDefault) & {
+  headers: Headers;
+};
+
+export type listProjectCustomHttpIntegrationsResponse = (listProjectCustomHttpIntegrationsResponseSuccess | listProjectCustomHttpIntegrationsResponseError)
+
+export const getListProjectCustomHttpIntegrationsUrl = (projectId: string,) => {
+
+
+
+
+  return `/v1/projects/${projectId}/integrations/custom-http`
+}
+
+export const listProjectCustomHttpIntegrations = async (projectId: string, options?: RequestInit, fetchFn?: typeof globalThis.fetch): Promise<listProjectCustomHttpIntegrationsResponse> => {
+
+  const res = await (fetchFn ?? fetch)(getListProjectCustomHttpIntegrationsUrl(projectId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: listProjectCustomHttpIntegrationsResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listProjectCustomHttpIntegrationsResponse
+}
+
+
+
+export type createProjectCustomHttpIntegrationResponse201 = {
+  data: ProjectCustomHttpIntegrationResponse
+  status: 201
+}
+
+export type createProjectCustomHttpIntegrationResponseDefault = {
+  data: ErrorResponse
+  status: Exclude<HTTPStatusCodes, 201>
+}
+
+export type createProjectCustomHttpIntegrationResponseSuccess = (createProjectCustomHttpIntegrationResponse201) & {
+  headers: Headers;
+};
+export type createProjectCustomHttpIntegrationResponseError = (createProjectCustomHttpIntegrationResponseDefault) & {
+  headers: Headers;
+};
+
+export type createProjectCustomHttpIntegrationResponse = (createProjectCustomHttpIntegrationResponseSuccess | createProjectCustomHttpIntegrationResponseError)
+
+export const getCreateProjectCustomHttpIntegrationUrl = (projectId: string,) => {
+
+
+
+
+  return `/v1/projects/${projectId}/integrations/custom-http`
+}
+
+export const createProjectCustomHttpIntegration = async (projectId: string,
+    projectCustomHttpIntegrationCreateRequest: ProjectCustomHttpIntegrationCreateRequest, options?: RequestInit, fetchFn?: typeof globalThis.fetch): Promise<createProjectCustomHttpIntegrationResponse> => {
+
+  const res = await (fetchFn ?? fetch)(getCreateProjectCustomHttpIntegrationUrl(projectId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      projectCustomHttpIntegrationCreateRequest,)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: createProjectCustomHttpIntegrationResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as createProjectCustomHttpIntegrationResponse
+}
+
+
+
+export type updateProjectCustomHttpIntegrationResponse200 = {
+  data: ProjectCustomHttpIntegrationResponse
+  status: 200
+}
+
+export type updateProjectCustomHttpIntegrationResponseDefault = {
+  data: ErrorResponse
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type updateProjectCustomHttpIntegrationResponseSuccess = (updateProjectCustomHttpIntegrationResponse200) & {
+  headers: Headers;
+};
+export type updateProjectCustomHttpIntegrationResponseError = (updateProjectCustomHttpIntegrationResponseDefault) & {
+  headers: Headers;
+};
+
+export type updateProjectCustomHttpIntegrationResponse = (updateProjectCustomHttpIntegrationResponseSuccess | updateProjectCustomHttpIntegrationResponseError)
+
+export const getUpdateProjectCustomHttpIntegrationUrl = (projectId: string,
+    integrationId: string,) => {
+
+
+
+
+  return `/v1/projects/${projectId}/integrations/custom-http/${integrationId}`
+}
+
+export const updateProjectCustomHttpIntegration = async (projectId: string,
+    integrationId: string,
+    projectCustomHttpIntegrationUpdateRequest: ProjectCustomHttpIntegrationUpdateRequest, options?: RequestInit, fetchFn?: typeof globalThis.fetch): Promise<updateProjectCustomHttpIntegrationResponse> => {
+
+  const res = await (fetchFn ?? fetch)(getUpdateProjectCustomHttpIntegrationUrl(projectId,integrationId),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      projectCustomHttpIntegrationUpdateRequest,)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: updateProjectCustomHttpIntegrationResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as updateProjectCustomHttpIntegrationResponse
+}
+
+
+
+export type deleteProjectCustomHttpIntegrationResponse200 = {
+  data: AckResponse
+  status: 200
+}
+
+export type deleteProjectCustomHttpIntegrationResponseDefault = {
+  data: ErrorResponse
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type deleteProjectCustomHttpIntegrationResponseSuccess = (deleteProjectCustomHttpIntegrationResponse200) & {
+  headers: Headers;
+};
+export type deleteProjectCustomHttpIntegrationResponseError = (deleteProjectCustomHttpIntegrationResponseDefault) & {
+  headers: Headers;
+};
+
+export type deleteProjectCustomHttpIntegrationResponse = (deleteProjectCustomHttpIntegrationResponseSuccess | deleteProjectCustomHttpIntegrationResponseError)
+
+export const getDeleteProjectCustomHttpIntegrationUrl = (projectId: string,
+    integrationId: string,) => {
+
+
+
+
+  return `/v1/projects/${projectId}/integrations/custom-http/${integrationId}`
+}
+
+export const deleteProjectCustomHttpIntegration = async (projectId: string,
+    integrationId: string, options?: RequestInit, fetchFn?: typeof globalThis.fetch): Promise<deleteProjectCustomHttpIntegrationResponse> => {
+
+  const res = await (fetchFn ?? fetch)(getDeleteProjectCustomHttpIntegrationUrl(projectId,integrationId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: deleteProjectCustomHttpIntegrationResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as deleteProjectCustomHttpIntegrationResponse
+}
+
+
+
+export type testProjectCustomHttpIntegrationResponse200 = {
+  data: ProjectCustomHttpIntegrationTestResponse
+  status: 200
+}
+
+export type testProjectCustomHttpIntegrationResponseDefault = {
+  data: ErrorResponse
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type testProjectCustomHttpIntegrationResponseSuccess = (testProjectCustomHttpIntegrationResponse200) & {
+  headers: Headers;
+};
+export type testProjectCustomHttpIntegrationResponseError = (testProjectCustomHttpIntegrationResponseDefault) & {
+  headers: Headers;
+};
+
+export type testProjectCustomHttpIntegrationResponse = (testProjectCustomHttpIntegrationResponseSuccess | testProjectCustomHttpIntegrationResponseError)
+
+export const getTestProjectCustomHttpIntegrationUrl = (projectId: string,
+    integrationId: string,) => {
+
+
+
+
+  return `/v1/projects/${projectId}/integrations/custom-http/${integrationId}/test`
+}
+
+export const testProjectCustomHttpIntegration = async (projectId: string,
+    integrationId: string,
+    projectCustomHttpIntegrationTestRequest: ProjectCustomHttpIntegrationTestRequest, options?: RequestInit, fetchFn?: typeof globalThis.fetch): Promise<testProjectCustomHttpIntegrationResponse> => {
+
+  const res = await (fetchFn ?? fetch)(getTestProjectCustomHttpIntegrationUrl(projectId,integrationId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      projectCustomHttpIntegrationTestRequest,)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: testProjectCustomHttpIntegrationResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as testProjectCustomHttpIntegrationResponse
+}
+
+
+
+export type workflowPurchaseWebhookResponse200 = {
+  data: PurchaseWebhookAckResponse
+  status: 200
+}
+
+export type workflowPurchaseWebhookResponse202 = {
+  data: PurchaseWebhookAckResponse
+  status: 202
+}
+
+export type workflowPurchaseWebhookResponseDefault = {
+  data: ErrorResponse
+  status: Exclude<HTTPStatusCodes, 200 | 202>
+}
+
+export type workflowPurchaseWebhookResponseSuccess = (workflowPurchaseWebhookResponse200 | workflowPurchaseWebhookResponse202) & {
+  headers: Headers;
+};
+export type workflowPurchaseWebhookResponseError = (workflowPurchaseWebhookResponseDefault) & {
+  headers: Headers;
+};
+
+export type workflowPurchaseWebhookResponse = (workflowPurchaseWebhookResponseSuccess | workflowPurchaseWebhookResponseError)
+
+export const getWorkflowPurchaseWebhookUrl = () => {
+
+
+
+
+  return `/v1/integrations/workflow/purchase`
+}
+
+export const workflowPurchaseWebhook = async (purchaseWebhookRequest: PurchaseWebhookRequest, options?: RequestInit, fetchFn?: typeof globalThis.fetch): Promise<workflowPurchaseWebhookResponse> => {
+
+  const res = await (fetchFn ?? fetch)(getWorkflowPurchaseWebhookUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      purchaseWebhookRequest,)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: workflowPurchaseWebhookResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as workflowPurchaseWebhookResponse
+}
+
+
+
+export type adminListCustomHttpAllowlistResponse200 = {
+  data: AdminCustomHttpAllowlistListResponse
+  status: 200
+}
+
+export type adminListCustomHttpAllowlistResponseDefault = {
+  data: ErrorResponse
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type adminListCustomHttpAllowlistResponseSuccess = (adminListCustomHttpAllowlistResponse200) & {
+  headers: Headers;
+};
+export type adminListCustomHttpAllowlistResponseError = (adminListCustomHttpAllowlistResponseDefault) & {
+  headers: Headers;
+};
+
+export type adminListCustomHttpAllowlistResponse = (adminListCustomHttpAllowlistResponseSuccess | adminListCustomHttpAllowlistResponseError)
+
+export const getAdminListCustomHttpAllowlistUrl = () => {
+
+
+
+
+  return `/v1/admin/integrations/custom-http/allowlist`
+}
+
+export const adminListCustomHttpAllowlist = async ( options?: RequestInit, fetchFn?: typeof globalThis.fetch): Promise<adminListCustomHttpAllowlistResponse> => {
+
+  const res = await (fetchFn ?? fetch)(getAdminListCustomHttpAllowlistUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: adminListCustomHttpAllowlistResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as adminListCustomHttpAllowlistResponse
+}
+
+
+
+export type adminUpsertCustomHttpAllowlistEntryResponse200 = {
+  data: AdminCustomHttpAllowlistResponse
+  status: 200
+}
+
+export type adminUpsertCustomHttpAllowlistEntryResponseDefault = {
+  data: ErrorResponse
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type adminUpsertCustomHttpAllowlistEntryResponseSuccess = (adminUpsertCustomHttpAllowlistEntryResponse200) & {
+  headers: Headers;
+};
+export type adminUpsertCustomHttpAllowlistEntryResponseError = (adminUpsertCustomHttpAllowlistEntryResponseDefault) & {
+  headers: Headers;
+};
+
+export type adminUpsertCustomHttpAllowlistEntryResponse = (adminUpsertCustomHttpAllowlistEntryResponseSuccess | adminUpsertCustomHttpAllowlistEntryResponseError)
+
+export const getAdminUpsertCustomHttpAllowlistEntryUrl = (entryId: string,) => {
+
+
+
+
+  return `/v1/admin/integrations/custom-http/allowlist/${entryId}`
+}
+
+export const adminUpsertCustomHttpAllowlistEntry = async (entryId: string,
+    adminCustomHttpAllowlistUpsertRequest: AdminCustomHttpAllowlistUpsertRequest, options?: RequestInit, fetchFn?: typeof globalThis.fetch): Promise<adminUpsertCustomHttpAllowlistEntryResponse> => {
+
+  const res = await (fetchFn ?? fetch)(getAdminUpsertCustomHttpAllowlistEntryUrl(entryId),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      adminCustomHttpAllowlistUpsertRequest,)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: adminUpsertCustomHttpAllowlistEntryResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as adminUpsertCustomHttpAllowlistEntryResponse
+}
+
+
+
+export type adminDeleteCustomHttpAllowlistEntryResponse200 = {
+  data: AckResponse
+  status: 200
+}
+
+export type adminDeleteCustomHttpAllowlistEntryResponseDefault = {
+  data: ErrorResponse
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type adminDeleteCustomHttpAllowlistEntryResponseSuccess = (adminDeleteCustomHttpAllowlistEntryResponse200) & {
+  headers: Headers;
+};
+export type adminDeleteCustomHttpAllowlistEntryResponseError = (adminDeleteCustomHttpAllowlistEntryResponseDefault) & {
+  headers: Headers;
+};
+
+export type adminDeleteCustomHttpAllowlistEntryResponse = (adminDeleteCustomHttpAllowlistEntryResponseSuccess | adminDeleteCustomHttpAllowlistEntryResponseError)
+
+export const getAdminDeleteCustomHttpAllowlistEntryUrl = (entryId: string,) => {
+
+
+
+
+  return `/v1/admin/integrations/custom-http/allowlist/${entryId}`
+}
+
+export const adminDeleteCustomHttpAllowlistEntry = async (entryId: string, options?: RequestInit, fetchFn?: typeof globalThis.fetch): Promise<adminDeleteCustomHttpAllowlistEntryResponse> => {
+
+  const res = await (fetchFn ?? fetch)(getAdminDeleteCustomHttpAllowlistEntryUrl(entryId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: adminDeleteCustomHttpAllowlistEntryResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as adminDeleteCustomHttpAllowlistEntryResponse
+}
+
+
+
+/**
+ * Generic proxy endpoint. `ext.integration.*` actions must be called via `/v1/projects/{projectId}/integrations/*`.
+ */
 export type proxyAccountApiActionResponse200 = {
   data: ProxyResponse
   status: 200

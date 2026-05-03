@@ -14,6 +14,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 
 var builder = WebApplication.CreateBuilder(args);
+const string IntegrationRuntimeWorkerProfileId = "integration-runtime";
 
 builder.Services.AddDbContext<AccountsManagerDbContext>((serviceProvider, options) =>
 {
@@ -53,6 +54,8 @@ builder.Services.Configure<WorkerControlClientOptions>(options =>
     options.BaseUrlTemplate = builder.Configuration["WORKER_CONTROL_CLIENT_BASE_URL_TEMPLATE"] ?? options.BaseUrlTemplate;
     options.PathPrefix = builder.Configuration["WORKER_CONTROL_CLIENT_PATH_PREFIX"] ?? options.PathPrefix;
     options.ServiceToken = builder.Configuration["WORKER_API_SERVICE_AUTH_CLIENT_TOKEN"];
+    options.RequestTimeoutSeconds = builder.Configuration.GetValue("WORKER_CONTROL_CLIENT_REQUEST_TIMEOUT_SECONDS", options.RequestTimeoutSeconds);
+    options.IgnoreNotFoundOnApplyActions = builder.Configuration.GetValue("WORKER_CONTROL_CLIENT_IGNORE_NOT_FOUND_ON_APPLY_ACTIONS", options.IgnoreNotFoundOnApplyActions);
 });
 builder.Services.Configure<AccountManagerAutospawnOptions>(options =>
 {
@@ -74,7 +77,12 @@ builder.Services.AddHttpClient<IRouteRegistryClient, RouteRegistryHttpClient>((s
         client.BaseAddress = new Uri(options.BaseUrl);
     }
 });
-builder.Services.AddHttpClient<IWorkerControlClient, WorkerControlHttpClient>();
+builder.Services.AddHttpClient<IWorkerControlClient, WorkerControlHttpClient>((serviceProvider, client) =>
+{
+    var options = serviceProvider.GetRequiredService<IOptions<WorkerControlClientOptions>>().Value;
+    var timeoutSeconds = Math.Clamp(options.RequestTimeoutSeconds, 5, 120);
+    client.Timeout = TimeSpan.FromSeconds(timeoutSeconds);
+});
 builder.Services.AddHttpClient("docker-autospawn-health", client =>
 {
     client.Timeout = TimeSpan.FromSeconds(5);
@@ -134,6 +142,7 @@ app.MapGet("/internal/v1/account-types", async (
     var entities = await dbContext.AccountTypes
         .AsNoTracking()
         .Where(x => x.Enabled)
+        .Where(x => x.WorkerProfileId != IntegrationRuntimeWorkerProfileId)
         .OrderBy(x => x.SortOrder)
         .ThenBy(x => x.DisplayName)
         .ToListAsync(cancellationToken);
@@ -466,7 +475,7 @@ lifecycle.MapPost("/create", async (
                         workerPort,
                         targetServer.Server?.DockerNetwork,
                         targetServer.Server?.DockerHost,
-                        BuildWorkerSpawnEnvironment(runtimeConfig, normalizedPlatform, request.AccountId),
+                        BuildWorkerSpawnEnvironment(runtimeConfig, normalizedPlatform, request.AccountId, request.ProjectId),
                         runtimeConfig.HealthPath,
                         ResolveRegistryAuth(targetServer.Server, registrySecretEncryptionKey)),
                     ct);
@@ -717,7 +726,7 @@ lifecycle.MapPost("/migrate", async (
                         workerPort,
                         targetServer.Server?.DockerNetwork,
                         targetServer.Server?.DockerHost,
-                        BuildWorkerSpawnEnvironment(runtimeConfig, existing.Platform, existing.AccountId),
+                        BuildWorkerSpawnEnvironment(runtimeConfig, existing.Platform, existing.AccountId, existing.ProjectId),
                         runtimeConfig.HealthPath,
                         ResolveRegistryAuth(targetServer.Server, registrySecretEncryptionKey)),
                     ct);
@@ -844,7 +853,7 @@ lifecycle.MapPost("/rebalance", async (
                                 workerPort,
                                 targetServer.DockerNetwork,
                                 targetServer.DockerHost,
-                                BuildWorkerSpawnEnvironment(runtimeConfig, placement.Platform, placement.AccountId),
+                                BuildWorkerSpawnEnvironment(runtimeConfig, placement.Platform, placement.AccountId, placement.ProjectId),
                                 runtimeConfig.HealthPath,
                                 ResolveRegistryAuth(targetServer, registrySecretEncryptionKey)),
                             ct);
@@ -920,6 +929,9 @@ static async Task EnsureDefaultAccountTypesAsync(AccountsManagerDbContext dbCont
 {
     var now = DateTimeOffset.UtcNow;
     var defaults = CreateDefaultAccountTypes(now);
+    var defaultIds = defaults
+        .Select(x => x.AccountTypeId)
+        .ToHashSet(StringComparer.OrdinalIgnoreCase);
     var existing = await dbContext.AccountTypes.ToListAsync();
     var existingById = existing.ToDictionary(x => x.AccountTypeId, StringComparer.OrdinalIgnoreCase);
 
@@ -939,16 +951,31 @@ static async Task EnsureDefaultAccountTypesAsync(AccountsManagerDbContext dbCont
         }
     }
 
+    foreach (var staleManagedTemplate in existing.Where(x =>
+                 IsManagedDefaultAccountTypeId(x.AccountTypeId)
+                 && !defaultIds.Contains(x.AccountTypeId)))
+    {
+        dbContext.AccountTypes.Remove(staleManagedTemplate);
+        hasChanges = true;
+    }
+
     if (hasChanges)
     {
         await dbContext.SaveChangesAsync();
     }
 }
 
+static bool IsManagedDefaultAccountTypeId(string accountTypeId)
+{
+    return string.Equals(accountTypeId, "test-worker.funpay", StringComparison.OrdinalIgnoreCase)
+           || string.Equals(accountTypeId, "test-worker.playerok", StringComparison.OrdinalIgnoreCase)
+           || string.Equals(accountTypeId, "system.integration.steam-runtime", StringComparison.OrdinalIgnoreCase);
+}
+
 static IReadOnlyList<AccountTypeEntity> CreateDefaultAccountTypes(DateTimeOffset now)
 {
-    return
-    [
+    var defaults = new List<AccountTypeEntity>
+    {
         CreateDefaultAccountType(
             accountTypeId: "test-worker.funpay",
             platform: "funpay",
@@ -957,31 +984,31 @@ static IReadOnlyList<AccountTypeEntity> CreateDefaultAccountTypes(DateTimeOffset
             sortOrder: 10,
             defaultDisplayName: "FunPay Test Account",
             now),
-        CreateDefaultAccountType(
+    };
+
+    if (ReadBooleanEnvironmentVariable("ACCOUNTS_MANAGER_ENABLE_PLAYEROK_TEMPLATE", defaultValue: true))
+    {
+        defaults.Add(CreateDefaultAccountType(
             accountTypeId: "test-worker.playerok",
             platform: "playerok",
             displayName: "Тестовый worker: Playerok",
             description: "Тестовый профиль для аккаунта Playerok.",
             sortOrder: 20,
             defaultDisplayName: "Playerok Test Account",
-            now),
-        CreateDefaultAccountType(
-            accountTypeId: "test-worker.ggsell",
-            platform: "ggsell",
-            displayName: "Тестовый worker: GGSell",
-            description: "Тестовый профиль для аккаунта GGSell.",
-            sortOrder: 30,
-            defaultDisplayName: "GGSell Test Account",
-            now),
-        CreateDefaultAccountType(
-            accountTypeId: "test-worker.platimarket",
-            platform: "platimarket",
-            displayName: "Тестовый worker: PlatiMarket",
-            description: "Тестовый профиль для аккаунта PlatiMarket.",
-            sortOrder: 40,
-            defaultDisplayName: "PlatiMarket Test Account",
-            now),
-    ];
+            now));
+    }
+
+    defaults.Add(CreateDefaultAccountType(
+        accountTypeId: "system.integration.steam-runtime",
+        platform: "steam-integration",
+        displayName: "System runtime: Steam integration",
+        description: "Технический account-type для worker runtime интеграции Steam.",
+        sortOrder: 990,
+        defaultDisplayName: "Steam Integration Runtime",
+        now,
+        workerProfileId: IntegrationRuntimeWorkerProfileId));
+
+    return defaults;
 }
 
 static AccountTypeEntity CreateDefaultAccountType(
@@ -991,7 +1018,8 @@ static AccountTypeEntity CreateDefaultAccountType(
     string description,
     int sortOrder,
     string defaultDisplayName,
-    DateTimeOffset now)
+    DateTimeOffset now,
+    string workerProfileId = "test-worker")
 {
     var fields = CreateDefaultAccountTypeFields(platform, defaultDisplayName);
     var runtime = CreateDefaultAccountTypeRuntime(platform);
@@ -1002,7 +1030,7 @@ static AccountTypeEntity CreateDefaultAccountType(
         Platform = platform,
         DisplayName = displayName,
         Description = description,
-        WorkerProfileId = "test-worker",
+        WorkerProfileId = workerProfileId,
         Enabled = true,
         SortOrder = sortOrder,
         FormFieldsJson = JsonSerializer.Serialize(fields),
@@ -1140,6 +1168,8 @@ static AccountTypeRuntimeConfigDto CreateDefaultAccountTypeRuntime(string platfo
                 ["WORKER_PROXY_CREDENTIALS_ENCRYPTION_KEY"] = "replace-with-long-random-worker-key",
                 ["WORKER_MARKETPLACE_AUTH_ENCRYPTION_KEY"] = "replace-with-long-random-marketplace-auth-key",
                 ["FUNPAY_WORKER_PROVIDER"] = "funpay",
+                ["FUNPAY_REQUEST_TIMEOUT_SECONDS"] = "8",
+                ["FUNPAY_HTTP_MAX_RETRIES"] = "1",
             },
             WorkerCommand: ["python", "-m", "ddcrm_funpay_worker.main"]);
     }
@@ -1161,6 +1191,45 @@ static AccountTypeRuntimeConfigDto CreateDefaultAccountTypeRuntime(string platfo
                 ["PLAYEROK_REQUESTS_TIMEOUT"] = "30",
             },
             WorkerCommand: ["python", "-m", "ddcrm_playerok_worker.main"]);
+    }
+
+    if (string.Equals(platform, "steam-integration", StringComparison.Ordinal))
+    {
+        var steamPostgresConnection = ReadEnvironmentVariable(
+            "STEAM_INTEGRATION_RUNTIME_POSTGRES_CONNECTION",
+            "Host=host.docker.internal;Port=5433;Database=steamfleet;Username=steamfleet;Password=steamfleet");
+        var steamRedisConnection = ReadEnvironmentVariable(
+            "STEAM_INTEGRATION_RUNTIME_REDIS_CONNECTION",
+            "host.docker.internal:6380");
+        var adminEmail = ReadEnvironmentVariable("STEAM_INTEGRATION_RUNTIME_ADMIN_EMAIL", "admin@local");
+        var adminPassword = ReadEnvironmentVariable("STEAM_INTEGRATION_RUNTIME_ADMIN_PASSWORD", "Admin1234");
+        var secretsMasterKey = ReadEnvironmentVariable(
+            "STEAM_INTEGRATION_RUNTIME_SECRETS_MASTER_KEY_B64",
+            "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=");
+
+        return new AccountTypeRuntimeConfigDto(
+            AutospawnEnabled: true,
+            WorkerImage: "steam-accounts-manager-web:latest",
+            WorkerPathPrefix: "/internal/v2/worker",
+            HealthPath: "/health",
+            ContainerPort: 8080,
+            EnvironmentVariables: new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["ASPNETCORE_ENVIRONMENT"] = "Production",
+                ["ASPNETCORE_URLS"] = "http://+:8080",
+                ["WORKER_API_SERVICE_AUTH_ENABLED"] = "true",
+                ["WORKER_API_SERVICE_AUTH_ACCEPTED_TOKENS"] = "worker-token-a,worker-token-b",
+                ["POSTGRES_CONNECTION"] = steamPostgresConnection,
+                ["ConnectionStrings__Postgres"] = steamPostgresConnection,
+                ["ConnectionStrings__Redis"] = steamRedisConnection,
+                ["REDIS_CONNECTION"] = steamRedisConnection,
+                ["ADMIN_EMAIL"] = adminEmail,
+                ["ADMIN_PASSWORD"] = adminPassword,
+                ["SECRETS_MASTER_KEY_B64"] = secretsMasterKey,
+                ["DDCRM_WORKER_PROJECT_ID"] = "{projectId}",
+                ["STEAM_ACCOUNTS_STORAGE_NAMESPACE"] = "steam-{projectId}-{accountIdN}",
+            },
+            WorkerCommand: null);
     }
 
     return new AccountTypeRuntimeConfigDto(
@@ -1535,6 +1604,18 @@ static string SerializeRuntimeConfig(AccountTypeRuntimeConfigDto runtime)
     return JsonSerializer.Serialize(runtime);
 }
 
+static string ReadEnvironmentVariable(string key, string fallback)
+{
+    var value = Environment.GetEnvironmentVariable(key);
+    return string.IsNullOrWhiteSpace(value) ? fallback : value.Trim();
+}
+
+static bool ReadBooleanEnvironmentVariable(string key, bool defaultValue)
+{
+    var value = Environment.GetEnvironmentVariable(key);
+    return bool.TryParse(value, out var parsed) ? parsed : defaultValue;
+}
+
 static AccountTypeRuntimeConfigDto DeserializeRuntimeConfig(string? json, string platform)
 {
     if (string.IsNullOrWhiteSpace(json))
@@ -1619,17 +1700,23 @@ static bool IsManagedWorker(string workerId)
 static Dictionary<string, string> BuildWorkerSpawnEnvironment(
     AccountTypeRuntimeConfigDto runtimeConfig,
     string platform,
-    Guid accountId)
+    Guid accountId,
+    Guid projectId)
 {
     var normalizedAccountId = accountId.ToString("D");
-    var env = new Dictionary<string, string>(runtimeConfig.EnvironmentVariables, StringComparer.Ordinal)
-    {
-        ["TEST_WORKER_PROVIDER"] = platform,
-        ["TEST_INMEMORY_DB_NAME"] = $"worker-{accountId:N}",
-        ["DDCRM_WORKER_ACCOUNT_ID"] = normalizedAccountId,
-        ["FUNPAY_WORKER_ACCOUNT_ID"] = normalizedAccountId,
-        ["PLAYEROK_WORKER_ACCOUNT_ID"] = normalizedAccountId,
-    };
+    var normalizedAccountIdN = accountId.ToString("N");
+    var normalizedProjectId = projectId.ToString("D");
+    var env = runtimeConfig.EnvironmentVariables
+        .ToDictionary(
+            pair => pair.Key,
+            pair => ExpandRuntimeEnvironmentValue(pair.Value, normalizedAccountId, normalizedAccountIdN, normalizedProjectId),
+            StringComparer.Ordinal);
+
+    env["TEST_WORKER_PROVIDER"] = platform;
+    env["TEST_INMEMORY_DB_NAME"] = $"worker-{normalizedAccountIdN}";
+    env["DDCRM_WORKER_ACCOUNT_ID"] = normalizedAccountId;
+    env["FUNPAY_WORKER_ACCOUNT_ID"] = normalizedAccountId;
+    env["PLAYEROK_WORKER_ACCOUNT_ID"] = normalizedAccountId;
 
     if (!env.ContainsKey("ASPNETCORE_URLS"))
     {
@@ -1637,6 +1724,18 @@ static Dictionary<string, string> BuildWorkerSpawnEnvironment(
     }
 
     return env;
+}
+
+static string ExpandRuntimeEnvironmentValue(
+    string value,
+    string accountId,
+    string accountIdN,
+    string projectId)
+{
+    return value
+        .Replace("{accountId}", accountId, StringComparison.OrdinalIgnoreCase)
+        .Replace("{accountIdN}", accountIdN, StringComparison.OrdinalIgnoreCase)
+        .Replace("{projectId}", projectId, StringComparison.OrdinalIgnoreCase);
 }
 
 static string ResolveWorkerControlBaseUrlTemplate(

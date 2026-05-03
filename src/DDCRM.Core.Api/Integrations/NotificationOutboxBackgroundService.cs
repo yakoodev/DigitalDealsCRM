@@ -58,7 +58,12 @@ public sealed class NotificationOutboxBackgroundService(
                 var proxy = await ResolveActiveProxyAsync(dbContext, crypto, cancellationToken);
                 foreach (var chatId in chatIds)
                 {
-                    await sender.SendMessageAsync(chatId, message, proxy, cancellationToken);
+                    var sendResult = await sender.SendMessageWithDiagnosticsAsync(chatId, message, proxy, cancellationToken);
+                    if (sendResult.Status != "ok")
+                    {
+                        throw new InvalidOperationException(
+                            $"telegram_delivery_failed:{sendResult.ReasonCode}:{sendResult.ErrorMessage}");
+                    }
                 }
 
                 item.Status = "completed";
