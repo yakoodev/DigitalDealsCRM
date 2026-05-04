@@ -68,11 +68,29 @@ export interface ProxyConfig {
   password: string;
 }
 
+export type MarketplaceAuthScheme = typeof MarketplaceAuthScheme[keyof typeof MarketplaceAuthScheme];
+
+
+export const MarketplaceAuthScheme = {
+  golden_key: 'golden_key',
+  cookies: 'cookies',
+  tokens: 'tokens',
+  login_password: 'login_password',
+} as const;
+
+export type MarketplaceAuthCredentials = {[key: string]: string};
+
+export interface MarketplaceAuth {
+  scheme: MarketplaceAuthScheme;
+  credentials: MarketplaceAuthCredentials;
+}
+
 export interface AccountCreateRequest {
   accountTypeId?: string;
   platform: string;
   displayName: string;
   proxyConfig: ProxyConfig;
+  marketplaceAuth?: MarketplaceAuth;
 }
 
 export type AccountTypeFieldInputType = typeof AccountTypeFieldInputType[keyof typeof AccountTypeFieldInputType];
@@ -118,6 +136,7 @@ export interface AdminAccountTypeRuntime {
      */
   containerPort: number;
   environmentVariables: AdminAccountTypeRuntimeEnvironmentVariables;
+  workerCommand?: string[];
 }
 
 export type AdminAccountType = AccountType & {

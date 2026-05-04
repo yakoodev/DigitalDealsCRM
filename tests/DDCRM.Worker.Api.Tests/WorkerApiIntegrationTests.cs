@@ -528,6 +528,45 @@ public sealed class WorkerApiIntegrationTests
 
     [Fact]
     [Trait("Category", "Integration")]
+    public async Task WorkerV2MarketplaceAuthApply_StoresEncryptedMarketplaceAuth()
+    {
+        using var factory = new WorkerApiFactory();
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add("X-Service-Token", "worker-token-a");
+
+        var accountId = Guid.NewGuid();
+        using var request = CreateMutatingRequest(
+            HttpMethod.Post,
+            "/internal/v2/worker/actions/ext.account.marketplace-auth.apply",
+            Guid.NewGuid().ToString("N"),
+            new
+            {
+                payload = new
+                {
+                    accountId,
+                    marketplaceAuth = new
+                    {
+                        scheme = "golden_key",
+                        credentials = new
+                        {
+                            golden_key = "funpay-golden-key",
+                            user_agent = "Mozilla/5.0",
+                        },
+                    },
+                },
+            });
+
+        var response = await client.SendAsync(request);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var stored = factory.FindMarketplaceAuth(accountId);
+        Assert.NotNull(stored);
+        Assert.Equal("golden_key", stored!.Scheme);
+        Assert.NotEqual("funpay-golden-key", stored.CredentialsEncrypted);
+    }
+
+    [Fact]
+    [Trait("Category", "Integration")]
     public async Task WorkerScenario_AuthFail_ReturnsWorkerAuthFailed()
     {
         using var factory = new WorkerApiFactory(new Dictionary<string, string?>

@@ -130,6 +130,97 @@ public sealed class CoreApiIntegrationTests(CoreApiFactory factory) : IClassFixt
 
     [Fact]
     [Trait("Category", "Integration")]
+    public async Task CreateAccount_WithMarketplaceAuth_ForwardsPayloadToAccountsManager()
+    {
+        factory.AccountsManagerClient.Reset();
+
+        using var client = CreateAuthorizedClient(Guid.NewGuid());
+        var projectId = await CreateProjectAsync(client, "Accounts-MarketplaceAuth");
+        var idempotencyKey = Guid.NewGuid().ToString("N");
+
+        var payload = new
+        {
+            platform = "funpay",
+            accountTypeId = "test-worker.funpay",
+            displayName = "FunPay Auth Account",
+            proxyConfig = new
+            {
+                host = "proxy-auth.internal",
+                port = 1508,
+                login = "seller-auth",
+                password = "proxy-secret",
+            },
+            marketplaceAuth = new
+            {
+                scheme = "golden_key",
+                credentials = new
+                {
+                    golden_key = "funpay-golden-key",
+                    user_agent = "Mozilla/5.0",
+                },
+            },
+        };
+
+        var response = await SendJsonAsync(
+            client,
+            HttpMethod.Post,
+            $"/v1/projects/{projectId}/accounts",
+            idempotencyKey,
+            payload);
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        var createCall = Assert.Single(factory.AccountsManagerClient.CreateCalls);
+        Assert.NotNull(createCall.MarketplaceAuth);
+        Assert.Equal("golden_key", createCall.MarketplaceAuth!.Scheme);
+        Assert.Equal("funpay-golden-key", createCall.MarketplaceAuth.Credentials["golden_key"]);
+        Assert.Equal("Mozilla/5.0", createCall.MarketplaceAuth.Credentials["user_agent"]);
+    }
+
+    [Fact]
+    [Trait("Category", "Integration")]
+    public async Task CreateAccount_WithMarketplaceAuthTokensWithoutDdg5_ReturnsBadRequest()
+    {
+        factory.AccountsManagerClient.Reset();
+
+        using var client = CreateAuthorizedClient(Guid.NewGuid());
+        var projectId = await CreateProjectAsync(client, "Accounts-PlayerokAuthValidation");
+        var idempotencyKey = Guid.NewGuid().ToString("N");
+
+        var payload = new
+        {
+            platform = "playerok",
+            accountTypeId = "test-worker.playerok",
+            displayName = "Playerok Auth Account",
+            proxyConfig = new
+            {
+                host = "proxy-auth.internal",
+                port = 1508,
+                login = "seller-auth",
+                password = "proxy-secret",
+            },
+            marketplaceAuth = new
+            {
+                scheme = "tokens",
+                credentials = new
+                {
+                    token = "playerok-token",
+                },
+            },
+        };
+
+        var response = await SendJsonAsync(
+            client,
+            HttpMethod.Post,
+            $"/v1/projects/{projectId}/accounts",
+            idempotencyKey,
+            payload);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Empty(factory.AccountsManagerClient.CreateCalls);
+    }
+
+    [Fact]
+    [Trait("Category", "Integration")]
     public async Task ListProjectAccountTypes_ReturnsAccountsManagerCatalog()
     {
         using var client = CreateAuthorizedClient(Guid.NewGuid());
@@ -169,6 +260,59 @@ public sealed class CoreApiIntegrationTests(CoreApiFactory factory) : IClassFixt
 
         var response = await client.GetAsync("/v1/admin/account-manager/account-types");
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    [Trait("Category", "Security")]
+    public async Task AdminIntegrationGrant_WithoutSystemPermission_IsForbidden()
+    {
+        using var client = CreateAuthorizedClient(Guid.NewGuid(), withSystemPermission: false);
+        var projectId = await CreateProjectAsync(client, "Integrations-NoAdmin");
+
+        var response = await SendJsonAsync(
+            client,
+            HttpMethod.Put,
+            $"/v1/admin/integrations/projects/{projectId}/grants/platform.funpay",
+            Guid.NewGuid().ToString("N"),
+            new
+            {
+                scopes = new[] { "use" },
+            });
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    [Trait("Category", "Integration")]
+    public async Task AdminIntegrationGrant_UpsertAndList_Works()
+    {
+        var userId = Guid.NewGuid();
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
+            "Bearer",
+            factory.CreateToken(userId, "system.integrations.manage"));
+
+        var projectId = await CreateProjectAsync(client, "Integrations-Admin");
+
+        var upsertResponse = await SendJsonAsync(
+            client,
+            HttpMethod.Put,
+            $"/v1/admin/integrations/projects/{projectId}/grants/funpaystat",
+            Guid.NewGuid().ToString("N"),
+            new
+            {
+                scopes = new[] { "read", "jobs" },
+            });
+        Assert.Equal(HttpStatusCode.OK, upsertResponse.StatusCode);
+
+        var listResponse = await client.GetAsync($"/v1/admin/integrations/projects/{projectId}/grants");
+        Assert.Equal(HttpStatusCode.OK, listResponse.StatusCode);
+
+        using var listJson = JsonDocument.Parse(await listResponse.Content.ReadAsStringAsync());
+        var items = listJson.RootElement.GetProperty("items");
+        Assert.Contains(items.EnumerateArray(), item =>
+            string.Equals(item.GetProperty("integrationKey").GetString(), "funpaystat", StringComparison.OrdinalIgnoreCase)
+            && string.Equals(item.GetProperty("status").GetString(), "active", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]
@@ -754,13 +898,21 @@ public sealed class CoreApiIntegrationTests(CoreApiFactory factory) : IClassFixt
         return client;
     }
 
-    private static async Task<Guid> CreateProjectAsync(HttpClient client, string name)
+    private async Task<Guid> CreateProjectAsync(HttpClient client, string name)
     {
         var response = await SendCreateProjectAsync(client, Guid.NewGuid().ToString("N"), name);
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
 
         using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-        return json.RootElement.GetProperty("project").GetProperty("id").GetGuid();
+        var projectId = json.RootElement.GetProperty("project").GetProperty("id").GetGuid();
+
+        factory.GrantProjectIntegration(projectId, "platform.ozon", "use");
+        factory.GrantProjectIntegration(projectId, "platform.funpay", "use");
+        factory.GrantProjectIntegration(projectId, "platform.playerok", "use");
+        factory.GrantProjectIntegration(projectId, "platform.ggsell", "use");
+        factory.GrantProjectIntegration(projectId, "platform.platimarket", "use");
+
+        return projectId;
     }
 
     private static async Task<Guid> CreateAccountAsync(HttpClient client, Guid projectId, string displayName)

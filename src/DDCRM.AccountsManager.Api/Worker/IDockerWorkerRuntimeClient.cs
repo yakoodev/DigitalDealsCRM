@@ -17,6 +17,7 @@ public sealed record DockerSpawnRequest(
     string WorkerId,
     string Platform,
     string WorkerImage,
+    IReadOnlyList<string>? WorkerCommand,
     int ContainerPort,
     string? DockerNetworkOverride,
     string? DockerEndpointOverride,

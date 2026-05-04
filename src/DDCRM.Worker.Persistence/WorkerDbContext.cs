@@ -13,6 +13,8 @@ public sealed class WorkerDbContext(DbContextOptions<WorkerDbContext> options)
 
     public DbSet<WorkerProxyCredentialsEntity> ProxyCredentials => Set<WorkerProxyCredentialsEntity>();
 
+    public DbSet<WorkerMarketplaceAuthEntity> MarketplaceAuth => Set<WorkerMarketplaceAuthEntity>();
+
     public DbSet<IdempotencyRecord> IdempotencyRecords => Set<IdempotencyRecord>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -47,6 +49,15 @@ public sealed class WorkerDbContext(DbContextOptions<WorkerDbContext> options)
             entity.Property(x => x.Port).IsRequired();
             entity.Property(x => x.Login).HasMaxLength(255).IsRequired();
             entity.Property(x => x.Password).HasMaxLength(512).IsRequired();
+            entity.Property(x => x.UpdatedAtUtc).HasDefaultValueSql("NOW()");
+        });
+
+        modelBuilder.Entity<WorkerMarketplaceAuthEntity>(entity =>
+        {
+            entity.ToTable("worker_marketplace_auth");
+            entity.HasKey(x => x.AccountId);
+            entity.Property(x => x.Scheme).HasMaxLength(80).IsRequired();
+            entity.Property(x => x.CredentialsEncrypted).HasMaxLength(8192).IsRequired();
             entity.Property(x => x.UpdatedAtUtc).HasDefaultValueSql("NOW()");
         });
 

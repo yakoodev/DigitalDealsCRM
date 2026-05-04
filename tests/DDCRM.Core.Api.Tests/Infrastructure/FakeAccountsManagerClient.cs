@@ -113,7 +113,8 @@ public sealed class FakeAccountsManagerClient : IAccountsManagerClient
                 "/internal/v2/worker",
                 "/health",
                 8080,
-                new Dictionary<string, string>()));
+                new Dictionary<string, string>(),
+                ["DDCRM.Worker.Api.dll"]));
 
         if (existingIndex >= 0)
         {
@@ -133,10 +134,21 @@ public sealed class FakeAccountsManagerClient : IAccountsManagerClient
         Guid accountId,
         string platform,
         IDictionary<string, object?> proxyConfig,
+        AccountsManagerMarketplaceAuth? marketplaceAuth,
         string idempotencyKey,
         CancellationToken cancellationToken)
     {
-        CreateCalls.Add(new CreateLifecycleCall(projectId, accountId, platform, idempotencyKey, new Dictionary<string, object?>(proxyConfig, StringComparer.Ordinal)));
+        CreateCalls.Add(new CreateLifecycleCall(
+            projectId,
+            accountId,
+            platform,
+            idempotencyKey,
+            new Dictionary<string, object?>(proxyConfig, StringComparer.Ordinal),
+            marketplaceAuth is null
+                ? null
+                : new AccountsManagerMarketplaceAuth(
+                    marketplaceAuth.Scheme,
+                    new Dictionary<string, string>(marketplaceAuth.Credentials, StringComparer.Ordinal))));
         return Task.CompletedTask;
     }
 
@@ -193,7 +205,8 @@ public sealed class FakeAccountsManagerClient : IAccountsManagerClient
                     "/internal/v2/worker",
                     "/health",
                     8080,
-                    new Dictionary<string, string>())),
+                    new Dictionary<string, string>(),
+                    ["DDCRM.Worker.Api.dll"])),
             new(
                 "test-worker.playerok",
                 "playerok",
@@ -215,7 +228,8 @@ public sealed class FakeAccountsManagerClient : IAccountsManagerClient
                     "/internal/v2/worker",
                     "/health",
                     8080,
-                    new Dictionary<string, string>())),
+                    new Dictionary<string, string>(),
+                    ["DDCRM.Worker.Api.dll"])),
             new(
                 "test-worker.ggsell",
                 "ggsell",
@@ -237,7 +251,8 @@ public sealed class FakeAccountsManagerClient : IAccountsManagerClient
                     "/internal/v2/worker",
                     "/health",
                     8080,
-                    new Dictionary<string, string>())),
+                    new Dictionary<string, string>(),
+                    ["DDCRM.Worker.Api.dll"])),
             new(
                 "test-worker.platimarket",
                 "platimarket",
@@ -259,7 +274,8 @@ public sealed class FakeAccountsManagerClient : IAccountsManagerClient
                     "/internal/v2/worker",
                     "/health",
                     8080,
-                    new Dictionary<string, string>())),
+                    new Dictionary<string, string>(),
+                    ["DDCRM.Worker.Api.dll"])),
         ];
     }
 }
@@ -278,7 +294,8 @@ public sealed record CreateLifecycleCall(
     Guid AccountId,
     string Platform,
     string IdempotencyKey,
-    IReadOnlyDictionary<string, object?> ProxyConfig);
+    IReadOnlyDictionary<string, object?> ProxyConfig,
+    AccountsManagerMarketplaceAuth? MarketplaceAuth);
 
 public sealed record UpdateLifecycleCall(
     Guid AccountId,

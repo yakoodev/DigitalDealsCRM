@@ -6,7 +6,7 @@ import { DashboardLayout } from "@/components/layout/dashboard-layout";
 import { ThemeToggle } from "@/components/theme-toggle";
 import type { PlatformSession } from "@/lib/auth";
 
-type AdminTab = "overview" | "servers" | "templates";
+type AdminTab = "overview" | "servers" | "templates" | "integrations";
 
 interface AdminLayoutProps {
   session: PlatformSession;
@@ -45,6 +45,9 @@ export function AdminLayout({ session, activeTab, onLogout, children }: AdminLay
             </Link>
             <Link href="/admin/account-manager/templates" className={tabClass("templates")}>
               Platform templates
+            </Link>
+            <Link href="/admin/account-manager/integrations" className={tabClass("integrations")}>
+              Integrations
             </Link>
             <button type="button" className="sidebar-nav-link" onClick={onLogout}>
               Выйти

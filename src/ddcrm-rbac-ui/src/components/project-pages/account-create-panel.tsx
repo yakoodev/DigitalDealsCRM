@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
-import type { Account } from "@/generated/external-api";
+import type { Account, AccountCreateRequest } from "@/generated/external-api";
 import {
   createAccountRequest,
   listProjectAccountTypesRequest,
@@ -122,7 +122,7 @@ export function ProjectAccountCreatePanel({
         throw new Error("Proxy port должен быть целым числом от 1 до 65535.");
       }
 
-      return createAccountRequest(apiSession, projectId, {
+      const payload: AccountCreateRequest = {
         accountTypeId: selectedAccountType.accountTypeId,
         platform: selectedAccountType.platform,
         displayName,
@@ -132,7 +132,65 @@ export function ProjectAccountCreatePanel({
           login: proxyLogin,
           password: proxyPassword,
         },
-      });
+      };
+
+      const normalizedPlatform = selectedAccountType.platform.trim().toLowerCase();
+      if (normalizedPlatform === "funpay") {
+        const goldenKey = readRequiredDraftValue(
+          activeDraft,
+          "funpayGoldenKey",
+          "FunPay golden_key",
+        );
+        const userAgent = (activeDraft.funpayUserAgent ?? "").trim();
+        const credentials: Record<string, string> = {
+          golden_key: goldenKey,
+        };
+        if (userAgent) {
+          credentials.user_agent = userAgent;
+        }
+
+        payload.marketplaceAuth = {
+          scheme: "golden_key",
+          credentials,
+        };
+      }
+      else if (normalizedPlatform === "playerok") {
+        const rawScheme = (activeDraft.playerokAuthScheme ?? "tokens").trim().toLowerCase();
+        const scheme = rawScheme === "cookies" ? "cookies" : "tokens";
+        const userAgent = (activeDraft.playerokUserAgent ?? "").trim();
+        const credentials: Record<string, string> = {};
+
+        if (scheme === "tokens") {
+          credentials.token = readRequiredDraftValue(
+            activeDraft,
+            "playerokToken",
+            "Playerok token",
+          );
+          credentials.ddg5 = readRequiredDraftValue(
+            activeDraft,
+            "playerokDdg5",
+            "Playerok ddg5",
+          );
+        }
+        else {
+          credentials.cookies = readRequiredDraftValue(
+            activeDraft,
+            "playerokCookies",
+            "Playerok cookies",
+          );
+        }
+
+        if (userAgent) {
+          credentials.user_agent = userAgent;
+        }
+
+        payload.marketplaceAuth = {
+          scheme,
+          credentials,
+        };
+      }
+
+      return createAccountRequest(apiSession, projectId, payload);
     },
     onSuccess: async (account) => {
       await queryClient.invalidateQueries({

@@ -47,6 +47,26 @@ public sealed class AccountsManagerApiIntegrationTests
             Assert.True(runtime.GetProperty("autospawnEnabled").GetBoolean());
             Assert.False(string.IsNullOrWhiteSpace(runtime.GetProperty("workerImage").GetString()));
         }
+
+        var playerokItem = items.Single(x => x.GetProperty("platform").GetString() == "playerok");
+        var playerokFieldKeys = playerokItem
+            .GetProperty("formFields")
+            .EnumerateArray()
+            .Select(x => x.GetProperty("key").GetString() ?? string.Empty)
+            .ToArray();
+        Assert.Contains("playerokAuthScheme", playerokFieldKeys);
+        Assert.Contains("playerokToken", playerokFieldKeys);
+        Assert.Contains("playerokDdg5", playerokFieldKeys);
+        Assert.Contains("playerokCookies", playerokFieldKeys);
+
+        var playerokRuntime = playerokItem.GetProperty("runtime");
+        Assert.Equal("ddcrm/playerok-worker:local", playerokRuntime.GetProperty("workerImage").GetString());
+        var playerokCommand = playerokRuntime
+            .GetProperty("workerCommand")
+            .EnumerateArray()
+            .Select(x => x.GetString() ?? string.Empty)
+            .ToArray();
+        Assert.Equal(["python", "-m", "ddcrm_playerok_worker.main"], playerokCommand);
     }
 
     [Fact]
@@ -405,6 +425,88 @@ public sealed class AccountsManagerApiIntegrationTests
         var applyCall = Assert.Single(factory.WorkerControlClient.ApplyCalls);
         Assert.Equal("srv-default", applyCall.WorkerBinding.ServerId);
         Assert.Equal("http://worker-api:8080", applyCall.BaseUrlTemplateOverride);
+    }
+
+    [Fact]
+    [Trait("Category", "Integration")]
+    public async Task LifecycleCreate_WithMarketplaceAuth_AppliesMarketplaceAuthViaWorkerControl()
+    {
+        using var factory = new AccountsManagerApiFactory();
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add("X-Service-Token", "internal-token-a");
+
+        var accountId = Guid.NewGuid();
+        using var createRequest = CreateMutatingRequest(
+            HttpMethod.Post,
+            "/internal/v1/lifecycle/create",
+            Guid.NewGuid().ToString("N"),
+            new
+            {
+                accountId,
+                projectId = Guid.NewGuid(),
+                platform = "funpay",
+                proxyConfig = new
+                {
+                    host = "127.0.0.1",
+                    port = 1508,
+                },
+                marketplaceAuth = new
+                {
+                    scheme = "golden_key",
+                    credentials = new
+                    {
+                        golden_key = "funpay-golden-key",
+                        user_agent = "Mozilla/5.0",
+                    },
+                },
+            });
+
+        var createResponse = await client.SendAsync(createRequest);
+        Assert.Equal(HttpStatusCode.Accepted, createResponse.StatusCode);
+
+        var authApplyCall = Assert.Single(factory.WorkerControlClient.MarketplaceAuthApplyCalls);
+        Assert.Equal(accountId, authApplyCall.AccountId);
+        Assert.Equal("golden_key", authApplyCall.MarketplaceAuth.Scheme);
+        Assert.Equal("funpay-golden-key", authApplyCall.MarketplaceAuth.Credentials["golden_key"]);
+        Assert.Equal("Mozilla/5.0", authApplyCall.MarketplaceAuth.Credentials["user_agent"]);
+    }
+
+    [Fact]
+    [Trait("Category", "Integration")]
+    public async Task LifecycleCreate_WithMarketplaceAuthTokensWithoutDdg5_ReturnsBadRequest()
+    {
+        using var factory = new AccountsManagerApiFactory();
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add("X-Service-Token", "internal-token-a");
+
+        var accountId = Guid.NewGuid();
+        using var createRequest = CreateMutatingRequest(
+            HttpMethod.Post,
+            "/internal/v1/lifecycle/create",
+            Guid.NewGuid().ToString("N"),
+            new
+            {
+                accountId,
+                projectId = Guid.NewGuid(),
+                platform = "playerok",
+                proxyConfig = new
+                {
+                    host = "127.0.0.1",
+                    port = 1508,
+                },
+                marketplaceAuth = new
+                {
+                    scheme = "tokens",
+                    credentials = new
+                    {
+                        token = "playerok-token",
+                    },
+                },
+            });
+
+        var createResponse = await client.SendAsync(createRequest);
+        Assert.Equal(HttpStatusCode.BadRequest, createResponse.StatusCode);
+        Assert.Empty(factory.WorkerControlClient.MarketplaceAuthApplyCalls);
     }
 
     [Fact]

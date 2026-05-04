@@ -132,6 +132,7 @@ public sealed class AccountsManagerHttpClient(
         Guid accountId,
         string platform,
         IDictionary<string, object?> proxyConfig,
+        AccountsManagerMarketplaceAuth? marketplaceAuth,
         string idempotencyKey,
         CancellationToken cancellationToken)
     {
@@ -145,6 +146,7 @@ public sealed class AccountsManagerHttpClient(
                 projectId,
                 platform,
                 proxyConfig,
+                marketplaceAuth,
             }),
         };
 
@@ -293,7 +295,8 @@ public sealed class AccountsManagerHttpClient(
                 dto.Runtime.WorkerPathPrefix,
                 dto.Runtime.HealthPath,
                 dto.Runtime.ContainerPort,
-                dto.Runtime.EnvironmentVariables));
+                dto.Runtime.EnvironmentVariables,
+                dto.Runtime.WorkerCommand));
     }
 
     private static AccountsManagerWorkerServerDefinition ToDefinition(InternalWorkerServerDto dto)
@@ -347,7 +350,8 @@ public sealed class AccountsManagerHttpClient(
         string WorkerPathPrefix,
         string HealthPath,
         int ContainerPort,
-        IReadOnlyDictionary<string, string> EnvironmentVariables);
+        IReadOnlyDictionary<string, string> EnvironmentVariables,
+        IReadOnlyList<string>? WorkerCommand);
 
     private sealed record InternalWorkerServerListResponse(IReadOnlyList<InternalWorkerServerDto> Items);
 

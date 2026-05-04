@@ -11,6 +11,8 @@ public sealed class RecordingWorkerControlClient : IWorkerControlClient
 
     public List<WorkerControlApplyCall> ApplyCalls { get; } = [];
 
+    public List<WorkerControlMarketplaceAuthApplyCall> MarketplaceAuthApplyCalls { get; } = [];
+
     public Task ApplyProxyCredentialsAsync(
         WorkerBindingDto workerBinding,
         Guid accountId,
@@ -38,12 +40,42 @@ public sealed class RecordingWorkerControlClient : IWorkerControlClient
         return Task.CompletedTask;
     }
 
+    public Task ApplyMarketplaceAuthAsync(
+        WorkerBindingDto workerBinding,
+        Guid accountId,
+        MarketplaceAuthPayload marketplaceAuth,
+        string idempotencyKey,
+        string? baseUrlTemplateOverride,
+        CancellationToken cancellationToken)
+    {
+        if (_failNextApply)
+        {
+            _failNextApply = false;
+            throw new ApiErrorException(
+                StatusCodes.Status502BadGateway,
+                ApiErrorCodes.InternalError,
+                "Simulated worker control failure.");
+        }
+
+        MarketplaceAuthApplyCalls.Add(new WorkerControlMarketplaceAuthApplyCall(
+            workerBinding,
+            accountId,
+            new MarketplaceAuthPayload(
+                marketplaceAuth.Scheme,
+                new Dictionary<string, string>(marketplaceAuth.Credentials, StringComparer.Ordinal)),
+            idempotencyKey,
+            baseUrlTemplateOverride));
+
+        return Task.CompletedTask;
+    }
+
     public void FailNextApplyRequest() => _failNextApply = true;
 
     public void Reset()
     {
         _failNextApply = false;
         ApplyCalls.Clear();
+        MarketplaceAuthApplyCalls.Clear();
     }
 }
 
@@ -51,5 +83,12 @@ public sealed record WorkerControlApplyCall(
     WorkerBindingDto WorkerBinding,
     Guid AccountId,
     IReadOnlyDictionary<string, object?> ProxyConfig,
+    string IdempotencyKey,
+    string? BaseUrlTemplateOverride);
+
+public sealed record WorkerControlMarketplaceAuthApplyCall(
+    WorkerBindingDto WorkerBinding,
+    Guid AccountId,
+    MarketplaceAuthPayload MarketplaceAuth,
     string IdempotencyKey,
     string? BaseUrlTemplateOverride);

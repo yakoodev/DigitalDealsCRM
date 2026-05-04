@@ -87,6 +87,32 @@ namespace DDCRM.Worker.Persistence.Migrations
                     b.ToTable("worker_listings", (string)null);
                 });
 
+            modelBuilder.Entity("DDCRM.Worker.Persistence.Entities.WorkerMarketplaceAuthEntity", b =>
+                {
+                    b.Property<Guid>("AccountId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("CredentialsEncrypted")
+                        .IsRequired()
+                        .HasMaxLength(8192)
+                        .HasColumnType("character varying(8192)");
+
+                    b.Property<string>("Scheme")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)");
+
+                    b.Property<DateTimeOffset>("UpdatedAtUtc")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasDefaultValueSql("NOW()");
+
+                    b.HasKey("AccountId");
+
+                    b.ToTable("worker_marketplace_auth", (string)null);
+                });
+
             modelBuilder.Entity("DDCRM.Worker.Persistence.Entities.WorkerOrderEntity", b =>
                 {
                     b.Property<string>("Id")

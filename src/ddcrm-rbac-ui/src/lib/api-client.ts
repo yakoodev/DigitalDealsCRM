@@ -85,6 +85,7 @@ export interface AdminAccountTypeRuntime {
   healthPath: string;
   containerPort: number;
   environmentVariables: Record<string, string>;
+  workerCommand?: string[];
 }
 
 export interface AdminAccountType extends ProjectAccountType {
@@ -100,6 +101,42 @@ export interface AdminAccountTypeUpsertPayload {
   sortOrder?: number;
   formFields?: ProjectAccountType["formFields"];
   runtime?: AdminAccountTypeRuntime;
+}
+
+export interface AdminIntegrationGrant {
+  integrationKey: string;
+  status: "active" | "revoked";
+  scopes: string[];
+  grantedAtUtc: string;
+  revokedAtUtc?: string | null;
+  credentialStatus?: "pending_sync" | "active" | "revoking" | "revoked" | null;
+  credentialMasked?: string | null;
+}
+
+export interface AdminIntegrationGrantUpsertPayload {
+  scopes?: string[];
+}
+
+export interface AdminTelegramProxyProfile {
+  id: string;
+  name: string;
+  proxyType: "http" | "https" | "socks5";
+  host: string;
+  port: number;
+  isActive: boolean;
+  hasCredentials: boolean;
+  updatedAtUtc: string;
+}
+
+export interface AdminTelegramProxyProfileUpsertPayload {
+  name: string;
+  proxyType?: "http" | "https" | "socks5";
+  host: string;
+  port: number;
+  setActive: boolean;
+  clearCredentials: boolean;
+  login?: string;
+  password?: string;
 }
 
 interface ProxyCredentialsUpdateInput {
@@ -135,6 +172,26 @@ interface AdminAccountTypeListEnvelope {
 interface AdminAccountTypeEnvelope {
   requestId: string;
   accountType: AdminAccountType;
+}
+
+interface AdminIntegrationGrantEnvelope {
+  requestId: string;
+  grant: AdminIntegrationGrant;
+}
+
+interface AdminIntegrationGrantListEnvelope {
+  requestId: string;
+  items: AdminIntegrationGrant[];
+}
+
+interface AdminTelegramProxyProfileEnvelope {
+  requestId: string;
+  profile: AdminTelegramProxyProfile;
+}
+
+interface AdminTelegramProxyProfileListEnvelope {
+  requestId: string;
+  items: AdminTelegramProxyProfile[];
 }
 
 function resolveRequestId(headers: Headers, fallback?: string) {
@@ -235,7 +292,7 @@ async function requestAdminEnvelope<TSuccess>(
   session: ApiSession,
   path: string,
   init: {
-    method: "GET" | "PUT";
+    method: "GET" | "PUT" | "POST" | "DELETE";
     body?: unknown;
     idempotent?: boolean;
   },
@@ -420,6 +477,87 @@ export async function upsertAdminAccountTypeRequest(
   );
 
   return response.accountType;
+}
+
+export async function listAdminProjectIntegrationGrantsRequest(
+  session: ApiSession,
+  projectId: string,
+): Promise<AdminIntegrationGrant[]> {
+  const response = await requestAdminEnvelope<AdminIntegrationGrantListEnvelope>(
+    session,
+    `/v1/admin/integrations/projects/${encodeURIComponent(projectId)}/grants`,
+    {
+      method: "GET",
+    },
+  );
+
+  return response.items ?? [];
+}
+
+export async function upsertAdminProjectIntegrationGrantRequest(
+  session: ApiSession,
+  projectId: string,
+  integrationKey: string,
+  payload: AdminIntegrationGrantUpsertPayload,
+): Promise<AdminIntegrationGrant> {
+  const response = await requestAdminEnvelope<AdminIntegrationGrantEnvelope>(
+    session,
+    `/v1/admin/integrations/projects/${encodeURIComponent(projectId)}/grants/${encodeURIComponent(integrationKey)}`,
+    {
+      method: "PUT",
+      body: payload,
+      idempotent: true,
+    },
+  );
+
+  return response.grant;
+}
+
+export async function revokeAdminProjectIntegrationGrantRequest(
+  session: ApiSession,
+  projectId: string,
+  integrationKey: string,
+) {
+  return requestAdminEnvelope<{ requestId: string; status: string }>(
+    session,
+    `/v1/admin/integrations/projects/${encodeURIComponent(projectId)}/grants/${encodeURIComponent(integrationKey)}`,
+    {
+      method: "DELETE",
+      idempotent: true,
+    },
+  );
+}
+
+export async function listAdminTelegramProxyProfilesRequest(
+  session: ApiSession,
+): Promise<AdminTelegramProxyProfile[]> {
+  const response = await requestAdminEnvelope<AdminTelegramProxyProfileListEnvelope>(
+    session,
+    "/v1/admin/integrations/telegram/proxies",
+    {
+      method: "GET",
+    },
+  );
+
+  return response.items ?? [];
+}
+
+export async function upsertAdminTelegramProxyProfileRequest(
+  session: ApiSession,
+  proxyId: string,
+  payload: AdminTelegramProxyProfileUpsertPayload,
+): Promise<AdminTelegramProxyProfile> {
+  const response = await requestAdminEnvelope<AdminTelegramProxyProfileEnvelope>(
+    session,
+    `/v1/admin/integrations/telegram/proxies/${encodeURIComponent(proxyId)}`,
+    {
+      method: "PUT",
+      body: payload,
+      idempotent: true,
+    },
+  );
+
+  return response.profile;
 }
 
 export async function createAccountRequest(

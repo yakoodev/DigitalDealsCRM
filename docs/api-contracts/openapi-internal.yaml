@@ -662,6 +662,8 @@ components:
         proxyConfig:
           type: object
           additionalProperties: true
+        marketplaceAuth:
+          $ref: '#/components/schemas/MarketplaceAuth'
 
     LifecycleUpdateRequest:
       type: object
@@ -673,6 +675,19 @@ components:
         proxyConfig:
           type: object
           additionalProperties: true
+
+    MarketplaceAuth:
+      type: object
+      required: [scheme, credentials]
+      properties:
+        scheme:
+          type: string
+          enum: [golden_key, cookies, tokens, login_password]
+        credentials:
+          type: object
+          minProperties: 1
+          additionalProperties:
+            type: string
 
     LifecycleDeleteRequest:
       type: object
@@ -833,6 +848,10 @@ components:
         environmentVariables:
           type: object
           additionalProperties:
+            type: string
+        workerCommand:
+          type: array
+          items:
             type: string
 
     AccountTypeUpsertRequest:

@@ -4,12 +4,18 @@ import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import AccountManagerAdminOverviewPage from "@/app/admin/account-manager/page";
+import AccountManagerIntegrationsPage from "@/app/admin/account-manager/integrations/page";
 import AccountManagerServersPage from "@/app/admin/account-manager/servers/page";
 import AccountManagerTemplatesPage from "@/app/admin/account-manager/templates/page";
 import {
+  listAdminProjectIntegrationGrantsRequest,
+  listAdminTelegramProxyProfilesRequest,
   listAdminAccountTypesRequest,
   listAdminWorkerServersRequest,
+  revokeAdminProjectIntegrationGrantRequest,
+  upsertAdminProjectIntegrationGrantRequest,
   upsertAdminAccountTypeRequest,
+  upsertAdminTelegramProxyProfileRequest,
   upsertAdminWorkerServerRequest,
 } from "@/lib/api-client";
 
@@ -53,6 +59,11 @@ vi.mock("@/lib/api-client", async () => {
     upsertAdminWorkerServerRequest: vi.fn(),
     listAdminAccountTypesRequest: vi.fn(),
     upsertAdminAccountTypeRequest: vi.fn(),
+    listAdminProjectIntegrationGrantsRequest: vi.fn(),
+    upsertAdminProjectIntegrationGrantRequest: vi.fn(),
+    revokeAdminProjectIntegrationGrantRequest: vi.fn(),
+    listAdminTelegramProxyProfilesRequest: vi.fn(),
+    upsertAdminTelegramProxyProfileRequest: vi.fn(),
   };
 });
 
@@ -89,6 +100,11 @@ describe("admin account-manager routes", () => {
     vi.mocked(upsertAdminWorkerServerRequest).mockReset();
     vi.mocked(listAdminAccountTypesRequest).mockReset();
     vi.mocked(upsertAdminAccountTypeRequest).mockReset();
+    vi.mocked(listAdminProjectIntegrationGrantsRequest).mockReset();
+    vi.mocked(upsertAdminProjectIntegrationGrantRequest).mockReset();
+    vi.mocked(revokeAdminProjectIntegrationGrantRequest).mockReset();
+    vi.mocked(listAdminTelegramProxyProfilesRequest).mockReset();
+    vi.mocked(upsertAdminTelegramProxyProfileRequest).mockReset();
 
     vi.mocked(listAdminWorkerServersRequest).mockResolvedValue([
       {
@@ -169,6 +185,50 @@ describe("admin account-manager routes", () => {
         },
       },
     });
+    vi.mocked(listAdminProjectIntegrationGrantsRequest).mockResolvedValue([
+      {
+        integrationKey: "platform.funpay",
+        status: "active",
+        scopes: ["use"],
+        grantedAtUtc: new Date().toISOString(),
+        credentialStatus: null,
+        credentialMasked: null,
+      },
+    ]);
+    vi.mocked(upsertAdminProjectIntegrationGrantRequest).mockResolvedValue({
+      integrationKey: "platform.funpay",
+      status: "active",
+      scopes: ["use"],
+      grantedAtUtc: new Date().toISOString(),
+      credentialStatus: null,
+      credentialMasked: null,
+    });
+    vi.mocked(revokeAdminProjectIntegrationGrantRequest).mockResolvedValue({
+      requestId: "req",
+      status: "completed",
+    });
+    vi.mocked(listAdminTelegramProxyProfilesRequest).mockResolvedValue([
+      {
+        id: "11111111-1111-1111-1111-111111111111",
+        name: "tg-proxy",
+        proxyType: "http",
+        host: "127.0.0.1",
+        port: 8080,
+        isActive: true,
+        hasCredentials: true,
+        updatedAtUtc: new Date().toISOString(),
+      },
+    ]);
+    vi.mocked(upsertAdminTelegramProxyProfileRequest).mockResolvedValue({
+      id: "11111111-1111-1111-1111-111111111111",
+      name: "tg-proxy",
+      proxyType: "http",
+      host: "127.0.0.1",
+      port: 8080,
+      isActive: true,
+      hasCredentials: true,
+      updatedAtUtc: new Date().toISOString(),
+    });
   });
 
   it("без system-claim админ-роуты показывают 403", () => {
@@ -192,6 +252,11 @@ describe("admin account-manager routes", () => {
     renderWithQuery(<AccountManagerTemplatesPage />);
     expect(
       screen.getByText("Недостаточно системных прав для управления platform templates."),
+    ).toBeInTheDocument();
+
+    renderWithQuery(<AccountManagerIntegrationsPage />);
+    expect(
+      screen.getByText("Недостаточно системных прав для управления integration bus."),
     ).toBeInTheDocument();
   });
 
@@ -232,6 +297,26 @@ describe("admin account-manager routes", () => {
 
     await waitFor(() => {
       expect(upsertAdminAccountTypeRequest).toHaveBeenCalled();
+    });
+  });
+
+  it("integrations page выполняет grant/proxy операции", async () => {
+    renderWithQuery(<AccountManagerIntegrationsPage />);
+
+    await userEvent.type(screen.getByPlaceholderText("uuid проекта"), "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
+    await waitFor(() => {
+      expect(listAdminProjectIntegrationGrantsRequest).toHaveBeenCalled();
+      expect(listAdminTelegramProxyProfilesRequest).toHaveBeenCalled();
+    });
+
+    await userEvent.click(screen.getByRole("button", { name: "Выдать/обновить" }));
+    await waitFor(() => {
+      expect(upsertAdminProjectIntegrationGrantRequest).toHaveBeenCalled();
+    });
+
+    await userEvent.click(screen.getByRole("button", { name: "Сохранить proxy" }));
+    await waitFor(() => {
+      expect(upsertAdminTelegramProxyProfileRequest).toHaveBeenCalled();
     });
   });
 });

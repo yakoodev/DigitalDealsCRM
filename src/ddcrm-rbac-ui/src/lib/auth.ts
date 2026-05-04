@@ -17,6 +17,9 @@ const DEFAULT_SYSTEM_PERMISSION_CLAIM_TYPE =
 const DEFAULT_SYSTEM_PERMISSION_CLAIM_VALUE =
   process.env.NEXT_PUBLIC_EXTERNAL_API_SYSTEM_PERMISSION_CLAIM_VALUE ??
   "system.accountManager.manage";
+const DEFAULT_SYSTEM_INTEGRATIONS_PERMISSION_CLAIM_VALUE =
+  process.env.NEXT_PUBLIC_EXTERNAL_API_SYSTEM_INTEGRATIONS_PERMISSION_CLAIM_VALUE ??
+  "system.integrations.manage";
 const JWT_TIME_SKEW_SECONDS = 120;
 const DEMO_TOKEN_VALID_FROM_UNIX = 1704067200; // 2024-01-01T00:00:00Z
 const DEMO_TOKEN_VALID_TO_UNIX = 2524608000; // 2050-01-01T00:00:00Z
@@ -59,7 +62,10 @@ export const demoUsers: readonly DemoUserCredential[] = [
     password: "Admin123!",
     displayName: "Admin Demo",
     role: "admin",
-    systemPermissions: [DEFAULT_SYSTEM_PERMISSION_CLAIM_VALUE],
+    systemPermissions: [
+      DEFAULT_SYSTEM_PERMISSION_CLAIM_VALUE,
+      DEFAULT_SYSTEM_INTEGRATIONS_PERMISSION_CLAIM_VALUE,
+    ],
   },
   {
     userId: "33333333-3333-3333-3333-333333333333",
@@ -140,9 +146,13 @@ function resolveSystemPermissions(payload: Record<string, unknown> | null): stri
 }
 
 function hasSystemPermission(permissions: readonly string[]) {
+  const required = new Set([
+    DEFAULT_SYSTEM_PERMISSION_CLAIM_VALUE.toLowerCase(),
+    DEFAULT_SYSTEM_INTEGRATIONS_PERMISSION_CLAIM_VALUE.toLowerCase(),
+  ]);
+
   return permissions.some(
-    (permission) =>
-      permission.toLowerCase() === DEFAULT_SYSTEM_PERMISSION_CLAIM_VALUE.toLowerCase(),
+    (permission) => required.has(permission.toLowerCase()),
   );
 }
 

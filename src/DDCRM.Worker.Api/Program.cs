@@ -64,6 +64,8 @@ builder.Services.Configure<TestWorkerOptions>(options =>
 builder.Services.AddSingleton<TransientFailureState>();
 var proxyCredentialsEncryptionKey = ResolveProxyCredentialsEncryptionKey(
     builder.Configuration["WORKER_PROXY_CREDENTIALS_ENCRYPTION_KEY"]);
+var marketplaceAuthEncryptionKey = ResolveProxyCredentialsEncryptionKey(
+    builder.Configuration["WORKER_MARKETPLACE_AUTH_ENCRYPTION_KEY"]);
 
 var app = builder.Build();
 var runtimeSettings = ResolveRuntimeSettings(
@@ -275,6 +277,52 @@ worker.MapPost("/actions/{action}", async (
                 },
             },
             []));
+    }
+
+    if (string.Equals(action, WorkerExtensionActionKeys.MarketplaceAuthApply, StringComparison.Ordinal))
+    {
+        var (accountId, marketplaceAuth) = ReadMarketplaceAuthApplyPayload(request);
+        var requestId = httpContext.GetOrCreateRequestId();
+        var idempotencyKey = httpContext.RequireIdempotencyKey();
+
+        return await idempotency.ExecuteAsync(
+            dbContext,
+            $"worker:marketplace-auth:apply:{accountId}",
+            idempotencyKey,
+            async ct =>
+            {
+                var credentialsJson = JsonSerializer.Serialize(marketplaceAuth.Credentials);
+                var existing = await dbContext.MarketplaceAuth.SingleOrDefaultAsync(x => x.AccountId == accountId, ct);
+                if (existing is null)
+                {
+                    dbContext.MarketplaceAuth.Add(new WorkerMarketplaceAuthEntity
+                    {
+                        AccountId = accountId,
+                        Scheme = marketplaceAuth.Scheme,
+                        CredentialsEncrypted = EncryptProxySecret(credentialsJson, marketplaceAuthEncryptionKey),
+                        UpdatedAtUtc = DateTimeOffset.UtcNow,
+                    });
+                }
+                else
+                {
+                    existing.Scheme = marketplaceAuth.Scheme;
+                    existing.CredentialsEncrypted = EncryptProxySecret(credentialsJson, marketplaceAuthEncryptionKey);
+                    existing.UpdatedAtUtc = DateTimeOffset.UtcNow;
+                }
+
+                return new IdempotentExecutionResult(
+                    StatusCodes.Status200OK,
+                    new ExtensionActionResponse(
+                        requestId,
+                        new Dictionary<string, object?>
+                        {
+                            ["status"] = "applied",
+                            ["accountId"] = accountId,
+                            ["scheme"] = marketplaceAuth.Scheme,
+                        },
+                        []));
+            },
+            cancellationToken);
     }
 
     var defaultIdempotencyKey = httpContext.RequireIdempotencyKey();
@@ -916,6 +964,83 @@ static Guid ReadProxyCredentialsRevealAccountId(ExtensionActionRequest? request)
     return ReadRequiredGuid(request.Payload, "accountId");
 }
 
+static (Guid AccountId, MarketplaceAuthValue MarketplaceAuth) ReadMarketplaceAuthApplyPayload(ExtensionActionRequest? request)
+{
+    if (request?.Payload is null)
+    {
+        throw CreatePlatformError(StatusCodes.Status400BadRequest, "Для marketplace auth apply требуется payload.");
+    }
+
+    var accountId = ReadRequiredGuid(request.Payload, "accountId");
+    if (!request.Payload.TryGetValue("marketplaceAuth", out var authElement) || authElement.ValueKind != JsonValueKind.Object)
+    {
+        throw CreatePlatformError(StatusCodes.Status400BadRequest, "Для marketplace auth apply требуется payload.marketplaceAuth.");
+    }
+
+    var marketplaceAuthPayload = authElement.EnumerateObject()
+        .ToDictionary(x => x.Name, x => x.Value.Clone(), StringComparer.Ordinal);
+    var scheme = ReadRequiredString(marketplaceAuthPayload, "scheme");
+    if (!MarketplaceAuthSchemeKeys.All.Contains(scheme))
+    {
+        throw CreatePlatformError(StatusCodes.Status400BadRequest, "payload.marketplaceAuth.scheme содержит неподдерживаемое значение.");
+    }
+
+    if (!marketplaceAuthPayload.TryGetValue("credentials", out var credentialsElement) || credentialsElement.ValueKind != JsonValueKind.Object)
+    {
+        throw CreatePlatformError(StatusCodes.Status400BadRequest, "Для marketplace auth apply требуется payload.marketplaceAuth.credentials.");
+    }
+
+    var credentials = new Dictionary<string, string>(StringComparer.Ordinal);
+    foreach (var property in credentialsElement.EnumerateObject())
+    {
+        if (property.Value.ValueKind != JsonValueKind.String || string.IsNullOrWhiteSpace(property.Value.GetString()))
+        {
+            throw CreatePlatformError(
+                StatusCodes.Status400BadRequest,
+                $"payload.marketplaceAuth.credentials.{property.Name} должен быть непустой строкой.");
+        }
+
+        credentials[property.Name] = property.Value.GetString()!.Trim();
+    }
+
+    if (credentials.Count == 0)
+    {
+        throw CreatePlatformError(StatusCodes.Status400BadRequest, "payload.marketplaceAuth.credentials должен содержать минимум одно значение.");
+    }
+
+    if (string.Equals(scheme, MarketplaceAuthSchemeKeys.GoldenKey, StringComparison.Ordinal)
+        && !credentials.ContainsKey("golden_key"))
+    {
+        throw CreatePlatformError(
+            StatusCodes.Status400BadRequest,
+            "Для marketplaceAuth.scheme=golden_key требуется payload.marketplaceAuth.credentials.golden_key.");
+    }
+    if (string.Equals(scheme, MarketplaceAuthSchemeKeys.Tokens, StringComparison.Ordinal))
+    {
+        if (!credentials.ContainsKey("token"))
+        {
+            throw CreatePlatformError(
+                StatusCodes.Status400BadRequest,
+                "Для marketplaceAuth.scheme=tokens требуется payload.marketplaceAuth.credentials.token.");
+        }
+        if (!credentials.ContainsKey("ddg5"))
+        {
+            throw CreatePlatformError(
+                StatusCodes.Status400BadRequest,
+                "Для marketplaceAuth.scheme=tokens требуется payload.marketplaceAuth.credentials.ddg5.");
+        }
+    }
+    if (string.Equals(scheme, MarketplaceAuthSchemeKeys.Cookies, StringComparison.Ordinal)
+        && !credentials.ContainsKey("cookies"))
+    {
+        throw CreatePlatformError(
+            StatusCodes.Status400BadRequest,
+            "Для marketplaceAuth.scheme=cookies требуется payload.marketplaceAuth.credentials.cookies.");
+    }
+
+    return (accountId, new MarketplaceAuthValue(scheme, credentials));
+}
+
 static Guid ReadRequiredGuid(IDictionary<string, JsonElement> payload, string key)
 {
     if (!payload.TryGetValue(key, out var value))
@@ -1473,9 +1598,24 @@ internal static class WorkerExtensionActionKeys
 {
     public const string ProxyCredentialsApply = "ext.account.proxy-credentials.apply";
     public const string ProxyCredentialsReveal = "ext.account.proxy-credentials.reveal";
+    public const string MarketplaceAuthApply = "ext.account.marketplace-auth.apply";
 }
 
 internal sealed record ProxyConfigValue(string Host, int Port, string Login, string Password);
+
+internal sealed record MarketplaceAuthValue(string Scheme, IReadOnlyDictionary<string, string> Credentials);
+
+internal static class MarketplaceAuthSchemeKeys
+{
+    public const string GoldenKey = "golden_key";
+    public const string Cookies = "cookies";
+    public const string Tokens = "tokens";
+    public const string LoginPassword = "login_password";
+
+    public static readonly HashSet<string> All = new(
+        [GoldenKey, Cookies, Tokens, LoginPassword],
+        StringComparer.Ordinal);
+}
 
 internal static class WorkerV2ProviderAliases
 {

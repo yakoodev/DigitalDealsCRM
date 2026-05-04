@@ -20,4 +20,14 @@ public sealed class ProjectEntity
     public List<ProjectMemberEntity> Members { get; set; } = [];
 
     public List<AccountEntity> Accounts { get; set; } = [];
+
+    public List<ProjectIntegrationGrantEntity> IntegrationGrants { get; set; } = [];
+
+    public List<ProjectServiceCredentialEntity> ServiceCredentials { get; set; } = [];
+
+    public List<TelegramChatBindingEntity> TelegramChatBindings { get; set; } = [];
+
+    public List<TelegramLinkCodeEntity> TelegramLinkCodes { get; set; } = [];
+
+    public List<NotificationOutboxEntity> NotificationOutboxItems { get; set; } = [];
 }

@@ -35,12 +35,18 @@ public sealed class DockerWorkerRuntimeClient(
 
         var containerName = NormalizeContainerName(request.WorkerId);
         var dockerNetwork = ResolveDockerNetwork(request.DockerNetworkOverride);
+        var command = request.WorkerCommand is { Count: > 0 }
+            ? request.WorkerCommand
+                .Where(x => !string.IsNullOrWhiteSpace(x))
+                .Select(x => x.Trim())
+                .ToArray()
+            : ["DDCRM.Worker.Api.dll"];
 
         var createParams = new CreateContainerParameters
         {
             Image = request.WorkerImage,
             Name = containerName,
-            Cmd = ["DDCRM.Worker.Api.dll"],
+            Cmd = command,
             Env = env,
             ExposedPorts = new Dictionary<string, EmptyStruct>
             {

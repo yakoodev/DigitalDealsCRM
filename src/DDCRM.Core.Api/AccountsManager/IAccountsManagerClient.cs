@@ -25,6 +25,7 @@ public interface IAccountsManagerClient
         Guid accountId,
         string platform,
         IDictionary<string, object?> proxyConfig,
+        AccountsManagerMarketplaceAuth? marketplaceAuth,
         string idempotencyKey,
         CancellationToken cancellationToken);
 
@@ -66,7 +67,8 @@ public sealed record AccountsManagerAccountTypeRuntime(
     string WorkerPathPrefix,
     string HealthPath,
     int ContainerPort,
-    IReadOnlyDictionary<string, string> EnvironmentVariables);
+    IReadOnlyDictionary<string, string> EnvironmentVariables,
+    IReadOnlyList<string>? WorkerCommand);
 
 public sealed record AccountsManagerAccountTypeUpsertInput(
     string? Platform,
@@ -115,3 +117,7 @@ public sealed record AccountsManagerWorkerServerRegistryUpsertInput(
     string? Username,
     string? Token,
     bool? ClearToken);
+
+public sealed record AccountsManagerMarketplaceAuth(
+    string Scheme,
+    IReadOnlyDictionary<string, string> Credentials);

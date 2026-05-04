@@ -35,6 +35,7 @@
 | `project.billing.view` | ✅ | ✅ | ❌ |
 | `project.billing.changePlan` | ✅ | ✅ | ❌ |
 | `project.modules.operate` | ✅ | ✅ | ✅ |
+| `project.integrations.use` | ✅ | ✅ | ❌ |
 
 ## 4. Системные админы DDCRM
 Это отдельная сущность, не совпадающая с проектными ролями.
@@ -45,6 +46,7 @@
 
 Права системного админа:
 - `system.accountManager.manage`
+- `system.integrations.manage`
 - `system.plans.manage`
 - `system.limits.manage`
 - `system.entitlements.override`
@@ -76,4 +78,7 @@
 - для `ext.account.proxy-credentials.reveal` требуется `project.accounts.proxyCredentials.reveal`;
 - для `ext.account.proxy-credentials.update` требуется `project.accounts.proxyCredentials.update`;
 - для `ext.account.proxy-credentials.apply` требуется `project.accounts.proxyCredentials.update`;
+- для `ext.account.marketplace-auth.apply` требуется `project.accounts.lifecycle.manage`;
+- для `ext.integration.*.read` требуется `project.integrations.use`;
+- для `ext.integration.*.jobs` требуется `project.integrations.use`;
 - Gateway обязан применять это сопоставление до проксирования запроса в worker.

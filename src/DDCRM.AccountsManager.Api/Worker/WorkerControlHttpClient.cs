@@ -64,6 +64,61 @@ public sealed class WorkerControlHttpClient(
             });
     }
 
+    public async Task ApplyMarketplaceAuthAsync(
+        WorkerBindingDto workerBinding,
+        Guid accountId,
+        MarketplaceAuthPayload marketplaceAuth,
+        string idempotencyKey,
+        string? baseUrlTemplateOverride,
+        CancellationToken cancellationToken)
+    {
+        if (!IsEnabled())
+        {
+            return;
+        }
+
+        var absoluteUri = BuildAbsoluteUri(
+            workerBinding,
+            BuildPath("/actions/ext.account.marketplace-auth.apply"),
+            baseUrlTemplateOverride);
+        var payload = new Dictionary<string, object?>
+        {
+            ["accountId"] = accountId,
+            ["marketplaceAuth"] = new Dictionary<string, object?>
+            {
+                ["scheme"] = marketplaceAuth.Scheme,
+                ["credentials"] = marketplaceAuth.Credentials,
+            },
+        };
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, absoluteUri)
+        {
+            Content = JsonContent.Create(new Dictionary<string, object?>
+            {
+                ["payload"] = payload,
+            }),
+        };
+
+        ApplyHeaders(request, idempotencyKey);
+
+        var response = await httpClient.SendAsync(request, cancellationToken);
+        if (response.IsSuccessStatusCode)
+        {
+            return;
+        }
+
+        var body = await response.Content.ReadAsStringAsync(cancellationToken);
+        throw new ApiErrorException(
+            StatusCodes.Status502BadGateway,
+            ApiErrorCodes.InternalError,
+            "Worker control API недоступен или вернул ошибку при apply marketplace auth.",
+            new Dictionary<string, object?>
+            {
+                ["statusCode"] = (int)response.StatusCode,
+                ["body"] = body,
+            });
+    }
+
     private bool IsEnabled() => _options.Enabled;
 
     private void ApplyHeaders(HttpRequestMessage message, string idempotencyKey)
