@@ -699,4 +699,169 @@ public sealed class WorkflowAndCustomHttpUnitTests
         Assert.Equal("!help", output["message.text"]?.ToString());
         Assert.False(output.ContainsKey("notify.message"));
     }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public async Task WorkflowExecutionEngine_ConditionFalse_DoesNotFallbackToTrueBranch()
+    {
+        var options = new DbContextOptionsBuilder<CoreDbContext>()
+            .UseInMemoryDatabase(databaseName: $"workflow-engine-condition-false-tests-{Guid.NewGuid():N}")
+            .Options;
+
+        await using var dbContext = new CoreDbContext(options);
+
+        var projectId = Guid.NewGuid();
+        var offerId = Guid.NewGuid();
+        var triggerEvent = new WorkflowTriggerEventEntity
+        {
+            Id = Guid.NewGuid(),
+            ProjectId = projectId,
+            OfferId = offerId,
+            Source = "message-webhook",
+            SourceOrderId = "order-msg-condition-false",
+            PayloadJson = JsonSerializer.Serialize(new Dictionary<string, object?>
+            {
+                ["platform"] = "funpay",
+                ["messageText"] = "обычное сообщение",
+            }),
+            Status = "accepted",
+            CreatedAtUtc = DateTimeOffset.UtcNow,
+        };
+
+        var draft = new WorkflowDraftModel
+        {
+            Version = "v1",
+            MaxSteps = 16,
+            MaxDurationSeconds = 60,
+            MaxRetries = 1,
+            Nodes =
+            [
+                new WorkflowNodeModel
+                {
+                    Id = "message-start",
+                    Type = WorkflowNodeTypes.MessageStart,
+                },
+                new WorkflowNodeModel
+                {
+                    Id = "condition",
+                    Type = WorkflowNodeTypes.Condition,
+                    Config = new Dictionary<string, JsonElement>
+                    {
+                        ["field"] = JsonSerializer.SerializeToElement("message.text"),
+                        ["equals"] = JsonSerializer.SerializeToElement("!help"),
+                    },
+                },
+                new WorkflowNodeModel
+                {
+                    Id = "notify",
+                    Type = WorkflowNodeTypes.Notify,
+                    Config = new Dictionary<string, JsonElement>
+                    {
+                        ["message"] = JsonSerializer.SerializeToElement("must-not-run"),
+                    },
+                },
+                new WorkflowNodeModel
+                {
+                    Id = "end",
+                    Type = WorkflowNodeTypes.End,
+                },
+            ],
+            Edges =
+            [
+                new WorkflowEdgeModel
+                {
+                    Id = "edge-flow-start",
+                    Source = "message-start",
+                    SourceHandle = "out-flow",
+                    Target = "condition",
+                    TargetHandle = "in-flow",
+                },
+                new WorkflowEdgeModel
+                {
+                    Id = "edge-data-message",
+                    Source = "message-start",
+                    SourceHandle = "out-message-text",
+                    Target = "condition",
+                    TargetHandle = "in-field",
+                },
+                new WorkflowEdgeModel
+                {
+                    Id = "edge-only-true",
+                    Source = "condition",
+                    SourceHandle = "out-true",
+                    Target = "notify",
+                    TargetHandle = "in-flow",
+                },
+                new WorkflowEdgeModel
+                {
+                    Id = "edge-notify-next",
+                    Source = "notify",
+                    SourceHandle = "out-next",
+                    Target = "end",
+                    TargetHandle = "in-flow",
+                },
+            ],
+            Ui = new WorkflowDraftUiModel
+            {
+                EntryNodeId = "message-start",
+            },
+        };
+
+        var definition = new WorkflowDefinitionEntity
+        {
+            Id = Guid.NewGuid(),
+            ProjectId = projectId,
+            OfferId = offerId,
+            DraftJson = JsonSerializer.Serialize(draft, WorkflowExecutionEngine.JsonOptions()),
+            PublishedJson = JsonSerializer.Serialize(draft, WorkflowExecutionEngine.JsonOptions()),
+            Status = "published",
+            PublishedVersion = 1,
+            MaxSteps = draft.MaxSteps,
+            MaxDurationSeconds = draft.MaxDurationSeconds,
+            MaxRetries = draft.MaxRetries,
+            UpdatedByUserId = Guid.NewGuid(),
+            CreatedAtUtc = DateTimeOffset.UtcNow,
+            UpdatedAtUtc = DateTimeOffset.UtcNow,
+        };
+
+        var execution = new WorkflowExecutionEntity
+        {
+            Id = Guid.NewGuid(),
+            ProjectId = projectId,
+            OfferId = offerId,
+            WorkflowDefinitionId = definition.Id,
+            TriggerEventId = triggerEvent.Id,
+            SourceOrderId = triggerEvent.SourceOrderId,
+            WorkflowVersion = 1,
+            Status = "running",
+            StartedAtUtc = DateTimeOffset.UtcNow,
+        };
+
+        var engine = new WorkflowExecutionEngine(
+            new WorkflowNodeExecutorRegistry(new IWorkflowNodeExecutor[]
+            {
+                new MessageStartNodeExecutor(),
+                new ConditionNodeExecutor(),
+                new NotifyNodeExecutor(),
+                new EndNodeExecutor(),
+            }),
+            NullLogger<WorkflowExecutionEngine>.Instance);
+
+        var output = await engine.ExecuteAsync(
+            dbContext,
+            execution,
+            definition,
+            triggerEvent,
+            CancellationToken.None);
+
+        var executedNodeIds = await dbContext.WorkflowExecutionSteps
+            .AsNoTracking()
+            .OrderBy(step => step.StepIndex)
+            .Select(step => step.NodeId)
+            .ToListAsync();
+
+        Assert.Equal(["message-start", "condition"], executedNodeIds);
+        Assert.Equal("обычное сообщение", output["message.text"]?.ToString());
+        Assert.False(output.ContainsKey("notify.message"));
+    }
 }

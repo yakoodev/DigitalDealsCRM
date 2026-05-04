@@ -92,7 +92,7 @@ services:
       BillingClient__BaseUrl: http://billing-api:8080
       GatewayProxyClient__BaseUrl: http://gateway-api:8080
       RouteRegistryClient__BaseUrl: http://route-registry-api:8080
-      WorkflowMessagePolling__OnlyUnreadConversations: "true"
+      WorkflowMessagePolling__OnlyUnreadConversations: "false"
       WorkflowMessagePolling__MaxMessagesPerConversationPerPoll: "1"
       WorkflowMessagePolling__SkipFirstMessagePerConversation: "true"
       WorkflowMessagePolling__DispatchWorkerReplies: "true"

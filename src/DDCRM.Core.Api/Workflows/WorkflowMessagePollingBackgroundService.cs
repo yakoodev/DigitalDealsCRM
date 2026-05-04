@@ -250,7 +250,7 @@ public sealed class WorkflowMessagePollingBackgroundService(
                     }
 
                     var selectedMessages = unseenMessages
-                        .Take(Math.Max(1, _options.MaxMessagesPerConversationPerPoll))
+                        .TakeLast(Math.Max(1, _options.MaxMessagesPerConversationPerPoll))
                         .ToArray();
                     var highestSeenId = cursorEntity.LastSeenMessageId;
 

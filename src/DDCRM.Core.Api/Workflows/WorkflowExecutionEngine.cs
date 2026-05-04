@@ -176,18 +176,21 @@ public sealed class WorkflowExecutionEngine(
             var conditionResult = TryResolveConditionResult(sourceNode, variables);
             if (conditionResult.HasValue)
             {
-                var preferredHandle = conditionResult.Value ? "out-true" : "out-false";
-                var preferredEdge = routeCandidates.FirstOrDefault(edge => HandleEquals(edge.SourceHandle, preferredHandle));
+                var preferredEdge = conditionResult.Value
+                    ? routeCandidates.FirstOrDefault(edge => IsConditionTrueHandle(edge.SourceHandle))
+                    : routeCandidates.FirstOrDefault(edge => IsConditionFalseHandle(edge.SourceHandle));
                 if (preferredEdge is not null)
                 {
                     return preferredEdge.Target.Trim();
                 }
 
-                var nextEdge = routeCandidates.FirstOrDefault(edge => HandleEquals(edge.SourceHandle, "out-next"));
+                var nextEdge = routeCandidates.FirstOrDefault(edge => IsConditionNextHandle(edge.SourceHandle));
                 if (nextEdge is not null)
                 {
                     return nextEdge.Target.Trim();
                 }
+
+                return null;
             }
         }
 
@@ -223,15 +226,50 @@ public sealed class WorkflowExecutionEngine(
             return true;
         }
 
-        return sourceHandle.Equals("out-flow", StringComparison.OrdinalIgnoreCase)
-               || sourceHandle.Equals("out-next", StringComparison.OrdinalIgnoreCase)
-               || sourceHandle.Equals("out-true", StringComparison.OrdinalIgnoreCase)
-               || sourceHandle.Equals("out-false", StringComparison.OrdinalIgnoreCase);
+        var normalized = NormalizeHandle(sourceHandle);
+        return normalized is "flow" or "next" or "true" or "false";
     }
 
-    private static bool HandleEquals(string? sourceHandle, string expected)
+    private static bool IsConditionTrueHandle(string? sourceHandle)
     {
-        return string.Equals(sourceHandle?.Trim(), expected, StringComparison.OrdinalIgnoreCase);
+        return NormalizeHandle(sourceHandle) == "true";
+    }
+
+    private static bool IsConditionFalseHandle(string? sourceHandle)
+    {
+        return NormalizeHandle(sourceHandle) == "false";
+    }
+
+    private static bool IsConditionNextHandle(string? sourceHandle)
+    {
+        var normalized = NormalizeHandle(sourceHandle);
+        return normalized is "next" or "flow";
+    }
+
+    private static string NormalizeHandle(string? sourceHandle)
+    {
+        if (string.IsNullOrWhiteSpace(sourceHandle))
+        {
+            return string.Empty;
+        }
+
+        var normalized = sourceHandle.Trim().ToLowerInvariant().Replace('_', '-');
+        if (normalized.StartsWith("source-", StringComparison.Ordinal))
+        {
+            normalized = normalized["source-".Length..];
+        }
+
+        if (normalized.StartsWith("output-", StringComparison.Ordinal))
+        {
+            normalized = normalized["output-".Length..];
+        }
+
+        if (normalized.StartsWith("out-", StringComparison.Ordinal))
+        {
+            normalized = normalized["out-".Length..];
+        }
+
+        return normalized;
     }
 
     private static bool? TryResolveConditionResult(WorkflowNodeModel sourceNode, Dictionary<string, object?> variables)
