@@ -840,10 +840,10 @@ textarea {
 }
 
 .workflow-node-card {
-  background: color-mix(in srgb, var(--surface-strong) 86%, transparent);
+  background: var(--surface-strong);
   border: 1px solid var(--border);
   border-radius: 12px;
-  box-shadow: var(--shadow-panel);
+  box-shadow: none;
   color: var(--text);
   min-width: 240px;
   padding: 0.56rem 0.64rem;
@@ -934,55 +934,55 @@ textarea {
 
 .workflow-node-card.is-selected {
   border-color: var(--accent);
-  box-shadow: var(--focus-ring);
+  box-shadow: none;
 }
 
 .workflow-node-card.is-tone-branch {
-  background: color-mix(in srgb, var(--surface-strong) 76%, rgba(187, 118, 55, 0.2));
+  border-left: 3px solid rgba(187, 118, 55, 0.72);
 }
 
 .workflow-node-card.is-tone-start {
-  background: color-mix(in srgb, var(--surface-strong) 76%, rgba(221, 153, 61, 0.24));
+  border-left: 3px solid rgba(221, 153, 61, 0.76);
 }
 
 .workflow-node-card.is-tone-data {
-  background: color-mix(in srgb, var(--surface-strong) 76%, rgba(121, 109, 209, 0.2));
+  border-left: 3px solid rgba(121, 109, 209, 0.72);
 }
 
 .workflow-node-card.is-tone-input {
-  background: color-mix(in srgb, var(--surface-strong) 76%, rgba(82, 135, 201, 0.22));
+  border-left: 3px solid rgba(82, 135, 201, 0.72);
 }
 
 .workflow-node-card.is-tone-routing {
-  background: color-mix(in srgb, var(--surface-strong) 76%, rgba(66, 168, 124, 0.2));
+  border-left: 3px solid rgba(66, 168, 124, 0.72);
 }
 
 .workflow-node-card.is-tone-worker {
-  background: color-mix(in srgb, var(--surface-strong) 76%, rgba(207, 133, 56, 0.18));
+  border-left: 3px solid rgba(207, 133, 56, 0.72);
 }
 
 .workflow-node-card.is-tone-http {
-  background: color-mix(in srgb, var(--surface-strong) 76%, rgba(84, 133, 219, 0.2));
+  border-left: 3px solid rgba(84, 133, 219, 0.72);
 }
 
 .workflow-node-card.is-tone-integration {
-  background: color-mix(in srgb, var(--surface-strong) 76%, rgba(56, 151, 205, 0.24));
+  border-left: 3px solid rgba(56, 151, 205, 0.76);
 }
 
 .workflow-node-card.is-tone-task {
-  background: color-mix(in srgb, var(--surface-strong) 76%, rgba(210, 162, 79, 0.22));
+  border-left: 3px solid rgba(210, 162, 79, 0.74);
 }
 
 .workflow-node-card.is-tone-response {
-  background: color-mix(in srgb, var(--surface-strong) 76%, rgba(166, 98, 182, 0.18));
+  border-left: 3px solid rgba(166, 98, 182, 0.72);
 }
 
 .workflow-node-card.is-tone-notify {
-  background: color-mix(in srgb, var(--surface-strong) 76%, rgba(64, 154, 169, 0.2));
+  border-left: 3px solid rgba(64, 154, 169, 0.72);
 }
 
 .workflow-node-card.is-tone-end {
-  background: color-mix(in srgb, var(--surface-strong) 76%, rgba(206, 84, 84, 0.2));
+  border-left: 3px solid rgba(206, 84, 84, 0.76);
 }
 
 .workflow-node-handle {

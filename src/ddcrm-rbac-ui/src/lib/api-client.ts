@@ -1469,7 +1469,12 @@ export async function listOfferWorkflowExecutionsRequest(
     },
   );
 
-  return response.items ?? [];
+  // `outputJson` может быть очень тяжелым; UI истории его не показывает,
+  // поэтому обнуляем поле и снижаем давление на память в браузере.
+  return (response.items ?? []).map((execution) => ({
+    ...execution,
+    steps: (execution.steps ?? []).map(({ outputJson: _outputJson, ...step }) => step),
+  }));
 }
 
 export async function listProjectCustomHttpIntegrationsRequest(

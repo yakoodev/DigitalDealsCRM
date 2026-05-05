@@ -4,20 +4,24 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   addEdge,
+  applyNodeChanges,
+  applyEdgeChanges,
   Background,
   BackgroundVariant,
   Controls,
+  type DefaultEdgeOptions,
   Handle,
   MiniMap,
   Position,
   ReactFlow,
   type Connection,
   type Edge,
+  type EdgeChange,
+  type NodeChange,
   type Node,
   type NodeProps,
   type ReactFlowInstance,
   useEdgesState,
-  useNodesState,
 } from "@xyflow/react";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
@@ -46,7 +50,6 @@ interface ProjectWorkflowsPanelProps {
 
 interface WorkflowEditorNodeData {
   [key: string]: unknown;
-  label: string;
   nodeType: WorkflowNode["type"];
   name: string;
   config: Record<string, unknown>;
@@ -996,12 +999,6 @@ function generateClientId(prefix: string) {
   return `${prefix}-${Date.now()}-${Math.floor(Math.random() * 100_000)}`;
 }
 
-function readEditorLabel(nodeType: WorkflowNode["type"], name: string) {
-  const trimmedName = name.trim();
-  const baseLabel = nodeLabelByType[nodeType] ?? nodeType;
-  return trimmedName.length > 0 ? `${baseLabel} · ${trimmedName}` : baseLabel;
-}
-
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
@@ -1035,6 +1032,20 @@ function normalizeViewportInput(viewport: WorkflowDraftUi["viewport"] | undefine
   }
 
   return { x, y, zoom };
+}
+
+function isSameViewport(left: WorkflowDraftUi["viewport"] | undefined, right: WorkflowDraftUi["viewport"] | undefined) {
+  if (!left && !right) {
+    return true;
+  }
+
+  if (!left || !right) {
+    return false;
+  }
+
+  return Math.abs(left.x - right.x) < 0.001
+    && Math.abs(left.y - right.y) < 0.001
+    && Math.abs(left.zoom - right.zoom) < 0.0001;
 }
 
 function buildAutoPosition(index: number) {
@@ -1150,7 +1161,6 @@ function toEditorNodes(nodes: WorkflowNode[], entryNodeId: string): Node<Workflo
       data: {
         nodeType: node.type,
         name,
-        label: readEditorLabel(node.type, name),
         config: readNodeConfig(node.config),
         isEntry: node.id === entryNodeId,
       },
@@ -1159,18 +1169,39 @@ function toEditorNodes(nodes: WorkflowNode[], entryNodeId: string): Node<Workflo
 }
 
 function toEditorEdges(edges: WorkflowDraft["edges"]): Edge<WorkflowEditorEdgeData>[] {
-  return edges.map((edge) => ({
-    id: edge.id,
-    source: edge.source,
-    sourceHandle: edge.sourceHandle,
-    target: edge.target,
-    targetHandle: edge.targetHandle,
-    label: edge.condition?.trim() || undefined,
-    data: {
-      condition: edge.condition?.trim() ?? "",
-    },
-    type: "smoothstep",
-  }));
+  const seenKeys = new Set<string>();
+  const normalizedEdges: Edge<WorkflowEditorEdgeData>[] = [];
+
+  for (const edge of edges) {
+    const condition = edge.condition?.trim();
+    const edgeKey = [
+      edge.source.trim(),
+      edge.sourceHandle?.trim() ?? "",
+      edge.target.trim(),
+      edge.targetHandle?.trim() ?? "",
+      condition ?? "",
+    ].join("|");
+
+    if (seenKeys.has(edgeKey)) {
+      continue;
+    }
+    seenKeys.add(edgeKey);
+
+    normalizedEdges.push({
+      id: edge.id,
+      source: edge.source,
+      sourceHandle: edge.sourceHandle,
+      target: edge.target,
+      targetHandle: edge.targetHandle,
+      label: condition || undefined,
+      data: {
+        condition: condition ?? "",
+      },
+      type: "smoothstep",
+    });
+  }
+
+  return normalizedEdges;
 }
 
 function sanitizeNodeConfig(config: Record<string, unknown>): Record<string, unknown> | undefined {
@@ -1205,16 +1236,30 @@ function buildWorkflowDraftFromEditor(params: {
     },
   }));
 
-  const draftEdges = params.edges.map((edge) => {
+  const edgeKeys = new Set<string>();
+  const draftEdges = params.edges.flatMap((edge) => {
     const condition = (edge.data?.condition ?? "").trim();
-    return {
+    const edgeKey = [
+      edge.source.trim(),
+      edge.sourceHandle?.trim() ?? "",
+      edge.target.trim(),
+      edge.targetHandle?.trim() ?? "",
+      condition,
+    ].join("|");
+
+    if (edgeKeys.has(edgeKey)) {
+      return [];
+    }
+    edgeKeys.add(edgeKey);
+
+    return [{
       id: edge.id,
       source: edge.source,
       sourceHandle: edge.sourceHandle ?? undefined,
       target: edge.target,
       targetHandle: edge.targetHandle ?? undefined,
       condition: condition || undefined,
-    };
+    }];
   });
 
   return {
@@ -1367,14 +1412,6 @@ function stringifyConfigObject(value: unknown) {
   }
 
   return JSON.stringify(value, null, 2);
-}
-
-function safeStringifyCompact(value: unknown) {
-  try {
-    return JSON.stringify(value);
-  } catch {
-    return "";
-  }
 }
 
 function readNodeDisplayName(node: Node<WorkflowEditorNodeData>) {
@@ -1563,10 +1600,8 @@ const WorkflowCanvasNode = memo(function WorkflowCanvasNode({ data, selected }: 
                     position={Position.Left}
                   />
                 ) : null}
-                <span title={inputPort ? readPortTitle(inputPort) : undefined}>{inputPort?.label ?? ""}</span>
               </span>
               <span className="workflow-node-port-label is-right">
-                <span title={outputPort ? readPortTitle(outputPort) : undefined}>{outputPort?.label ?? ""}</span>
                 {outputPort ? (
                   <Handle
                     id={outputPort.id}
@@ -1607,21 +1642,28 @@ export function ProjectWorkflowsPanel({ apiSession, projectId, currentRole }: Pr
   const [typedEditorError, setTypedEditorError] = useState("");
   const [advancedJsonText, setAdvancedJsonText] = useState("{}");
   const [advancedJsonError, setAdvancedJsonError] = useState("");
+  const [selectedNodeConfigVersion, setSelectedNodeConfigVersion] = useState(0);
+  const [isAdvancedJsonOpen, setIsAdvancedJsonOpen] = useState(false);
 
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
-  const [viewport, setViewport] = useState<WorkflowDraftUi["viewport"]>();
+  const [isMiniMapVisible, setIsMiniMapVisible] = useState(false);
   const [flowInstance, setFlowInstance] = useState<ReactFlowInstance<Node<WorkflowEditorNodeData>, Edge<WorkflowEditorEdgeData>> | null>(null);
   const importFileInputRef = useRef<HTMLInputElement | null>(null);
+  const previousOfferIdRef = useRef("");
+  const viewportRef = useRef<WorkflowDraftUi["viewport"]>(undefined);
+  const pendingViewportRef = useRef<WorkflowDraftUi["viewport"]>(undefined);
 
   const canManageWorkflows = hasPermission(currentRole, projectPermissions.workflowsManage);
 
-  const [nodes, setNodes, onNodesChange] = useNodesState<Node<WorkflowEditorNodeData>>([]);
-  const [edges, setEdges, onEdgesChange] = useEdgesState<Edge<WorkflowEditorEdgeData>>([]);
+  const [nodes, setNodes] = useState<Node<WorkflowEditorNodeData>[]>([]);
+  const [edges, setEdges] = useEdgesState<Edge<WorkflowEditorEdgeData>>([]);
 
   const offersQuery = useQuery({
     queryKey: ["offers", apiSession.baseUrl, apiSession.token, projectId],
     queryFn: () => listOffersRequest(apiSession, projectId),
     staleTime: 10_000,
+    gcTime: 60_000,
+    notifyOnChangeProps: ["data", "error", "isPending", "isFetching"],
     enabled: canManageWorkflows,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
@@ -1630,6 +1672,8 @@ export function ProjectWorkflowsPanel({ apiSession, projectId, currentRole }: Pr
     queryKey: ["project-integrations-status", apiSession.baseUrl, apiSession.token, projectId],
     queryFn: () => listProjectIntegrationsStatusRequest(apiSession, projectId),
     staleTime: 15_000,
+    gcTime: 60_000,
+    notifyOnChangeProps: ["data", "error", "isPending", "isFetching"],
     enabled: canManageWorkflows,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
@@ -1670,6 +1714,8 @@ export function ProjectWorkflowsPanel({ apiSession, projectId, currentRole }: Pr
     queryFn: () => getOfferWorkflowDraftRequest(apiSession, projectId, selectedOfferId),
     enabled: canManageWorkflows && selectedOfferId.length > 0,
     staleTime: 5_000,
+    gcTime: 30_000,
+    notifyOnChangeProps: ["data", "error", "isPending", "isFetching"],
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
   });
@@ -1679,14 +1725,41 @@ export function ProjectWorkflowsPanel({ apiSession, projectId, currentRole }: Pr
     queryFn: () => listOfferWorkflowExecutionsRequest(apiSession, projectId, selectedOfferId),
     enabled: canManageWorkflows && selectedOfferId.length > 0 && isHistoryOpen,
     staleTime: 5_000,
+    gcTime: 30_000,
+    notifyOnChangeProps: ["data", "error", "isPending", "isFetching"],
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
   });
 
+  useEffect(() => {
+    const previousOfferId = previousOfferIdRef.current;
+    if (previousOfferId && previousOfferId !== selectedOfferId) {
+      queryClient.removeQueries({
+        queryKey: ["offer-workflow-draft", apiSession.baseUrl, apiSession.token, projectId, previousOfferId],
+        exact: true,
+      });
+      queryClient.removeQueries({
+        queryKey: ["offer-workflow-executions", apiSession.baseUrl, apiSession.token, projectId, previousOfferId],
+        exact: true,
+      });
+    }
+
+    previousOfferIdRef.current = selectedOfferId;
+  }, [apiSession.baseUrl, apiSession.token, projectId, queryClient, selectedOfferId]);
+
+  useEffect(() => () => {
+    queryClient.removeQueries({
+      queryKey: ["offer-workflow-draft", apiSession.baseUrl, apiSession.token, projectId],
+    });
+    queryClient.removeQueries({
+      queryKey: ["offer-workflow-executions", apiSession.baseUrl, apiSession.token, projectId],
+    });
+  }, [apiSession.baseUrl, apiSession.token, projectId, queryClient]);
+
   const readViewportForSave = useCallback(() => {
     const flowViewport = flowInstance?.getViewport();
-    return normalizeViewportInput(flowViewport ?? viewport);
-  }, [flowInstance, viewport]);
+    return normalizeViewportInput(flowViewport ?? viewportRef.current);
+  }, [flowInstance]);
 
   const applyDraftToEditor = useCallback((draft: WorkflowDraft) => {
     setVersion(draft.version);
@@ -1697,10 +1770,14 @@ export function ProjectWorkflowsPanel({ apiSession, projectId, currentRole }: Pr
     const nextEntryNodeId = resolveStartEntryNodeId(draft.nodes, draft.edges, draft.ui?.entryNodeId);
     const nextNodes = toEditorNodes(draft.nodes, nextEntryNodeId);
     const nextEdges = toEditorEdges(draft.edges);
+    const droppedDuplicateEdges = Math.max(0, draft.edges.length - nextEdges.length);
     setNodes(nextNodes);
     setEdges(nextEdges);
     setEntryNodeId(nextEntryNodeId);
-    setViewport(normalizeViewportInput(draft.ui?.viewport));
+    const nextViewport = normalizeViewportInput(draft.ui?.viewport);
+    pendingViewportRef.current = nextViewport;
+    viewportRef.current = nextViewport;
+    setSelectedNodeConfigVersion((current) => current + 1);
 
     setSelectedNodeId((previous) => {
       if (nextNodes.some((node) => node.id === previous)) {
@@ -1710,6 +1787,10 @@ export function ProjectWorkflowsPanel({ apiSession, projectId, currentRole }: Pr
       setSelectedEdgeId("");
       return nextNodes[0]?.id ?? "";
     });
+
+    if (droppedDuplicateEdges > 0) {
+      setStatus(`Draft загружен. Удалено дублирующихся связей: ${droppedDuplicateEdges}.`);
+    }
   }, [setEdges, setNodes]);
 
   const applyPreset = useCallback((presetId: string) => {
@@ -1783,21 +1864,23 @@ export function ProjectWorkflowsPanel({ apiSession, projectId, currentRole }: Pr
       return;
     }
 
-    if (viewport) {
-      void flowInstance.setViewport(viewport, { duration: 0 });
+    const pendingViewport = pendingViewportRef.current;
+    pendingViewportRef.current = undefined;
+
+    if (pendingViewport) {
+      void flowInstance.setViewport(pendingViewport, { duration: 0 });
+      viewportRef.current = pendingViewport;
       return;
     }
 
-    void flowInstance.fitView({ padding: 0.2, duration: 0 });
-  }, [flowInstance, nodes, viewport]);
+    void flowInstance.fitView({ padding: 0.2, duration: 0 }).then(() => {
+      viewportRef.current = normalizeViewportInput(flowInstance.getViewport());
+    });
+  }, [flowInstance, nodes]);
 
   const selectedNode = useMemo(
     () => nodes.find((node) => node.id === selectedNodeId) ?? null,
     [nodes, selectedNodeId],
-  );
-  const selectedNodeConfigSignature = useMemo(
-    () => (selectedNode ? safeStringifyCompact(selectedNode.data.config) : ""),
-    [selectedNode?.data.config],
   );
 
   const selectedEdge = useMemo(
@@ -1854,39 +1937,62 @@ export function ProjectWorkflowsPanel({ apiSession, projectId, currentRole }: Pr
     if (!selectedNode) {
       setTypedEditor(buildEmptyTypedEditorState());
       setAdvancedJsonText("{}");
+      setIsAdvancedJsonOpen(false);
       setTypedEditorError("");
       setAdvancedJsonError("");
       return;
     }
 
+    const nextTypedEditor = buildEmptyTypedEditorState();
     const config = selectedNode.data.config;
-    setTypedEditor({
-      conditionField: readString(config, "field"),
-      conditionEquals: readString(config, "equals"),
-      setVariablesText: stringifyConfigObject(config.values),
-      selectPlatform: readString(config, "platform"),
-      workerAction: readString(config, "action"),
-      customIntegrationId: readString(config, "integrationId"),
-      customMethod: readString(config, "method") || "POST",
-      customPath: readString(config, "path"),
-      customHeadersText: stringifyConfigObject(config.headers),
-      customPayloadText: stringifyConfigObject(config.payload),
-      steamAction: readString(config, "action") || "change-password",
-      steamAccountId: readString(config, "accountId"),
-      steamDelaySeconds: typeof config.delaySeconds === "number" ? String(config.delaySeconds) : readString(config, "delaySeconds"),
-      steamPayloadText: stringifyConfigObject(config.payload),
-      taskType: readString(config, "taskType"),
-      taskTitle: readString(config, "title"),
-      taskAssignee: readString(config, "assignee"),
-      taskDelaySeconds: typeof config.delaySeconds === "number" ? String(config.delaySeconds) : readString(config, "delaySeconds"),
-      taskPayloadText: stringifyConfigObject(config.payload),
-      buyerMessage: readString(config, "message"),
-      notifyMessage: readString(config, "message"),
-    });
-    setAdvancedJsonText(JSON.stringify(config, null, 2));
+
+    if (selectedNode.data.nodeType === "Condition") {
+      nextTypedEditor.conditionField = readString(config, "field");
+      nextTypedEditor.conditionEquals = readString(config, "equals");
+    } else if (selectedNode.data.nodeType === "SetVariables") {
+      nextTypedEditor.setVariablesText = stringifyConfigObject(config.values);
+    } else if (selectedNode.data.nodeType === "SelectAccountPriorityFallback") {
+      nextTypedEditor.selectPlatform = readString(config, "platform");
+    } else if (selectedNode.data.nodeType === "InvokeWorkerAction") {
+      nextTypedEditor.workerAction = readString(config, "action");
+    } else if (selectedNode.data.nodeType === "InvokeCustomHttp") {
+      nextTypedEditor.customIntegrationId = readString(config, "integrationId");
+      nextTypedEditor.customMethod = readString(config, "method") || "POST";
+      nextTypedEditor.customPath = readString(config, "path");
+      nextTypedEditor.customHeadersText = stringifyConfigObject(config.headers);
+      nextTypedEditor.customPayloadText = stringifyConfigObject(config.payload);
+    } else if (selectedNode.data.nodeType === "SteamAction") {
+      nextTypedEditor.steamAction = readString(config, "action") || "change-password";
+      nextTypedEditor.steamAccountId = readString(config, "accountId");
+      nextTypedEditor.steamDelaySeconds = typeof config.delaySeconds === "number" ? String(config.delaySeconds) : readString(config, "delaySeconds");
+      nextTypedEditor.steamPayloadText = stringifyConfigObject(config.payload);
+    } else if (selectedNode.data.nodeType === "Task") {
+      nextTypedEditor.taskType = readString(config, "taskType");
+      nextTypedEditor.taskTitle = readString(config, "title");
+      nextTypedEditor.taskAssignee = readString(config, "assignee");
+      nextTypedEditor.taskDelaySeconds = typeof config.delaySeconds === "number" ? String(config.delaySeconds) : readString(config, "delaySeconds");
+      nextTypedEditor.taskPayloadText = stringifyConfigObject(config.payload);
+    } else if (selectedNode.data.nodeType === "SendBuyerResponse") {
+      nextTypedEditor.buyerMessage = readString(config, "message");
+    } else if (selectedNode.data.nodeType === "Notify") {
+      nextTypedEditor.notifyMessage = readString(config, "message");
+    }
+
+    setTypedEditor(nextTypedEditor);
+    setAdvancedJsonText("");
+    setIsAdvancedJsonOpen(false);
     setTypedEditorError("");
     setAdvancedJsonError("");
-  }, [selectedNode?.id, selectedNode?.data.nodeType, selectedNodeConfigSignature]);
+  }, [selectedNode?.id, selectedNode?.data.nodeType, selectedNodeConfigVersion]);
+
+  const onNodesChange = useCallback((changes: NodeChange<Node<WorkflowEditorNodeData>>[]) => {
+    const nonSelectionChanges = changes.filter((change) => change.type !== "select");
+    if (nonSelectionChanges.length === 0) {
+      return;
+    }
+
+    setNodes((current) => applyNodeChanges(nonSelectionChanges, current));
+  }, [setNodes]);
 
   const onConnect = useCallback((connection: Connection) => {
     if (!connection.source || !connection.target) {
@@ -1898,10 +2004,59 @@ export function ProjectWorkflowsPanel({ apiSession, projectId, currentRole }: Pr
       sourceHandle: connection.sourceHandle ?? undefined,
       targetHandle: connection.targetHandle ?? undefined,
       id: generateClientId("edge"),
-      data: { condition: "" },
+      data: {
+        condition: "",
+      },
       type: "smoothstep",
     }, current));
   }, [setEdges]);
+
+  const onEdgesChange = useCallback((changes: EdgeChange<Edge<WorkflowEditorEdgeData>>[]) => {
+    const nonSelectionChanges = changes.filter((change) => change.type !== "select");
+    if (nonSelectionChanges.length === 0) {
+      return;
+    }
+
+    setEdges((current) => applyEdgeChanges(nonSelectionChanges, current));
+  }, [setEdges]);
+
+  const handleCanvasMoveEnd = useCallback((_: unknown, nextViewport: NonNullable<WorkflowDraftUi["viewport"]>) => {
+    const normalizedViewport = normalizeViewportInput(nextViewport);
+    if (isSameViewport(viewportRef.current, normalizedViewport)) {
+      return;
+    }
+
+    viewportRef.current = normalizedViewport;
+  }, []);
+
+  const handleCanvasNodeClick = useCallback((_: unknown, node: Node<WorkflowEditorNodeData>) => {
+    setSelectedNodeId(node.id);
+    setSelectedEdgeId("");
+  }, []);
+
+  const handleCanvasEdgeClick = useCallback((_: unknown, edge: Edge<WorkflowEditorEdgeData>) => {
+    setSelectedEdgeId(edge.id);
+    setSelectedNodeId("");
+  }, []);
+
+  const handleCanvasPaneClick = useCallback(() => {
+    setSelectedNodeId("");
+    setSelectedEdgeId("");
+  }, []);
+
+  const handleCenterCanvas = useCallback(() => {
+    if (!flowInstance) {
+      return;
+    }
+
+    void flowInstance.fitView({ padding: 0.2, duration: 200 });
+    viewportRef.current = normalizeViewportInput(flowInstance.getViewport());
+  }, [flowInstance]);
+
+  const defaultEdgeOptions = useMemo<DefaultEdgeOptions>(() => ({
+    type: "smoothstep",
+    interactionWidth: 12,
+  }), []);
 
   const appendNode = (nodeType: WorkflowNode["type"]) => {
     const catalogNode = workflowNodeCatalogByType[nodeType];
@@ -1923,7 +2078,6 @@ export function ProjectWorkflowsPanel({ apiSession, projectId, currentRole }: Pr
       data: {
         nodeType,
         name: "",
-        label: readEditorLabel(nodeType, ""),
         config: {},
         isEntry: false,
       },
@@ -1937,7 +2091,7 @@ export function ProjectWorkflowsPanel({ apiSession, projectId, currentRole }: Pr
         zoom: 1.15,
         duration: 180,
       });
-      setViewport(normalizeViewportInput(flowInstance.getViewport()));
+      viewportRef.current = normalizeViewportInput(flowInstance.getViewport());
     }
     setStatus(`Node ${nodeType} добавлен.`);
   };
@@ -2020,7 +2174,6 @@ export function ProjectWorkflowsPanel({ apiSession, projectId, currentRole }: Pr
           ...patch,
           nodeType,
           name,
-          label: readEditorLabel(nodeType, name),
         },
       };
     }));
@@ -2147,7 +2300,7 @@ export function ProjectWorkflowsPanel({ apiSession, projectId, currentRole }: Pr
     return { ...baseConfig };
   }, [applyConfigPatch, typedEditor]);
 
-  const replaceSelectedNodeConfig = (nextConfig: Record<string, unknown>) => {
+  const replaceSelectedNodeConfig = useCallback((nextConfig: Record<string, unknown>) => {
     if (!selectedNodeId) {
       return;
     }
@@ -2165,7 +2318,8 @@ export function ProjectWorkflowsPanel({ apiSession, projectId, currentRole }: Pr
         },
       };
     }));
-  };
+    setSelectedNodeConfigVersion((current) => current + 1);
+  }, [selectedNodeId, setNodes]);
 
   const updateEdgeCondition = (edgeId: string, condition: string) => {
     setEdges((current) => current.map((edge) => {
@@ -2308,10 +2462,9 @@ export function ProjectWorkflowsPanel({ apiSession, projectId, currentRole }: Pr
         return;
       }
 
-      if (event.key.toLowerCase() === "f" && flowInstance) {
+      if (event.key.toLowerCase() === "f") {
         event.preventDefault();
-        void flowInstance.fitView({ padding: 0.2, duration: 200 });
-        setViewport(normalizeViewportInput(flowInstance.getViewport()));
+        handleCenterCanvas();
       }
     };
 
@@ -2319,7 +2472,7 @@ export function ProjectWorkflowsPanel({ apiSession, projectId, currentRole }: Pr
     return () => {
       window.removeEventListener("keydown", onKeyDown);
     };
-  }, [canManageWorkflows, flowInstance, removeSelectedEdge, removeSelectedNode, saveDraft, selectedEdgeId, selectedNodeId]);
+  }, [canManageWorkflows, handleCenterCanvas, removeSelectedEdge, removeSelectedNode, saveDraft, selectedEdgeId, selectedNodeId]);
 
   const filteredNodeCatalog = useMemo(() => {
     const query = nodeSearch.trim().toLowerCase();
@@ -2638,14 +2791,7 @@ export function ProjectWorkflowsPanel({ apiSession, projectId, currentRole }: Pr
                 <button
                   type="button"
                   className="button button-ghost"
-                  onClick={() => {
-                    if (!flowInstance) {
-                      return;
-                    }
-
-                    void flowInstance.fitView({ padding: 0.2, duration: 200 });
-                    setViewport(normalizeViewportInput(flowInstance.getViewport()));
-                  }}
+                  onClick={handleCenterCanvas}
                 >
                   К центру (F)
                 </button>
@@ -2655,6 +2801,9 @@ export function ProjectWorkflowsPanel({ apiSession, projectId, currentRole }: Pr
                 <button type="button" className="button button-ghost" disabled={!selectedNodeId} onClick={removeSelectedNode}>
                   Удалить node
                 </button>
+                <button type="button" className="button button-ghost" onClick={() => setIsMiniMapVisible((current) => !current)}>
+                  {isMiniMapVisible ? "Скрыть миникарту" : "Показать миникарту"}
+                </button>
               </div>
             </div>
 
@@ -2663,27 +2812,29 @@ export function ProjectWorkflowsPanel({ apiSession, projectId, currentRole }: Pr
                 nodes={nodes}
                 edges={edges}
                 nodeTypes={workflowNodeRenderers}
-                onlyRenderVisibleElements
+                defaultEdgeOptions={defaultEdgeOptions}
+                onlyRenderVisibleElements={false}
+                elementsSelectable={false}
+                nodesConnectable
+                nodesDraggable
+                edgesReconnectable={false}
+                nodesFocusable={false}
+                edgesFocusable={false}
+                disableKeyboardA11y
+                autoPanOnConnect={false}
+                autoPanOnNodeDrag={false}
+                connectOnClick={false}
                 onNodesChange={onNodesChange}
                 onEdgesChange={onEdgesChange}
                 onConnect={onConnect}
                 onInit={setFlowInstance}
-                onMoveEnd={(_, nextViewport) => setViewport(normalizeViewportInput(nextViewport))}
-                onNodeClick={(_, node) => {
-                  setSelectedNodeId(node.id);
-                  setSelectedEdgeId("");
-                }}
-                onEdgeClick={(_, edge) => {
-                  setSelectedEdgeId(edge.id);
-                  setSelectedNodeId("");
-                }}
-                onPaneClick={() => {
-                  setSelectedNodeId("");
-                  setSelectedEdgeId("");
-                }}
+                onMoveEnd={handleCanvasMoveEnd}
+                onNodeClick={handleCanvasNodeClick}
+                onEdgeClick={handleCanvasEdgeClick}
+                onPaneClick={handleCanvasPaneClick}
                 fitView
               >
-                <MiniMap pannable zoomable />
+                {isMiniMapVisible ? <MiniMap pannable zoomable /> : null}
                 <Controls />
                 <Background variant={BackgroundVariant.Dots} gap={24} size={1.2} />
               </ReactFlow>
@@ -2948,14 +3099,29 @@ export function ProjectWorkflowsPanel({ apiSession, projectId, currentRole }: Pr
                 </div>
                 {typedEditorError ? <p className="route-error">{typedEditorError}</p> : null}
 
-                <label className="field">
-                  <span>Advanced JSON (config object)</span>
-                  <textarea className="input" rows={10} value={advancedJsonText} onChange={(event) => setAdvancedJsonText(event.target.value)} />
-                </label>
-                <div className="inline-actions">
-                  <button type="button" className="button button-ghost" onClick={applyAdvancedJson}>Применить JSON</button>
-                </div>
-                {advancedJsonError ? <p className="route-error">{advancedJsonError}</p> : null}
+                <details
+                  className="details-block"
+                  open={isAdvancedJsonOpen}
+                  onToggle={(event) => {
+                    const isOpen = event.currentTarget.open;
+                    setIsAdvancedJsonOpen(isOpen);
+                    if (isOpen && selectedNode && advancedJsonText.length === 0) {
+                      setAdvancedJsonText(JSON.stringify(selectedNode.data.config, null, 2));
+                    }
+                  }}
+                >
+                  <summary>Advanced JSON (config object)</summary>
+                  <div className="page-stack">
+                    <label className="field">
+                      <span>JSON</span>
+                      <textarea className="input" rows={10} value={advancedJsonText} onChange={(event) => setAdvancedJsonText(event.target.value)} />
+                    </label>
+                    <div className="inline-actions">
+                      <button type="button" className="button button-ghost" onClick={applyAdvancedJson}>Применить JSON</button>
+                    </div>
+                    {advancedJsonError ? <p className="route-error">{advancedJsonError}</p> : null}
+                  </div>
+                </details>
               </div>
             ) : selectedEdge ? (
               <div className="page-stack">
