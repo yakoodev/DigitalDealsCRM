@@ -35,7 +35,7 @@ const session: PlatformSession = {
     email: "owner@ddcrm.local",
     displayName: "Owner Demo",
     role: "owner",
-    authMode: "demo",
+    authMode: "manual",
     loggedInAt: "2026-04-26T00:00:00.000Z",
   },
 };

@@ -30,7 +30,7 @@ const sessionState = {
       email: "owner@ddcrm.local",
       displayName: "Owner Demo",
       role: "owner",
-      authMode: "demo",
+      authMode: "manual",
       loggedInAt: new Date().toISOString(),
     },
   },
@@ -101,7 +101,7 @@ describe("project route pages", () => {
         email: "owner@ddcrm.local",
         displayName: "Owner Demo",
         role: "owner",
-        authMode: "demo",
+        authMode: "manual",
         loggedInAt: new Date().toISOString(),
       },
     };

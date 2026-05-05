@@ -9,6 +9,10 @@ public sealed class CoreDbContext(DbContextOptions<CoreDbContext> options)
 {
     public DbSet<ProjectEntity> Projects => Set<ProjectEntity>();
 
+    public DbSet<AuthUserEntity> AuthUsers => Set<AuthUserEntity>();
+
+    public DbSet<AuthExternalIdentityEntity> AuthExternalIdentities => Set<AuthExternalIdentityEntity>();
+
     public DbSet<ProjectMemberEntity> ProjectMembers => Set<ProjectMemberEntity>();
 
     public DbSet<AccountEntity> Accounts => Set<AccountEntity>();
@@ -49,6 +53,34 @@ public sealed class CoreDbContext(DbContextOptions<CoreDbContext> options)
             entity.HasMany(x => x.TelegramChatBindings).WithOne(x => x.Project).HasForeignKey(x => x.ProjectId);
             entity.HasMany(x => x.TelegramLinkCodes).WithOne(x => x.Project).HasForeignKey(x => x.ProjectId);
             entity.HasMany(x => x.NotificationOutboxItems).WithOne(x => x.Project).HasForeignKey(x => x.ProjectId);
+        });
+
+        modelBuilder.Entity<AuthUserEntity>(entity =>
+        {
+            entity.ToTable("auth_users");
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Email).HasMaxLength(320).IsRequired();
+            entity.Property(x => x.EmailNormalized).HasMaxLength(320).IsRequired();
+            entity.Property(x => x.DisplayName).HasMaxLength(160).IsRequired();
+            entity.Property(x => x.PasswordHash).HasMaxLength(1024).IsRequired();
+            entity.Property(x => x.SystemPermissionsCsv).HasMaxLength(512);
+            entity.Property(x => x.CreatedAtUtc).HasDefaultValueSql("NOW()");
+            entity.Property(x => x.UpdatedAtUtc).HasDefaultValueSql("NOW()");
+            entity.HasIndex(x => x.EmailNormalized).IsUnique();
+            entity.HasMany(x => x.ExternalIdentities).WithOne(x => x.User).HasForeignKey(x => x.UserId);
+        });
+
+        modelBuilder.Entity<AuthExternalIdentityEntity>(entity =>
+        {
+            entity.ToTable("auth_external_identities");
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Provider).HasMaxLength(64).IsRequired();
+            entity.Property(x => x.ProviderUserId).HasMaxLength(256).IsRequired();
+            entity.Property(x => x.ProviderEmail).HasMaxLength(320);
+            entity.Property(x => x.MetadataJson).HasMaxLength(4000);
+            entity.Property(x => x.LinkedAtUtc).HasDefaultValueSql("NOW()");
+            entity.HasIndex(x => new { x.Provider, x.ProviderUserId }).IsUnique();
+            entity.HasIndex(x => new { x.UserId, x.Provider }).IsUnique();
         });
 
         modelBuilder.Entity<ProjectMemberEntity>(entity =>

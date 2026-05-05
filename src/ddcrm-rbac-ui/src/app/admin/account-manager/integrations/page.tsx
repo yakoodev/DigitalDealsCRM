@@ -152,30 +152,35 @@ export default function AccountManagerIntegrationsPage() {
                 placeholder="uuid проекта"
               />
             </label>
-            {grantsQuery.isPending ? <p className="route-hint">Загрузка grant-ов...</p> : null}
+            {!projectId.trim() ? (
+              <p className="route-hint">Укажите Project ID, чтобы загрузить grant-ы проекта.</p>
+            ) : null}
+            {projectId.trim() && grantsQuery.isFetching ? <p className="route-hint">Загрузка grant-ов...</p> : null}
             {grantsQuery.error ? (
               <p className="route-error">
                 {grantsQuery.error instanceof Error ? grantsQuery.error.message : "Не удалось загрузить grant-ы."}
               </p>
             ) : null}
-            {!grantsQuery.isPending && !grantsQuery.error && grantItems.length === 0 ? (
+            {projectId.trim() && !grantsQuery.isFetching && !grantsQuery.error && grantItems.length === 0 ? (
               <p className="route-hint">Для выбранного проекта grant-ы пока не выданы.</p>
             ) : (
-              <ul className="entity-list">
-                {grantItems.map((item) => (
-                  <li key={item.integrationKey} className="entity-list-item">
-                    <div>
-                      <strong>{item.integrationKey}</strong>
-                      <div className="entity-pills">
-                        <span className="entity-pill">{item.status}</span>
-                        <span className="entity-pill">{item.scopes.join(", ")}</span>
-                        <span className="entity-pill">{item.credentialStatus ?? "no-credential"}</span>
-                        <span className="entity-pill">{item.credentialMasked ?? "write-only"}</span>
+              projectId.trim() ? (
+                <ul className="entity-list">
+                  {grantItems.map((item) => (
+                    <li key={item.integrationKey} className="entity-list-item">
+                      <div>
+                        <strong>{item.integrationKey}</strong>
+                        <div className="entity-pills">
+                          <span className="entity-pill">{item.status}</span>
+                          <span className="entity-pill">{item.scopes.join(", ")}</span>
+                          <span className="entity-pill">{item.credentialStatus ?? "no-credential"}</span>
+                          <span className="entity-pill">{item.credentialMasked ?? "write-only"}</span>
+                        </div>
                       </div>
-                    </div>
-                  </li>
-                ))}
-              </ul>
+                    </li>
+                  ))}
+                </ul>
+              ) : null
             )}
           </article>
 

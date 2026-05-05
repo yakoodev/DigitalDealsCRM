@@ -10,8 +10,10 @@ vi.mock("@/lib/auth", async () => {
   const actual = await vi.importActual<typeof import("@/lib/auth")>("@/lib/auth");
   return {
     ...actual,
-    authenticateDemo: vi.fn(),
-    authenticateManual: vi.fn(),
+    loginWithPassword: vi.fn(),
+    registerWithPassword: vi.fn(),
+    changePasswordWithSession: vi.fn(),
+    loadAuthProviders: vi.fn(),
   };
 });
 
@@ -25,69 +27,81 @@ vi.mock("@/lib/api-client", async () => {
   };
 });
 
-const demoSession: PlatformSession = {
-  token: "demo-token",
+const passwordSession: PlatformSession = {
+  token: "password-token",
   baseUrl: "http://localhost:5073",
   profile: {
     userId: "11111111-1111-1111-1111-111111111111",
     email: "owner@ddcrm.local",
-    displayName: "Owner Demo",
+    displayName: "Owner",
     role: "owner",
-    authMode: "demo",
+    authMode: "password",
     loggedInAt: "2026-04-25T00:00:00.000Z",
   },
 };
 
 describe("AuthScreen", () => {
-  it("выполняет demo-вход и передает сессию наружу", async () => {
+  it("выполняет вход по email/password", async () => {
     const user = userEvent.setup();
     const onAuthenticated = vi.fn();
-    const authenticateDemoMock = vi.mocked(authLib.authenticateDemo);
+    const loginWithPasswordMock = vi.mocked(authLib.loginWithPassword);
     const listProjectsRequestMock = vi.mocked(apiClient.listProjectsRequest);
-    authenticateDemoMock.mockResolvedValue(demoSession);
+    const loadAuthProvidersMock = vi.mocked(authLib.loadAuthProviders);
+    loginWithPasswordMock.mockResolvedValue({
+      session: passwordSession,
+      requiresPasswordChange: false,
+    });
     listProjectsRequestMock.mockResolvedValue([]);
+    loadAuthProvidersMock.mockResolvedValue([]);
 
     render(<AuthScreen onAuthenticated={onAuthenticated} />);
     expect(screen.getByTestId("theme-option-system")).toBeInTheDocument();
     expect(screen.getByTestId("theme-option-light")).toBeInTheDocument();
     expect(screen.getByTestId("theme-option-dark")).toBeInTheDocument();
 
-    await user.click(screen.getByTestId("auth-demo-submit"));
+    await user.type(screen.getByTestId("auth-email"), "owner@ddcrm.local");
+    await user.type(screen.getByTestId("auth-password"), "Passw0rd!123");
+    await user.click(screen.getByTestId("auth-submit"));
 
     await waitFor(() => {
-      expect(authenticateDemoMock).toHaveBeenCalledTimes(1);
+      expect(loginWithPasswordMock).toHaveBeenCalledTimes(1);
       expect(listProjectsRequestMock).toHaveBeenCalledTimes(1);
-      expect(onAuthenticated).toHaveBeenCalledWith(demoSession);
+      expect(onAuthenticated).toHaveBeenCalledWith(passwordSession);
     });
   });
 
-  it("поддерживает ручной JWT-вход", async () => {
+  it("требует смену пароля и завершает вход после change-password", async () => {
     const user = userEvent.setup();
     const onAuthenticated = vi.fn();
-    const authenticateManualMock = vi.mocked(authLib.authenticateManual);
+    const loginWithPasswordMock = vi.mocked(authLib.loginWithPassword);
+    const changePasswordMock = vi.mocked(authLib.changePasswordWithSession);
     const listProjectsRequestMock = vi.mocked(apiClient.listProjectsRequest);
-    const manualSession: PlatformSession = {
-      ...demoSession,
-      token: "manual-token",
-      profile: {
-        ...demoSession.profile,
-        authMode: "manual",
-        role: "moderator",
-      },
-    };
-    authenticateManualMock.mockReturnValue(manualSession);
+    const loadAuthProvidersMock = vi.mocked(authLib.loadAuthProviders);
+    loginWithPasswordMock.mockResolvedValue({
+      session: passwordSession,
+      requiresPasswordChange: true,
+    });
+    changePasswordMock.mockResolvedValue(undefined);
     listProjectsRequestMock.mockResolvedValue([]);
+    loadAuthProvidersMock.mockResolvedValue([]);
 
     render(<AuthScreen onAuthenticated={onAuthenticated} />);
 
-    await user.click(screen.getByTestId("auth-mode-manual"));
-    await user.type(screen.getByTestId("auth-manual-token"), "header.payload.signature");
-    await user.click(screen.getByTestId("auth-manual-submit"));
+    await user.type(screen.getByTestId("auth-email"), "root@ddcrm.local");
+    await user.type(screen.getByTestId("auth-password"), "ChangeMe123!");
+    await user.click(screen.getByTestId("auth-submit"));
 
     await waitFor(() => {
-      expect(authenticateManualMock).toHaveBeenCalledTimes(1);
-      expect(listProjectsRequestMock).toHaveBeenCalledTimes(1);
-      expect(onAuthenticated).toHaveBeenCalledWith(manualSession);
+      expect(screen.getByTestId("auth-change-password-submit")).toBeInTheDocument();
+    });
+
+    await user.type(screen.getByTestId("auth-new-password"), "N3wPassw0rd!");
+    await user.type(screen.getByTestId("auth-new-password-confirm"), "N3wPassw0rd!");
+    await user.click(screen.getByTestId("auth-change-password-submit"));
+
+    await waitFor(() => {
+      expect(changePasswordMock).toHaveBeenCalledTimes(1);
+      expect(onAuthenticated).toHaveBeenCalledWith(passwordSession);
     });
   });
 });

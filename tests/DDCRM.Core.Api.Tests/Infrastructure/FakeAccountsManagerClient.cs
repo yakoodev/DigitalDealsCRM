@@ -14,7 +14,7 @@ public sealed class FakeAccountsManagerClient : IAccountsManagerClient
 
     public List<DeleteLifecycleCall> DeleteCalls { get; } = [];
 
-    public List<AccountsManagerAccountTypeDefinition> AccountTypes { get; } = CreateDefaultAccountTypes();
+    public List<AccountsManagerAccountTypeDefinition> AccountTypes { get; } = [];
 
     public List<AccountsManagerWorkerServerDefinition> WorkerServers { get; } = [];
 
@@ -174,109 +174,9 @@ public sealed class FakeAccountsManagerClient : IAccountsManagerClient
         UpsertAccountTypeCalls.Clear();
         WorkerServers.Clear();
         AccountTypes.Clear();
-        AccountTypes.AddRange(CreateDefaultAccountTypes());
         CreateCalls.Clear();
         UpdateCalls.Clear();
         DeleteCalls.Clear();
-    }
-
-    private static List<AccountsManagerAccountTypeDefinition> CreateDefaultAccountTypes()
-    {
-        return
-        [
-            new(
-                "test-worker.funpay",
-                "funpay",
-                "Тестовый worker: FunPay",
-                "Тестовый профиль для аккаунта FunPay.",
-                "test-worker",
-                true,
-                10,
-                [
-                    new("displayName", "Название аккаунта", "text", true, false, "Например, FunPay Test Account", "FunPay Test Account"),
-                    new("proxyHost", "Proxy host", "text", true, false, "45.88.208.237", null),
-                    new("proxyPort", "Proxy port", "number", true, false, "1508", "1508"),
-                    new("proxyLogin", "Proxy login", "text", true, false, "user305829", null),
-                    new("proxyPassword", "Proxy password", "password", true, true, "Введите пароль", null),
-                ],
-                new AccountsManagerAccountTypeRuntime(
-                    true,
-                    "ddcrm/worker-api:local",
-                    "/internal/v2/worker",
-                    "/health",
-                    8080,
-                    new Dictionary<string, string>(),
-                    ["DDCRM.Worker.Api.dll"])),
-            new(
-                "test-worker.playerok",
-                "playerok",
-                "Тестовый worker: Playerok",
-                "Тестовый профиль для аккаунта Playerok.",
-                "test-worker",
-                true,
-                20,
-                [
-                    new("displayName", "Название аккаунта", "text", true, false, "Например, Playerok Test Account", "Playerok Test Account"),
-                    new("proxyHost", "Proxy host", "text", true, false, "45.88.208.237", null),
-                    new("proxyPort", "Proxy port", "number", true, false, "1508", "1508"),
-                    new("proxyLogin", "Proxy login", "text", true, false, "user305829", null),
-                    new("proxyPassword", "Proxy password", "password", true, true, "Введите пароль", null),
-                ],
-                new AccountsManagerAccountTypeRuntime(
-                    true,
-                    "ddcrm/worker-api:local",
-                    "/internal/v2/worker",
-                    "/health",
-                    8080,
-                    new Dictionary<string, string>(),
-                    ["DDCRM.Worker.Api.dll"])),
-            new(
-                "test-worker.ggsell",
-                "ggsell",
-                "Тестовый worker: GGSell",
-                "Тестовый профиль для аккаунта GGSell.",
-                "test-worker",
-                true,
-                30,
-                [
-                    new("displayName", "Название аккаунта", "text", true, false, "Например, GGSell Test Account", "GGSell Test Account"),
-                    new("proxyHost", "Proxy host", "text", true, false, "45.88.208.237", null),
-                    new("proxyPort", "Proxy port", "number", true, false, "1508", "1508"),
-                    new("proxyLogin", "Proxy login", "text", true, false, "user305829", null),
-                    new("proxyPassword", "Proxy password", "password", true, true, "Введите пароль", null),
-                ],
-                new AccountsManagerAccountTypeRuntime(
-                    true,
-                    "ddcrm/worker-api:local",
-                    "/internal/v2/worker",
-                    "/health",
-                    8080,
-                    new Dictionary<string, string>(),
-                    ["DDCRM.Worker.Api.dll"])),
-            new(
-                "test-worker.platimarket",
-                "platimarket",
-                "Тестовый worker: PlatiMarket",
-                "Тестовый профиль для аккаунта PlatiMarket.",
-                "test-worker",
-                true,
-                40,
-                [
-                    new("displayName", "Название аккаунта", "text", true, false, "Например, PlatiMarket Test Account", "PlatiMarket Test Account"),
-                    new("proxyHost", "Proxy host", "text", true, false, "45.88.208.237", null),
-                    new("proxyPort", "Proxy port", "number", true, false, "1508", "1508"),
-                    new("proxyLogin", "Proxy login", "text", true, false, "user305829", null),
-                    new("proxyPassword", "Proxy password", "password", true, true, "Введите пароль", null),
-                ],
-                new AccountsManagerAccountTypeRuntime(
-                    true,
-                    "ddcrm/worker-api:local",
-                    "/internal/v2/worker",
-                    "/health",
-                    8080,
-                    new Dictionary<string, string>(),
-                    ["DDCRM.Worker.Api.dll"])),
-        ];
     }
 }
 

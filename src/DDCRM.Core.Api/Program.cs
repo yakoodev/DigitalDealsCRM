@@ -1,4 +1,5 @@
 using System.IdentityModel.Tokens.Jwt;
+using System.Net.Mail;
 using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
@@ -117,20 +118,20 @@ builder.Services
     .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
     {
-        var issuer = builder.Configuration["EXTERNAL_API_JWT_ISSUER"] ?? "ddcrm-local";
-        var audience = builder.Configuration["EXTERNAL_API_JWT_AUDIENCE"] ?? "ddcrm-api";
-        var signingKey = builder.Configuration["EXTERNAL_API_JWT_SIGNING_KEY"]
-                         ?? "replace-this-signing-key-with-at-least-32-characters";
+        var jwtIssuer = builder.Configuration["EXTERNAL_API_JWT_ISSUER"] ?? "ddcrm-local";
+        var jwtAudience = builder.Configuration["EXTERNAL_API_JWT_AUDIENCE"] ?? "ddcrm-api";
+        var jwtSigningKey = builder.Configuration["EXTERNAL_API_JWT_SIGNING_KEY"]
+                            ?? "replace-this-signing-key-with-at-least-32-characters";
 
         options.RequireHttpsMetadata = false;
         options.TokenValidationParameters = new TokenValidationParameters
         {
             ValidateIssuer = true,
-            ValidIssuer = issuer,
+            ValidIssuer = jwtIssuer,
             ValidateAudience = true,
-            ValidAudience = audience,
+            ValidAudience = jwtAudience,
             ValidateIssuerSigningKey = true,
-            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(signingKey)),
+            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSigningKey)),
             ValidateLifetime = true,
             ClockSkew = TimeSpan.FromSeconds(30),
         };
@@ -251,17 +252,34 @@ builder.Services.AddCors(options =>
     });
 });
 
+var app = builder.Build();
+
+var jwtIssuer = app.Configuration["EXTERNAL_API_JWT_ISSUER"] ?? "ddcrm-local";
+var jwtAudience = app.Configuration["EXTERNAL_API_JWT_AUDIENCE"] ?? "ddcrm-api";
+var jwtSigningKey = app.Configuration["EXTERNAL_API_JWT_SIGNING_KEY"]
+                    ?? "replace-this-signing-key-with-at-least-32-characters";
+var jwtSigningCredentials = new SigningCredentials(
+    new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSigningKey)),
+    SecurityAlgorithms.HmacSha256);
+var authTokenLifetimeMinutes = Math.Clamp(
+    app.Configuration.GetValue("EXTERNAL_API_AUTH_TOKEN_LIFETIME_MINUTES", 60),
+    5,
+    1440);
 var systemPermissionClaimType =
-    builder.Configuration["EXTERNAL_API_SYSTEM_PERMISSION_CLAIM_TYPE"]
+    app.Configuration["EXTERNAL_API_SYSTEM_PERMISSION_CLAIM_TYPE"]
     ?? "ddcrm.system.permissions";
 var systemPermissionClaimValue =
-    builder.Configuration["EXTERNAL_API_SYSTEM_PERMISSION_CLAIM_VALUE"]
+    app.Configuration["EXTERNAL_API_SYSTEM_PERMISSION_CLAIM_VALUE"]
     ?? "system.accountManager.manage";
 var systemIntegrationsPermissionValue =
-    builder.Configuration["EXTERNAL_API_SYSTEM_INTEGRATIONS_PERMISSION_CLAIM_VALUE"]
+    app.Configuration["EXTERNAL_API_SYSTEM_INTEGRATIONS_PERMISSION_CLAIM_VALUE"]
     ?? "system.integrations.manage";
-
-var app = builder.Build();
+var superAdminEmail = app.Configuration["EXTERNAL_API_SUPER_ADMIN_EMAIL"];
+var superAdminPassword = app.Configuration["EXTERNAL_API_SUPER_ADMIN_PASSWORD"];
+var superAdminDisplayName = app.Configuration["EXTERNAL_API_SUPER_ADMIN_DISPLAY_NAME"] ?? "Super Admin";
+var authProviderTelegramEnabled = app.Configuration.GetValue("EXTERNAL_API_AUTH_PROVIDER_TELEGRAM_ENABLED", false);
+var authProviderGithubEnabled = app.Configuration.GetValue("EXTERNAL_API_AUTH_PROVIDER_GITHUB_ENABLED", false);
+var authProviderGoogleEnabled = app.Configuration.GetValue("EXTERNAL_API_AUTH_PROVIDER_GOOGLE_ENABLED", false);
 
 using (var scope = app.Services.CreateScope())
 {
@@ -274,12 +292,70 @@ using (var scope = app.Services.CreateScope())
     {
         db.Database.EnsureCreated();
     }
+
+    await EnsureSuperAdminAccountAsync(
+        db,
+        superAdminEmail,
+        superAdminPassword,
+        superAdminDisplayName,
+        [systemPermissionClaimValue, systemIntegrationsPermissionValue]);
 }
 
 app.UseDdcrmCommonPipeline();
 app.UseCors("external-cors");
 app.UseAuthentication();
 app.UseAuthorization();
+app.Use(async (httpContext, next) =>
+{
+    if (httpContext.User.Identity?.IsAuthenticated != true)
+    {
+        await next();
+        return;
+    }
+
+    var path = httpContext.Request.Path;
+    var isAuthPath = path.StartsWithSegments("/v1/auth/change-password", StringComparison.OrdinalIgnoreCase)
+                     || path.StartsWithSegments("/v1/auth/me", StringComparison.OrdinalIgnoreCase);
+    if (isAuthPath || HttpMethods.IsOptions(httpContext.Request.Method))
+    {
+        await next();
+        return;
+    }
+
+    var userIdValue = httpContext.User.FindFirstValue(JwtRegisteredClaimNames.Sub)
+                      ?? httpContext.User.FindFirstValue(ClaimTypes.NameIdentifier);
+    if (!Guid.TryParse(userIdValue, out var userId))
+    {
+        await next();
+        return;
+    }
+
+    var dbContext = httpContext.RequestServices.GetRequiredService<CoreDbContext>();
+    var requiresPasswordChange = await dbContext.AuthUsers
+        .Where(x => x.Id == userId)
+        .Select(x => x.ForcePasswordChange)
+        .SingleOrDefaultAsync(httpContext.RequestAborted);
+
+    if (!requiresPasswordChange)
+    {
+        await next();
+        return;
+    }
+
+    httpContext.Response.StatusCode = StatusCodes.Status403Forbidden;
+    httpContext.Response.ContentType = "application/json";
+
+    var requestId = httpContext.GetOrCreateRequestId();
+    var payload = new ErrorResponse(
+        ApiErrorCodes.Forbidden,
+        "Требуется смена пароля перед продолжением работы.",
+        requestId,
+        new Dictionary<string, object?>
+        {
+            ["passwordChangeRequired"] = true,
+        });
+    await httpContext.Response.WriteAsJsonAsync(payload);
+});
 
 app.MapGet("/health", (HttpContext httpContext) =>
     Results.Ok(new GenericObjectResponse(
@@ -290,6 +366,170 @@ app.MapGet("/health", (HttpContext httpContext) =>
         })));
 
 app.MapMethods("/v1/{*path}", ["OPTIONS"], () => Results.Ok());
+
+app.MapPost("/v1/auth/register", async (
+    HttpContext httpContext,
+    AuthRegisterRequest request,
+    CoreDbContext dbContext,
+    CancellationToken cancellationToken) =>
+{
+    var email = NormalizeEmail(request.Email);
+    ValidatePassword(request.Password, "password");
+
+    var exists = await dbContext.AuthUsers.AnyAsync(x => x.EmailNormalized == email, cancellationToken);
+    if (exists)
+    {
+        throw new ApiErrorException(
+            StatusCodes.Status409Conflict,
+            ApiErrorCodes.Conflict,
+            "Пользователь с таким email уже зарегистрирован.");
+    }
+
+    var now = DateTimeOffset.UtcNow;
+    var displayName = NormalizeDisplayName(request.DisplayName, email);
+    var user = new AuthUserEntity
+    {
+        Id = Guid.NewGuid(),
+        Email = email,
+        EmailNormalized = email,
+        DisplayName = displayName,
+        PasswordHash = HashPassword(request.Password),
+        SystemPermissionsCsv = null,
+        ForcePasswordChange = false,
+        CreatedAtUtc = now,
+        UpdatedAtUtc = now,
+    };
+
+    dbContext.AuthUsers.Add(user);
+    await dbContext.SaveChangesAsync(cancellationToken);
+
+    var session = BuildAuthSessionResponse(
+        httpContext,
+        user,
+        jwtIssuer,
+        jwtAudience,
+        jwtSigningCredentials,
+        authTokenLifetimeMinutes,
+        systemPermissionClaimType);
+
+    return Results.Created($"/v1/auth/users/{user.Id}", session);
+});
+
+app.MapPost("/v1/auth/login", async (
+    HttpContext httpContext,
+    AuthLoginRequest request,
+    CoreDbContext dbContext,
+    CancellationToken cancellationToken) =>
+{
+    var email = NormalizeEmail(request.Email);
+    var user = await dbContext.AuthUsers.SingleOrDefaultAsync(
+        x => x.EmailNormalized == email,
+        cancellationToken);
+
+    if (user is null || !VerifyPassword(request.Password, user.PasswordHash))
+    {
+        throw new ApiErrorException(
+            StatusCodes.Status401Unauthorized,
+            ApiErrorCodes.Unauthorized,
+            "Неверный email или пароль.");
+    }
+
+    user.LastLoginAtUtc = DateTimeOffset.UtcNow;
+    await dbContext.SaveChangesAsync(cancellationToken);
+
+    var session = BuildAuthSessionResponse(
+        httpContext,
+        user,
+        jwtIssuer,
+        jwtAudience,
+        jwtSigningCredentials,
+        authTokenLifetimeMinutes,
+        systemPermissionClaimType);
+
+    return Results.Ok(session);
+});
+
+app.MapGet("/v1/auth/providers", (HttpContext httpContext) =>
+{
+    var items = new List<AuthProviderDto>
+    {
+        new("local", "Email + Password", true, "active"),
+        new("telegram", "Telegram", authProviderTelegramEnabled, authProviderTelegramEnabled ? "planned" : "disabled"),
+        new("github", "GitHub", authProviderGithubEnabled, authProviderGithubEnabled ? "planned" : "disabled"),
+        new("google", "Google", authProviderGoogleEnabled, authProviderGoogleEnabled ? "planned" : "disabled"),
+    };
+
+    return Results.Ok(new AuthProviderListResponse(httpContext.GetOrCreateRequestId(), items));
+});
+
+app.MapPost("/v1/auth/change-password", async (
+    HttpContext httpContext,
+    AuthChangePasswordRequest request,
+    CoreDbContext dbContext,
+    CancellationToken cancellationToken) =>
+{
+    ValidatePassword(request.NewPassword, "newPassword");
+    if (string.Equals(request.CurrentPassword, request.NewPassword, StringComparison.Ordinal))
+    {
+        throw new ApiErrorException(
+            StatusCodes.Status400BadRequest,
+            ApiErrorCodes.ValidationError,
+            "Новый пароль должен отличаться от текущего.");
+    }
+
+    var userId = GetCurrentUserId(httpContext);
+    var user = await dbContext.AuthUsers.SingleOrDefaultAsync(x => x.Id == userId, cancellationToken);
+    if (user is null)
+    {
+        throw new ApiErrorException(
+            StatusCodes.Status401Unauthorized,
+            ApiErrorCodes.Unauthorized,
+            "Пользователь сессии не найден.");
+    }
+
+    if (!VerifyPassword(request.CurrentPassword, user.PasswordHash))
+    {
+        throw new ApiErrorException(
+            StatusCodes.Status400BadRequest,
+            ApiErrorCodes.ValidationError,
+            "Текущий пароль введен неверно.");
+    }
+
+    user.PasswordHash = HashPassword(request.NewPassword);
+    user.ForcePasswordChange = false;
+    user.UpdatedAtUtc = DateTimeOffset.UtcNow;
+
+    await dbContext.SaveChangesAsync(cancellationToken);
+
+    return Results.Ok(new AckResponse(httpContext.GetOrCreateRequestId(), "password_changed"));
+}).RequireAuthorization();
+
+app.MapGet("/v1/auth/me", async (
+    HttpContext httpContext,
+    CoreDbContext dbContext,
+    CancellationToken cancellationToken) =>
+{
+    var userId = GetCurrentUserId(httpContext);
+    var user = await dbContext.AuthUsers.SingleOrDefaultAsync(x => x.Id == userId, cancellationToken);
+    if (user is null)
+    {
+        throw new ApiErrorException(
+            StatusCodes.Status401Unauthorized,
+            ApiErrorCodes.Unauthorized,
+            "Пользователь сессии не найден.");
+    }
+
+    var session = BuildAuthSessionResponse(
+        httpContext,
+        user,
+        jwtIssuer,
+        jwtAudience,
+        jwtSigningCredentials,
+        authTokenLifetimeMinutes,
+        systemPermissionClaimType);
+
+    return Results.Ok(session);
+}).RequireAuthorization();
 
 var external = app.MapGroup("/v1").RequireAuthorization();
 
@@ -2660,7 +2900,266 @@ static string NormalizeBindingType(string? bindingType)
         : throw new ApiErrorException(StatusCodes.Status400BadRequest, ApiErrorCodes.ValidationError, "bindingType должен быть group или user.");
 }
 
+static async Task EnsureSuperAdminAccountAsync(
+    CoreDbContext dbContext,
+    string? email,
+    string? password,
+    string displayName,
+    IReadOnlyCollection<string> systemPermissions)
+{
+    if (string.IsNullOrWhiteSpace(email) && string.IsNullOrWhiteSpace(password))
+    {
+        return;
+    }
+
+    if (string.IsNullOrWhiteSpace(email) || string.IsNullOrWhiteSpace(password))
+    {
+        throw new InvalidOperationException(
+            "Для bootstrap супер-админа задайте обе переменные EXTERNAL_API_SUPER_ADMIN_EMAIL и EXTERNAL_API_SUPER_ADMIN_PASSWORD.");
+    }
+
+    var normalizedEmail = NormalizeEmail(email);
+    ValidatePassword(password, "EXTERNAL_API_SUPER_ADMIN_PASSWORD");
+
+    var user = await dbContext.AuthUsers.SingleOrDefaultAsync(x => x.EmailNormalized == normalizedEmail);
+    if (user is not null)
+    {
+        return;
+    }
+
+    var now = DateTimeOffset.UtcNow;
+    var superAdmin = new AuthUserEntity
+    {
+        Id = Guid.NewGuid(),
+        Email = normalizedEmail,
+        EmailNormalized = normalizedEmail,
+        DisplayName = NormalizeDisplayName(displayName, normalizedEmail),
+        PasswordHash = HashPassword(password),
+        SystemPermissionsCsv = ComposeSystemPermissionsCsv(systemPermissions),
+        ForcePasswordChange = true,
+        CreatedAtUtc = now,
+        UpdatedAtUtc = now,
+    };
+
+    dbContext.AuthUsers.Add(superAdmin);
+    await dbContext.SaveChangesAsync();
+}
+
+static AuthSessionResponse BuildAuthSessionResponse(
+    HttpContext httpContext,
+    AuthUserEntity user,
+    string issuer,
+    string audience,
+    SigningCredentials signingCredentials,
+    int tokenLifetimeMinutes,
+    string systemPermissionClaimType)
+{
+    var now = DateTimeOffset.UtcNow;
+    var expiresAtUtc = now.AddMinutes(tokenLifetimeMinutes);
+    var permissions = ParseSystemPermissionsCsv(user.SystemPermissionsCsv);
+    var claims = new List<Claim>
+    {
+        new(JwtRegisteredClaimNames.Sub, user.Id.ToString()),
+        new(JwtRegisteredClaimNames.Email, user.Email),
+        new(ClaimTypes.Email, user.Email),
+        new(ClaimTypes.Name, user.DisplayName),
+    };
+
+    if (permissions.Count > 0)
+    {
+        claims.Add(new Claim(systemPermissionClaimType, string.Join(' ', permissions)));
+    }
+
+    var token = new JwtSecurityToken(
+        issuer: issuer,
+        audience: audience,
+        claims: claims,
+        notBefore: now.UtcDateTime.AddSeconds(-5),
+        expires: expiresAtUtc.UtcDateTime,
+        signingCredentials: signingCredentials);
+
+    var jwt = new JwtSecurityTokenHandler().WriteToken(token);
+
+    return new AuthSessionResponse(
+        httpContext.GetOrCreateRequestId(),
+        jwt,
+        expiresAtUtc,
+        new AuthSessionUserDto(
+            user.Id,
+            user.Email,
+            user.DisplayName,
+            permissions,
+            user.ForcePasswordChange,
+            "local"));
+}
+
+static string NormalizeEmail(string email)
+{
+    if (string.IsNullOrWhiteSpace(email))
+    {
+        throw new ApiErrorException(
+            StatusCodes.Status400BadRequest,
+            ApiErrorCodes.ValidationError,
+            "email обязателен.");
+    }
+
+    var normalized = email.Trim().ToLowerInvariant();
+    try
+    {
+        _ = new MailAddress(normalized);
+    }
+    catch
+    {
+        throw new ApiErrorException(
+            StatusCodes.Status400BadRequest,
+            ApiErrorCodes.ValidationError,
+            "email имеет некорректный формат.");
+    }
+
+    return normalized;
+}
+
+static string NormalizeDisplayName(string? displayName, string fallbackEmail)
+{
+    var value = string.IsNullOrWhiteSpace(displayName)
+        ? fallbackEmail.Split('@')[0]
+        : displayName.Trim();
+
+    if (value.Length > 160)
+    {
+        throw new ApiErrorException(
+            StatusCodes.Status400BadRequest,
+            ApiErrorCodes.ValidationError,
+            "displayName не должен быть длиннее 160 символов.");
+    }
+
+    return value;
+}
+
+static void ValidatePassword(string password, string fieldName)
+{
+    if (string.IsNullOrWhiteSpace(password) || password.Length < 8)
+    {
+        throw new ApiErrorException(
+            StatusCodes.Status400BadRequest,
+            ApiErrorCodes.ValidationError,
+            $"Поле {fieldName} должно содержать минимум 8 символов.");
+    }
+}
+
+static string HashPassword(string password)
+{
+    const int iterations = 100_000;
+    const int saltSize = 16;
+    const int keySize = 32;
+
+    var salt = RandomNumberGenerator.GetBytes(saltSize);
+    var hash = Rfc2898DeriveBytes.Pbkdf2(
+        password,
+        salt,
+        iterations,
+        HashAlgorithmName.SHA256,
+        keySize);
+
+    return $"pbkdf2-sha256${iterations}${Convert.ToBase64String(salt)}${Convert.ToBase64String(hash)}";
+}
+
+static bool VerifyPassword(string password, string encodedHash)
+{
+    if (string.IsNullOrWhiteSpace(password) || string.IsNullOrWhiteSpace(encodedHash))
+    {
+        return false;
+    }
+
+    var parts = encodedHash.Split('$');
+    if (parts.Length != 4 || !string.Equals(parts[0], "pbkdf2-sha256", StringComparison.Ordinal))
+    {
+        return false;
+    }
+
+    if (!int.TryParse(parts[1], out var iterations) || iterations < 10_000)
+    {
+        return false;
+    }
+
+    byte[] salt;
+    byte[] expectedHash;
+    try
+    {
+        salt = Convert.FromBase64String(parts[2]);
+        expectedHash = Convert.FromBase64String(parts[3]);
+    }
+    catch
+    {
+        return false;
+    }
+
+    var actualHash = Rfc2898DeriveBytes.Pbkdf2(
+        password,
+        salt,
+        iterations,
+        HashAlgorithmName.SHA256,
+        expectedHash.Length);
+
+    return CryptographicOperations.FixedTimeEquals(actualHash, expectedHash);
+}
+
+static IReadOnlyCollection<string> ParseSystemPermissionsCsv(string? rawValue)
+{
+    if (string.IsNullOrWhiteSpace(rawValue))
+    {
+        return [];
+    }
+
+    return rawValue
+        .Split([',', ';', ' '], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+        .Select(value => value.Trim())
+        .Where(value => !string.IsNullOrWhiteSpace(value))
+        .Distinct(StringComparer.OrdinalIgnoreCase)
+        .ToArray();
+}
+
+static string ComposeSystemPermissionsCsv(IEnumerable<string> permissions)
+{
+    return string.Join(
+        ',',
+        permissions
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Select(value => value.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase));
+}
+
 public sealed record AckResponse(string RequestId, string Status);
+
+public sealed record AuthRegisterRequest(string Email, string Password, string? DisplayName);
+
+public sealed record AuthLoginRequest(string Email, string Password);
+
+public sealed record AuthChangePasswordRequest(string CurrentPassword, string NewPassword);
+
+public sealed record AuthSessionUserDto(
+    Guid UserId,
+    string Email,
+    string DisplayName,
+    IReadOnlyCollection<string> SystemPermissions,
+    bool RequiresPasswordChange,
+    string AuthProvider);
+
+public sealed record AuthSessionResponse(
+    string RequestId,
+    string Token,
+    DateTimeOffset ExpiresAtUtc,
+    AuthSessionUserDto User);
+
+public sealed record AuthProviderDto(
+    string Provider,
+    string DisplayName,
+    bool Enabled,
+    string Status);
+
+public sealed record AuthProviderListResponse(
+    string RequestId,
+    IReadOnlyCollection<AuthProviderDto> Items);
 
 public sealed record ProjectCreateRequest(string Name);
 

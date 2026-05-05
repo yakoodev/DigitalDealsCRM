@@ -261,6 +261,159 @@ export type AdminWorkerServerListResponse = RequestMeta & {
   items: AdminWorkerServer[];
 };
 
+export interface AdminIntegrationGrantUpsertRequest {
+  scopes?: string[];
+}
+
+export type AdminIntegrationGrantStatus = typeof AdminIntegrationGrantStatus[keyof typeof AdminIntegrationGrantStatus];
+
+
+export const AdminIntegrationGrantStatus = {
+  active: 'active',
+  revoked: 'revoked',
+} as const;
+
+/**
+ * @nullable
+ */
+export type AdminIntegrationGrantCredentialStatus = typeof AdminIntegrationGrantCredentialStatus[keyof typeof AdminIntegrationGrantCredentialStatus] | null;
+
+
+export const AdminIntegrationGrantCredentialStatus = {
+  pending_sync: 'pending_sync',
+  active: 'active',
+  revoking: 'revoking',
+  revoked: 'revoked',
+} as const;
+
+export interface AdminIntegrationGrant {
+  integrationKey: string;
+  status: AdminIntegrationGrantStatus;
+  scopes: string[];
+  grantedAtUtc: string;
+  /** @nullable */
+  revokedAtUtc?: string | null;
+  /** @nullable */
+  credentialStatus?: AdminIntegrationGrantCredentialStatus;
+  /** @nullable */
+  credentialMasked?: string | null;
+}
+
+export type AdminIntegrationGrantResponse = RequestMeta & {
+  grant: AdminIntegrationGrant;
+};
+
+export type AdminIntegrationGrantListResponse = RequestMeta & {
+  items: AdminIntegrationGrant[];
+};
+
+export type AdminTelegramProxyProfileUpsertRequestProxyType = typeof AdminTelegramProxyProfileUpsertRequestProxyType[keyof typeof AdminTelegramProxyProfileUpsertRequestProxyType];
+
+
+export const AdminTelegramProxyProfileUpsertRequestProxyType = {
+  http: 'http',
+  https: 'https',
+  socks5: 'socks5',
+} as const;
+
+export interface AdminTelegramProxyProfileUpsertRequest {
+  name: string;
+  proxyType?: AdminTelegramProxyProfileUpsertRequestProxyType;
+  host: string;
+  /**
+     * @minimum 1
+     * @maximum 65535
+     */
+  port: number;
+  setActive: boolean;
+  clearCredentials: boolean;
+  login?: string;
+  password?: string;
+}
+
+export interface AdminTelegramProxyProfile {
+  id: string;
+  name: string;
+  proxyType: string;
+  host: string;
+  port: number;
+  isActive: boolean;
+  hasCredentials: boolean;
+  updatedAtUtc: string;
+}
+
+export type AdminTelegramProxyProfileResponse = RequestMeta & {
+  profile: AdminTelegramProxyProfile;
+};
+
+export type AdminTelegramProxyProfileListResponse = RequestMeta & {
+  items: AdminTelegramProxyProfile[];
+};
+
+export interface ProjectIntegrationStatus {
+  integrationKey: string;
+  status: string;
+  scopes: string[];
+  /** @nullable */
+  credentialStatus?: string | null;
+  /** @nullable */
+  credentialMasked?: string | null;
+}
+
+export interface TelegramBindingsSummary {
+  /** @minimum 0 */
+  groupChats: number;
+  /** @minimum 0 */
+  userDmChats: number;
+}
+
+export type ProjectIntegrationStatusResponse = RequestMeta & {
+  items: ProjectIntegrationStatus[];
+  telegram: TelegramBindingsSummary;
+};
+
+export type TelegramLinkCodeCreateRequestBindingType = typeof TelegramLinkCodeCreateRequestBindingType[keyof typeof TelegramLinkCodeCreateRequestBindingType];
+
+
+export const TelegramLinkCodeCreateRequestBindingType = {
+  group: 'group',
+  user: 'user',
+} as const;
+
+export interface TelegramLinkCodeCreateRequest {
+  bindingType?: TelegramLinkCodeCreateRequestBindingType;
+}
+
+export type TelegramLinkCodeResponseBindingType = typeof TelegramLinkCodeResponseBindingType[keyof typeof TelegramLinkCodeResponseBindingType];
+
+
+export const TelegramLinkCodeResponseBindingType = {
+  group: 'group',
+  user: 'user',
+} as const;
+
+export type TelegramLinkCodeResponse = RequestMeta & {
+  code: string;
+  bindingType: TelegramLinkCodeResponseBindingType;
+  expiresAtUtc: string;
+};
+
+export interface TelegramUserBindRequest {
+  chatId: string;
+  chatTitle?: string;
+}
+
+export interface TelegramLinkConfirmRequest {
+  code: string;
+  chatId: string;
+  chatTitle?: string;
+}
+
+export interface CriticalNotificationRequest {
+  eventType: string;
+  message: string;
+}
+
 export interface Account {
   id: string;
   projectId: string;
@@ -1045,6 +1198,544 @@ export const adminUpsertAccountType = async (accountTypeId: string,
 
   const data: adminUpsertAccountTypeResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as adminUpsertAccountTypeResponse
+}
+
+
+
+export type adminListProjectIntegrationGrantsResponse200 = {
+  data: AdminIntegrationGrantListResponse
+  status: 200
+}
+
+export type adminListProjectIntegrationGrantsResponseDefault = {
+  data: ErrorResponse
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type adminListProjectIntegrationGrantsResponseSuccess = (adminListProjectIntegrationGrantsResponse200) & {
+  headers: Headers;
+};
+export type adminListProjectIntegrationGrantsResponseError = (adminListProjectIntegrationGrantsResponseDefault) & {
+  headers: Headers;
+};
+
+export type adminListProjectIntegrationGrantsResponse = (adminListProjectIntegrationGrantsResponseSuccess | adminListProjectIntegrationGrantsResponseError)
+
+export const getAdminListProjectIntegrationGrantsUrl = (projectId: string,) => {
+
+
+
+
+  return `/v1/admin/integrations/projects/${projectId}/grants`
+}
+
+export const adminListProjectIntegrationGrants = async (projectId: string, options?: RequestInit, fetchFn?: typeof globalThis.fetch): Promise<adminListProjectIntegrationGrantsResponse> => {
+
+  const res = await (fetchFn ?? fetch)(getAdminListProjectIntegrationGrantsUrl(projectId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: adminListProjectIntegrationGrantsResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as adminListProjectIntegrationGrantsResponse
+}
+
+
+
+export type adminUpsertProjectIntegrationGrantResponse200 = {
+  data: AdminIntegrationGrantResponse
+  status: 200
+}
+
+export type adminUpsertProjectIntegrationGrantResponseDefault = {
+  data: ErrorResponse
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type adminUpsertProjectIntegrationGrantResponseSuccess = (adminUpsertProjectIntegrationGrantResponse200) & {
+  headers: Headers;
+};
+export type adminUpsertProjectIntegrationGrantResponseError = (adminUpsertProjectIntegrationGrantResponseDefault) & {
+  headers: Headers;
+};
+
+export type adminUpsertProjectIntegrationGrantResponse = (adminUpsertProjectIntegrationGrantResponseSuccess | adminUpsertProjectIntegrationGrantResponseError)
+
+export const getAdminUpsertProjectIntegrationGrantUrl = (projectId: string,
+    integrationKey: string,) => {
+
+
+
+
+  return `/v1/admin/integrations/projects/${projectId}/grants/${integrationKey}`
+}
+
+export const adminUpsertProjectIntegrationGrant = async (projectId: string,
+    integrationKey: string,
+    adminIntegrationGrantUpsertRequest: AdminIntegrationGrantUpsertRequest, options?: RequestInit, fetchFn?: typeof globalThis.fetch): Promise<adminUpsertProjectIntegrationGrantResponse> => {
+
+  const res = await (fetchFn ?? fetch)(getAdminUpsertProjectIntegrationGrantUrl(projectId,integrationKey),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      adminIntegrationGrantUpsertRequest,)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: adminUpsertProjectIntegrationGrantResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as adminUpsertProjectIntegrationGrantResponse
+}
+
+
+
+export type adminRevokeProjectIntegrationGrantResponse200 = {
+  data: AckResponse
+  status: 200
+}
+
+export type adminRevokeProjectIntegrationGrantResponseDefault = {
+  data: ErrorResponse
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type adminRevokeProjectIntegrationGrantResponseSuccess = (adminRevokeProjectIntegrationGrantResponse200) & {
+  headers: Headers;
+};
+export type adminRevokeProjectIntegrationGrantResponseError = (adminRevokeProjectIntegrationGrantResponseDefault) & {
+  headers: Headers;
+};
+
+export type adminRevokeProjectIntegrationGrantResponse = (adminRevokeProjectIntegrationGrantResponseSuccess | adminRevokeProjectIntegrationGrantResponseError)
+
+export const getAdminRevokeProjectIntegrationGrantUrl = (projectId: string,
+    integrationKey: string,) => {
+
+
+
+
+  return `/v1/admin/integrations/projects/${projectId}/grants/${integrationKey}`
+}
+
+export const adminRevokeProjectIntegrationGrant = async (projectId: string,
+    integrationKey: string, options?: RequestInit, fetchFn?: typeof globalThis.fetch): Promise<adminRevokeProjectIntegrationGrantResponse> => {
+
+  const res = await (fetchFn ?? fetch)(getAdminRevokeProjectIntegrationGrantUrl(projectId,integrationKey),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: adminRevokeProjectIntegrationGrantResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as adminRevokeProjectIntegrationGrantResponse
+}
+
+
+
+export type adminListTelegramProxyProfilesResponse200 = {
+  data: AdminTelegramProxyProfileListResponse
+  status: 200
+}
+
+export type adminListTelegramProxyProfilesResponseDefault = {
+  data: ErrorResponse
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type adminListTelegramProxyProfilesResponseSuccess = (adminListTelegramProxyProfilesResponse200) & {
+  headers: Headers;
+};
+export type adminListTelegramProxyProfilesResponseError = (adminListTelegramProxyProfilesResponseDefault) & {
+  headers: Headers;
+};
+
+export type adminListTelegramProxyProfilesResponse = (adminListTelegramProxyProfilesResponseSuccess | adminListTelegramProxyProfilesResponseError)
+
+export const getAdminListTelegramProxyProfilesUrl = () => {
+
+
+
+
+  return `/v1/admin/integrations/telegram/proxies`
+}
+
+export const adminListTelegramProxyProfiles = async ( options?: RequestInit, fetchFn?: typeof globalThis.fetch): Promise<adminListTelegramProxyProfilesResponse> => {
+
+  const res = await (fetchFn ?? fetch)(getAdminListTelegramProxyProfilesUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: adminListTelegramProxyProfilesResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as adminListTelegramProxyProfilesResponse
+}
+
+
+
+export type adminUpsertTelegramProxyProfileResponse200 = {
+  data: AdminTelegramProxyProfileResponse
+  status: 200
+}
+
+export type adminUpsertTelegramProxyProfileResponseDefault = {
+  data: ErrorResponse
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type adminUpsertTelegramProxyProfileResponseSuccess = (adminUpsertTelegramProxyProfileResponse200) & {
+  headers: Headers;
+};
+export type adminUpsertTelegramProxyProfileResponseError = (adminUpsertTelegramProxyProfileResponseDefault) & {
+  headers: Headers;
+};
+
+export type adminUpsertTelegramProxyProfileResponse = (adminUpsertTelegramProxyProfileResponseSuccess | adminUpsertTelegramProxyProfileResponseError)
+
+export const getAdminUpsertTelegramProxyProfileUrl = (proxyId: string,) => {
+
+
+
+
+  return `/v1/admin/integrations/telegram/proxies/${proxyId}`
+}
+
+export const adminUpsertTelegramProxyProfile = async (proxyId: string,
+    adminTelegramProxyProfileUpsertRequest: AdminTelegramProxyProfileUpsertRequest, options?: RequestInit, fetchFn?: typeof globalThis.fetch): Promise<adminUpsertTelegramProxyProfileResponse> => {
+
+  const res = await (fetchFn ?? fetch)(getAdminUpsertTelegramProxyProfileUrl(proxyId),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      adminTelegramProxyProfileUpsertRequest,)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: adminUpsertTelegramProxyProfileResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as adminUpsertTelegramProxyProfileResponse
+}
+
+
+
+export type getProjectIntegrationsStatusResponse200 = {
+  data: ProjectIntegrationStatusResponse
+  status: 200
+}
+
+export type getProjectIntegrationsStatusResponseDefault = {
+  data: ErrorResponse
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type getProjectIntegrationsStatusResponseSuccess = (getProjectIntegrationsStatusResponse200) & {
+  headers: Headers;
+};
+export type getProjectIntegrationsStatusResponseError = (getProjectIntegrationsStatusResponseDefault) & {
+  headers: Headers;
+};
+
+export type getProjectIntegrationsStatusResponse = (getProjectIntegrationsStatusResponseSuccess | getProjectIntegrationsStatusResponseError)
+
+export const getGetProjectIntegrationsStatusUrl = (projectId: string,) => {
+
+
+
+
+  return `/v1/projects/${projectId}/integrations/status`
+}
+
+export const getProjectIntegrationsStatus = async (projectId: string, options?: RequestInit, fetchFn?: typeof globalThis.fetch): Promise<getProjectIntegrationsStatusResponse> => {
+
+  const res = await (fetchFn ?? fetch)(getGetProjectIntegrationsStatusUrl(projectId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getProjectIntegrationsStatusResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getProjectIntegrationsStatusResponse
+}
+
+
+
+export type invokeProjectServiceIntegrationResponse200 = {
+  data: ProxyResponse
+  status: 200
+}
+
+export type invokeProjectServiceIntegrationResponseDefault = {
+  data: ErrorResponse
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type invokeProjectServiceIntegrationResponseSuccess = (invokeProjectServiceIntegrationResponse200) & {
+  headers: Headers;
+};
+export type invokeProjectServiceIntegrationResponseError = (invokeProjectServiceIntegrationResponseDefault) & {
+  headers: Headers;
+};
+
+export type invokeProjectServiceIntegrationResponse = (invokeProjectServiceIntegrationResponseSuccess | invokeProjectServiceIntegrationResponseError)
+
+export const getInvokeProjectServiceIntegrationUrl = (projectId: string,
+    integrationKey: string,
+    scope: 'read' | 'jobs',) => {
+
+
+
+
+  return `/v1/projects/${projectId}/integrations/${integrationKey}/actions/${scope}`
+}
+
+export const invokeProjectServiceIntegration = async (projectId: string,
+    integrationKey: string,
+    scope: 'read' | 'jobs',
+    genericObjectRequest?: GenericObjectRequest, options?: RequestInit, fetchFn?: typeof globalThis.fetch): Promise<invokeProjectServiceIntegrationResponse> => {
+
+  const res = await (fetchFn ?? fetch)(getInvokeProjectServiceIntegrationUrl(projectId,integrationKey,scope),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      genericObjectRequest,)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: invokeProjectServiceIntegrationResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as invokeProjectServiceIntegrationResponse
+}
+
+
+
+export type createTelegramLinkCodeResponse200 = {
+  data: TelegramLinkCodeResponse
+  status: 200
+}
+
+export type createTelegramLinkCodeResponseDefault = {
+  data: ErrorResponse
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type createTelegramLinkCodeResponseSuccess = (createTelegramLinkCodeResponse200) & {
+  headers: Headers;
+};
+export type createTelegramLinkCodeResponseError = (createTelegramLinkCodeResponseDefault) & {
+  headers: Headers;
+};
+
+export type createTelegramLinkCodeResponse = (createTelegramLinkCodeResponseSuccess | createTelegramLinkCodeResponseError)
+
+export const getCreateTelegramLinkCodeUrl = (projectId: string,) => {
+
+
+
+
+  return `/v1/projects/${projectId}/integrations/telegram/link-codes`
+}
+
+export const createTelegramLinkCode = async (projectId: string,
+    telegramLinkCodeCreateRequest: TelegramLinkCodeCreateRequest, options?: RequestInit, fetchFn?: typeof globalThis.fetch): Promise<createTelegramLinkCodeResponse> => {
+
+  const res = await (fetchFn ?? fetch)(getCreateTelegramLinkCodeUrl(projectId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      telegramLinkCodeCreateRequest,)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: createTelegramLinkCodeResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as createTelegramLinkCodeResponse
+}
+
+
+
+export type bindTelegramUserChatResponse200 = {
+  data: AckResponse
+  status: 200
+}
+
+export type bindTelegramUserChatResponseDefault = {
+  data: ErrorResponse
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type bindTelegramUserChatResponseSuccess = (bindTelegramUserChatResponse200) & {
+  headers: Headers;
+};
+export type bindTelegramUserChatResponseError = (bindTelegramUserChatResponseDefault) & {
+  headers: Headers;
+};
+
+export type bindTelegramUserChatResponse = (bindTelegramUserChatResponseSuccess | bindTelegramUserChatResponseError)
+
+export const getBindTelegramUserChatUrl = (projectId: string,) => {
+
+
+
+
+  return `/v1/projects/${projectId}/integrations/telegram/user-bind`
+}
+
+export const bindTelegramUserChat = async (projectId: string,
+    telegramUserBindRequest: TelegramUserBindRequest, options?: RequestInit, fetchFn?: typeof globalThis.fetch): Promise<bindTelegramUserChatResponse> => {
+
+  const res = await (fetchFn ?? fetch)(getBindTelegramUserChatUrl(projectId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      telegramUserBindRequest,)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: bindTelegramUserChatResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as bindTelegramUserChatResponse
+}
+
+
+
+export type confirmTelegramGroupLinkResponse200 = {
+  data: AckResponse
+  status: 200
+}
+
+export type confirmTelegramGroupLinkResponseDefault = {
+  data: ErrorResponse
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type confirmTelegramGroupLinkResponseSuccess = (confirmTelegramGroupLinkResponse200) & {
+  headers: Headers;
+};
+export type confirmTelegramGroupLinkResponseError = (confirmTelegramGroupLinkResponseDefault) & {
+  headers: Headers;
+};
+
+export type confirmTelegramGroupLinkResponse = (confirmTelegramGroupLinkResponseSuccess | confirmTelegramGroupLinkResponseError)
+
+export const getConfirmTelegramGroupLinkUrl = () => {
+
+
+
+
+  return `/v1/integrations/telegram/link/confirm`
+}
+
+export const confirmTelegramGroupLink = async (telegramLinkConfirmRequest: TelegramLinkConfirmRequest, options?: RequestInit, fetchFn?: typeof globalThis.fetch): Promise<confirmTelegramGroupLinkResponse> => {
+
+  const res = await (fetchFn ?? fetch)(getConfirmTelegramGroupLinkUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      telegramLinkConfirmRequest,)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: confirmTelegramGroupLinkResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as confirmTelegramGroupLinkResponse
+}
+
+
+
+export type enqueueCriticalNotificationResponse202 = {
+  data: AckResponse
+  status: 202
+}
+
+export type enqueueCriticalNotificationResponseDefault = {
+  data: ErrorResponse
+  status: Exclude<HTTPStatusCodes, 202>
+}
+
+export type enqueueCriticalNotificationResponseSuccess = (enqueueCriticalNotificationResponse202) & {
+  headers: Headers;
+};
+export type enqueueCriticalNotificationResponseError = (enqueueCriticalNotificationResponseDefault) & {
+  headers: Headers;
+};
+
+export type enqueueCriticalNotificationResponse = (enqueueCriticalNotificationResponseSuccess | enqueueCriticalNotificationResponseError)
+
+export const getEnqueueCriticalNotificationUrl = (projectId: string,) => {
+
+
+
+
+  return `/v1/projects/${projectId}/integrations/notifications/critical`
+}
+
+export const enqueueCriticalNotification = async (projectId: string,
+    criticalNotificationRequest: CriticalNotificationRequest, options?: RequestInit, fetchFn?: typeof globalThis.fetch): Promise<enqueueCriticalNotificationResponse> => {
+
+  const res = await (fetchFn ?? fetch)(getEnqueueCriticalNotificationUrl(projectId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      criticalNotificationRequest,)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: enqueueCriticalNotificationResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as enqueueCriticalNotificationResponse
 }
 
 

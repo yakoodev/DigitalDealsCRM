@@ -8,9 +8,6 @@ const DEFAULT_JWT_ISSUER =
   process.env.NEXT_PUBLIC_EXTERNAL_API_JWT_ISSUER ?? "ddcrm-local";
 const DEFAULT_JWT_AUDIENCE =
   process.env.NEXT_PUBLIC_EXTERNAL_API_JWT_AUDIENCE ?? "ddcrm-api";
-const DEFAULT_JWT_SIGNING_KEY =
-  process.env.NEXT_PUBLIC_EXTERNAL_API_JWT_SIGNING_KEY ??
-  "replace-with-long-random-signing-key";
 const DEFAULT_SYSTEM_PERMISSION_CLAIM_TYPE =
   process.env.NEXT_PUBLIC_EXTERNAL_API_SYSTEM_PERMISSION_CLAIM_TYPE ??
   "ddcrm.system.permissions";
@@ -21,8 +18,6 @@ const DEFAULT_SYSTEM_INTEGRATIONS_PERMISSION_CLAIM_VALUE =
   process.env.NEXT_PUBLIC_EXTERNAL_API_SYSTEM_INTEGRATIONS_PERMISSION_CLAIM_VALUE ??
   "system.integrations.manage";
 const JWT_TIME_SKEW_SECONDS = 120;
-const DEMO_TOKEN_VALID_FROM_UNIX = 1704067200; // 2024-01-01T00:00:00Z
-const DEMO_TOKEN_VALID_TO_UNIX = 2524608000; // 2050-01-01T00:00:00Z
 
 export interface PlatformUserProfile {
   userId: string;
@@ -31,7 +26,8 @@ export interface PlatformUserProfile {
   role: ProjectRole;
   systemPermissions?: string[];
   isSystemAdmin?: boolean;
-  authMode: "demo" | "manual";
+  authMode: "password" | "integration" | "manual";
+  authProvider?: string;
   loggedInAt: string;
 }
 
@@ -39,42 +35,40 @@ export interface PlatformSession extends ApiSession {
   profile: PlatformUserProfile;
 }
 
-interface DemoUserCredential {
+interface AuthSessionUser {
   userId: string;
   email: string;
-  password: string;
   displayName: string;
-  role: ProjectRole;
-  systemPermissions?: readonly string[];
+  systemPermissions?: string[];
+  requiresPasswordChange?: boolean;
+  authProvider?: string;
 }
 
-export const demoUsers: readonly DemoUserCredential[] = [
-  {
-    userId: "11111111-1111-1111-1111-111111111111",
-    email: "owner@ddcrm.local",
-    password: "Owner123!",
-    displayName: "Owner Demo",
-    role: "owner",
-  },
-  {
-    userId: "22222222-2222-2222-2222-222222222222",
-    email: "admin@ddcrm.local",
-    password: "Admin123!",
-    displayName: "Admin Demo",
-    role: "admin",
-    systemPermissions: [
-      DEFAULT_SYSTEM_PERMISSION_CLAIM_VALUE,
-      DEFAULT_SYSTEM_INTEGRATIONS_PERMISSION_CLAIM_VALUE,
-    ],
-  },
-  {
-    userId: "33333333-3333-3333-3333-333333333333",
-    email: "moderator@ddcrm.local",
-    password: "Moderator123!",
-    displayName: "Moderator Demo",
-    role: "moderator",
-  },
-] as const;
+interface AuthSessionPayload {
+  requestId: string;
+  token: string;
+  expiresAtUtc: string;
+  user: AuthSessionUser;
+}
+
+export interface AuthProviderInfo {
+  provider: string;
+  displayName: string;
+  enabled: boolean;
+  status: string;
+}
+
+interface AuthProviderListPayload {
+  requestId: string;
+  items: AuthProviderInfo[];
+}
+
+interface ErrorPayload {
+  errorCode?: string;
+  message?: string;
+  details?: Record<string, unknown>;
+  requestId?: string;
+}
 
 function normalizeBaseUrl(value: string) {
   const trimmed = value.trim();
@@ -83,40 +77,6 @@ function normalizeBaseUrl(value: string) {
   }
 
   return trimmed.replace(/\/+$/, "");
-}
-
-function toBase64Url(bytes: Uint8Array) {
-  let binary = "";
-  for (const byte of bytes) {
-    binary += String.fromCharCode(byte);
-  }
-
-  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
-}
-
-function encodeJsonBase64Url(payload: Record<string, unknown>) {
-  return toBase64Url(new TextEncoder().encode(JSON.stringify(payload)));
-}
-
-async function signHs256(unsignedPayload: string, signingKey: string) {
-  const key = await crypto.subtle.importKey(
-    "raw",
-    new TextEncoder().encode(signingKey),
-    {
-      name: "HMAC",
-      hash: "SHA-256",
-    },
-    false,
-    ["sign"],
-  );
-
-  const signature = await crypto.subtle.sign(
-    "HMAC",
-    key,
-    new TextEncoder().encode(unsignedPayload),
-  );
-
-  return toBase64Url(new Uint8Array(signature));
 }
 
 function splitPermissions(value: string) {
@@ -151,59 +111,9 @@ function hasSystemPermission(permissions: readonly string[]) {
     DEFAULT_SYSTEM_INTEGRATIONS_PERMISSION_CLAIM_VALUE.toLowerCase(),
   ]);
 
-  return permissions.some(
-    (permission) => required.has(permission.toLowerCase()),
+  return permissions.some((permission) =>
+    required.has(permission.toLowerCase()),
   );
-}
-
-async function createDemoToken(subject: string, systemPermissions: readonly string[]) {
-  const header = { alg: "HS256", typ: "JWT" };
-  const payload: Record<string, unknown> = {
-    sub: subject,
-    iss: DEFAULT_JWT_ISSUER,
-    aud: DEFAULT_JWT_AUDIENCE,
-    // Используем стабильное окно валидности, чтобы demo JWT не зависел от локальных часов браузера.
-    iat: DEMO_TOKEN_VALID_FROM_UNIX,
-    nbf: DEMO_TOKEN_VALID_FROM_UNIX,
-    exp: DEMO_TOKEN_VALID_TO_UNIX,
-  };
-  if (systemPermissions.length > 0) {
-    payload[DEFAULT_SYSTEM_PERMISSION_CLAIM_TYPE] = systemPermissions.join(" ");
-  }
-
-  const unsigned = `${encodeJsonBase64Url(header)}.${encodeJsonBase64Url(payload)}`;
-  const signature = await signHs256(unsigned, DEFAULT_JWT_SIGNING_KEY);
-  return `${unsigned}.${signature}`;
-}
-
-export async function authenticateDemo(params: {
-  email: string;
-  password: string;
-  baseUrl: string;
-}): Promise<PlatformSession> {
-  const email = params.email.trim().toLowerCase();
-  const user = demoUsers.find((candidate) => candidate.email === email);
-
-  if (!user || user.password !== params.password) {
-    throw new Error("Неверный email или пароль.");
-  }
-
-  const permissions = [...(user.systemPermissions ?? [])];
-  const token = await createDemoToken(user.userId, permissions);
-  return {
-    token,
-    baseUrl: normalizeBaseUrl(params.baseUrl),
-    profile: {
-      userId: user.userId,
-      email: user.email,
-      displayName: user.displayName,
-      role: user.role,
-      systemPermissions: permissions,
-      isSystemAdmin: hasSystemPermission(permissions),
-      authMode: "demo",
-      loggedInAt: new Date().toISOString(),
-    },
-  };
 }
 
 function parseJwtPayload(token: string) {
@@ -228,6 +138,16 @@ function isRole(value: string): value is ProjectRole {
   return projectRoles.includes(value as ProjectRole);
 }
 
+function resolveRoleFromJwtOrDefault(token: string): ProjectRole {
+  const payload = parseJwtPayload(token);
+  const roleCandidate = payload?.role;
+  if (typeof roleCandidate === "string" && isRole(roleCandidate)) {
+    return roleCandidate;
+  }
+
+  return "owner";
+}
+
 function isTokenTimeWindowValid(token: string): boolean {
   const payload = parseJwtPayload(token);
   if (!payload) {
@@ -248,44 +168,170 @@ function isTokenTimeWindowValid(token: string): boolean {
   return true;
 }
 
-export function authenticateManual(params: {
-  token: string;
-  baseUrl: string;
-  displayName: string;
-  email: string;
-  role: ProjectRole;
-  userId?: string;
-}): PlatformSession {
-  const token = params.token.trim();
+function parseErrorMessage(raw: string, status: number) {
+  if (!raw) {
+    return `HTTP_${status}: Неизвестная ошибка запроса авторизации.`;
+  }
+
+  try {
+    const payload = JSON.parse(raw) as ErrorPayload;
+    if (payload && typeof payload.message === "string" && payload.message.trim()) {
+      const code = payload.errorCode?.trim() || `HTTP_${status}`;
+      const requestId = payload.requestId?.trim();
+      return requestId
+        ? `${code}: ${payload.message} (requestId: ${requestId})`
+        : `${code}: ${payload.message}`;
+    }
+  } catch {
+    // ignore parse errors and fallback to raw response
+  }
+
+  return `HTTP_${status}: ${raw}`;
+}
+
+async function postJson<TPayload, TResponse>(
+  baseUrl: string,
+  path: string,
+  payload: TPayload,
+  token?: string,
+) {
+  const response = await fetch(`${normalizeBaseUrl(baseUrl)}${path}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify(payload),
+  });
+
+  const raw = await response.text();
+  if (!response.ok) {
+    throw new Error(parseErrorMessage(raw, response.status));
+  }
+
+  return (raw ? (JSON.parse(raw) as TResponse) : ({} as TResponse));
+}
+
+async function getJson<TResponse>(baseUrl: string, path: string) {
+  const response = await fetch(`${normalizeBaseUrl(baseUrl)}${path}`, {
+    method: "GET",
+    headers: {
+      Accept: "application/json",
+    },
+  });
+
+  const raw = await response.text();
+  if (!response.ok) {
+    throw new Error(parseErrorMessage(raw, response.status));
+  }
+
+  return (raw ? (JSON.parse(raw) as TResponse) : ({} as TResponse));
+}
+
+function createSessionFromAuthPayload(
+  baseUrl: string,
+  payload: AuthSessionPayload,
+): PlatformSession {
+  const token = payload.token.trim();
   if (!token) {
-    throw new Error("JWT обязателен для ручного входа.");
+    throw new Error("Сервер не вернул JWT токен.");
   }
 
-  const payload = parseJwtPayload(token);
-  const subject =
-    (typeof payload?.sub === "string" && payload.sub.trim()) ||
-    params.userId?.trim() ||
-    crypto.randomUUID();
-
-  if (!isRole(params.role)) {
-    throw new Error("Некорректная роль в ручном входе.");
-  }
-  const systemPermissions = resolveSystemPermissions(payload);
+  const jwtPayload = parseJwtPayload(token);
+  const userId =
+    (typeof jwtPayload?.sub === "string" && jwtPayload.sub.trim()) ||
+    payload.user.userId;
+  const role = resolveRoleFromJwtOrDefault(token);
+  const systemPermissions =
+    Array.isArray(payload.user.systemPermissions) && payload.user.systemPermissions.length > 0
+      ? payload.user.systemPermissions
+      : resolveSystemPermissions(jwtPayload);
 
   return {
     token,
-    baseUrl: normalizeBaseUrl(params.baseUrl),
+    baseUrl: normalizeBaseUrl(baseUrl),
     profile: {
-      userId: subject,
-      email: params.email.trim() || "manual@ddcrm.local",
-      displayName: params.displayName.trim() || "Manual User",
-      role: params.role,
+      userId,
+      email: payload.user.email,
+      displayName: payload.user.displayName,
+      role,
       systemPermissions,
       isSystemAdmin: hasSystemPermission(systemPermissions),
-      authMode: "manual",
+      authMode:
+        payload.user.authProvider && payload.user.authProvider !== "local"
+          ? "integration"
+          : "password",
+      authProvider: payload.user.authProvider ?? "local",
       loggedInAt: new Date().toISOString(),
     },
   };
+}
+
+export async function registerWithPassword(params: {
+  baseUrl: string;
+  email: string;
+  password: string;
+  displayName?: string;
+}): Promise<{ session: PlatformSession; requiresPasswordChange: boolean }> {
+  const response = await postJson<
+    { email: string; password: string; displayName?: string },
+    AuthSessionPayload
+  >(params.baseUrl, "/v1/auth/register", {
+    email: params.email.trim(),
+    password: params.password,
+    displayName: params.displayName?.trim() || undefined,
+  });
+
+  const session = createSessionFromAuthPayload(params.baseUrl, response);
+  return {
+    session,
+    requiresPasswordChange: Boolean(response.user.requiresPasswordChange),
+  };
+}
+
+export async function loginWithPassword(params: {
+  baseUrl: string;
+  email: string;
+  password: string;
+}): Promise<{ session: PlatformSession; requiresPasswordChange: boolean }> {
+  const response = await postJson<
+    { email: string; password: string },
+    AuthSessionPayload
+  >(params.baseUrl, "/v1/auth/login", {
+    email: params.email.trim(),
+    password: params.password,
+  });
+
+  const session = createSessionFromAuthPayload(params.baseUrl, response);
+  return {
+    session,
+    requiresPasswordChange: Boolean(response.user.requiresPasswordChange),
+  };
+}
+
+export async function changePasswordWithSession(params: {
+  session: PlatformSession;
+  currentPassword: string;
+  newPassword: string;
+}) {
+  await postJson(
+    params.session.baseUrl,
+    "/v1/auth/change-password",
+    {
+      currentPassword: params.currentPassword,
+      newPassword: params.newPassword,
+    },
+    params.session.token,
+  );
+}
+
+export async function loadAuthProviders(baseUrl: string): Promise<AuthProviderInfo[]> {
+  const response = await getJson<AuthProviderListPayload>(
+    baseUrl,
+    "/v1/auth/providers",
+  );
+  return Array.isArray(response.items) ? response.items : [];
 }
 
 export function readStoredSession(): PlatformSession | null {
@@ -319,26 +365,24 @@ export function readStoredSession(): PlatformSession | null {
       return null;
     }
 
+    const permissions = Array.isArray(parsed.profile.systemPermissions)
+      ? parsed.profile.systemPermissions.filter(
+          (value): value is string => typeof value === "string",
+        )
+      : [];
+
     return {
       ...parsed,
       baseUrl: normalizeBaseUrl(parsed.baseUrl),
       profile: {
         ...parsed.profile,
-        systemPermissions: Array.isArray(parsed.profile.systemPermissions)
-          ? parsed.profile.systemPermissions.filter(
-              (value): value is string => typeof value === "string",
-            )
-          : [],
+        authMode: parsed.profile.authMode ?? "password",
+        authProvider: parsed.profile.authProvider ?? "local",
+        systemPermissions: permissions,
         isSystemAdmin:
           typeof parsed.profile.isSystemAdmin === "boolean"
             ? parsed.profile.isSystemAdmin
-            : hasSystemPermission(
-                Array.isArray(parsed.profile.systemPermissions)
-                  ? parsed.profile.systemPermissions.filter(
-                      (value): value is string => typeof value === "string",
-                    )
-                  : [],
-              ),
+            : hasSystemPermission(permissions),
       },
     };
   } catch {

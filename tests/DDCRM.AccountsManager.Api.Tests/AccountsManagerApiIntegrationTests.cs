@@ -9,7 +9,7 @@ public sealed class AccountsManagerApiIntegrationTests
 {
     [Fact]
     [Trait("Category", "Integration")]
-    public async Task AccountTypesList_ReturnsDefaultTestWorkerCatalog()
+    public async Task AccountTypesList_OnCleanStart_ReturnsEmpty()
     {
         using var factory = new AccountsManagerApiFactory();
         using var client = factory.CreateClient();
@@ -24,49 +24,7 @@ public sealed class AccountsManagerApiIntegrationTests
             .EnumerateArray()
             .ToArray();
 
-        Assert.Equal(4, items.Length);
-
-        var accountTypeIds = items
-            .Select(x => x.GetProperty("accountTypeId").GetString() ?? string.Empty)
-            .ToArray();
-        Assert.Equal(
-            ["test-worker.funpay", "test-worker.playerok", "test-worker.ggsell", "test-worker.platimarket"],
-            accountTypeIds);
-
-        var platforms = items
-            .Select(x => x.GetProperty("platform").GetString() ?? string.Empty)
-            .ToArray();
-        Assert.Equal(["funpay", "playerok", "ggsell", "platimarket"], platforms);
-
-        foreach (var item in items)
-        {
-            Assert.Equal("test-worker", item.GetProperty("workerProfileId").GetString());
-            Assert.True(item.GetProperty("enabled").GetBoolean());
-            Assert.True(item.GetProperty("formFields").GetArrayLength() >= 5);
-            var runtime = item.GetProperty("runtime");
-            Assert.True(runtime.GetProperty("autospawnEnabled").GetBoolean());
-            Assert.False(string.IsNullOrWhiteSpace(runtime.GetProperty("workerImage").GetString()));
-        }
-
-        var playerokItem = items.Single(x => x.GetProperty("platform").GetString() == "playerok");
-        var playerokFieldKeys = playerokItem
-            .GetProperty("formFields")
-            .EnumerateArray()
-            .Select(x => x.GetProperty("key").GetString() ?? string.Empty)
-            .ToArray();
-        Assert.Contains("playerokAuthScheme", playerokFieldKeys);
-        Assert.Contains("playerokToken", playerokFieldKeys);
-        Assert.Contains("playerokDdg5", playerokFieldKeys);
-        Assert.Contains("playerokCookies", playerokFieldKeys);
-
-        var playerokRuntime = playerokItem.GetProperty("runtime");
-        Assert.Equal("ddcrm/playerok-worker:local", playerokRuntime.GetProperty("workerImage").GetString());
-        var playerokCommand = playerokRuntime
-            .GetProperty("workerCommand")
-            .EnumerateArray()
-            .Select(x => x.GetString() ?? string.Empty)
-            .ToArray();
-        Assert.Equal(["python", "-m", "ddcrm_playerok_worker.main"], playerokCommand);
+        Assert.Empty(items);
     }
 
     [Fact]
@@ -308,6 +266,7 @@ public sealed class AccountsManagerApiIntegrationTests
         using var factory = new AccountsManagerApiFactory();
         using var client = factory.CreateClient();
         client.DefaultRequestHeaders.Add("X-Service-Token", "internal-token-a");
+        await EnsureActiveAccountTypeAsync(client, "funpay");
 
         await RegisterOrUpdateServerAsync(
             client,
@@ -397,6 +356,7 @@ public sealed class AccountsManagerApiIntegrationTests
         using var factory = new AccountsManagerApiFactory();
         using var client = factory.CreateClient();
         client.DefaultRequestHeaders.Add("X-Service-Token", "internal-token-a");
+        await EnsureActiveAccountTypeAsync(client, "playerok");
 
         var accountId = Guid.NewGuid();
         using var createRequest = CreateMutatingRequest(
@@ -434,6 +394,7 @@ public sealed class AccountsManagerApiIntegrationTests
         using var factory = new AccountsManagerApiFactory();
         using var client = factory.CreateClient();
         client.DefaultRequestHeaders.Add("X-Service-Token", "internal-token-a");
+        await EnsureActiveAccountTypeAsync(client, "funpay");
 
         var accountId = Guid.NewGuid();
         using var createRequest = CreateMutatingRequest(
@@ -478,6 +439,7 @@ public sealed class AccountsManagerApiIntegrationTests
         using var factory = new AccountsManagerApiFactory();
         using var client = factory.CreateClient();
         client.DefaultRequestHeaders.Add("X-Service-Token", "internal-token-a");
+        await EnsureActiveAccountTypeAsync(client, "playerok");
 
         var accountId = Guid.NewGuid();
         using var createRequest = CreateMutatingRequest(
@@ -516,6 +478,7 @@ public sealed class AccountsManagerApiIntegrationTests
         using var factory = new AccountsManagerApiFactory();
         using var client = factory.CreateClient();
         client.DefaultRequestHeaders.Add("X-Service-Token", "internal-token-a");
+        await EnsureActiveAccountTypeAsync(client, "ggsell");
 
         await RegisterOrUpdateServerAsync(
             client,
@@ -676,6 +639,7 @@ public sealed class AccountsManagerApiIntegrationTests
         using var factory = new AccountsManagerApiFactory();
         using var client = factory.CreateClient();
         client.DefaultRequestHeaders.Add("X-Service-Token", "internal-token-a");
+        await EnsureActiveAccountTypeAsync(client, "funpay");
 
         var accountId = Guid.NewGuid();
         var projectId = Guid.NewGuid();
@@ -730,6 +694,7 @@ public sealed class AccountsManagerApiIntegrationTests
         using var factory = new AccountsManagerApiFactory();
         using var client = factory.CreateClient();
         client.DefaultRequestHeaders.Add("X-Service-Token", "internal-token-a");
+        await EnsureActiveAccountTypeAsync(client, "platimarket");
 
         factory.RouteRegistryClient.FailNextUpsertRequest();
 
@@ -764,6 +729,7 @@ public sealed class AccountsManagerApiIntegrationTests
         using var factory = new AccountsManagerApiFactory();
         using var client = factory.CreateClient();
         client.DefaultRequestHeaders.Add("X-Service-Token", "internal-token-a");
+        await EnsureActiveAccountTypeAsync(client, "platimarket");
 
         factory.WorkerControlClient.FailNextApplyRequest();
 
@@ -859,6 +825,8 @@ public sealed class AccountsManagerApiIntegrationTests
         Guid projectId,
         string platform)
     {
+        await EnsureActiveAccountTypeAsync(client, platform);
+
         using var createRequest = CreateMutatingRequest(
             HttpMethod.Post,
             "/internal/v1/lifecycle/create",
@@ -877,6 +845,55 @@ public sealed class AccountsManagerApiIntegrationTests
 
         var response = await client.SendAsync(createRequest);
         Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
+    }
+
+    private static async Task EnsureActiveAccountTypeAsync(HttpClient client, string platform)
+    {
+        var normalizedPlatform = platform.Trim().ToLowerInvariant();
+        var accountTypeId = $"it.{normalizedPlatform}";
+
+        using var upsertRequest = CreateMutatingRequest(
+            HttpMethod.Put,
+            $"/internal/v1/account-types/{accountTypeId}",
+            Guid.NewGuid().ToString("N"),
+            new
+            {
+                platform = normalizedPlatform,
+                displayName = $"Integration profile: {normalizedPlatform}",
+                description = $"Template for integration tests ({normalizedPlatform}).",
+                workerProfileId = "it-worker",
+                enabled = true,
+                sortOrder = 10,
+                formFields = new[]
+                {
+                    new
+                    {
+                        key = "displayName",
+                        label = "Название аккаунта",
+                        inputType = "text",
+                        required = true,
+                        secret = false,
+                        placeholder = "Test account",
+                        defaultValue = "Test account",
+                    },
+                },
+                runtime = new
+                {
+                    autospawnEnabled = true,
+                    workerImage = "ddcrm/worker-api:local",
+                    workerPathPrefix = "/internal/v2/worker",
+                    healthPath = "/health",
+                    containerPort = 8080,
+                    environmentVariables = new
+                    {
+                        TEST_WORKER_PROVIDER = normalizedPlatform,
+                    },
+                    workerCommand = new[] { "DDCRM.Worker.Api.dll" },
+                },
+            });
+
+        var upsertResponse = await client.SendAsync(upsertRequest);
+        Assert.Equal(HttpStatusCode.OK, upsertResponse.StatusCode);
     }
 
     private static HttpRequestMessage CreateMutatingRequest(

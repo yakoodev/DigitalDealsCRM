@@ -26,3 +26,20 @@ Linux/macOS эквивалент:
 
 - `./eng/ops-ready.ps1 -SkipContracts`
 - `./eng/ops-ready.sh --skip-contracts`
+
+## Локальная сборка образов (без push)
+
+Сборка образов воркеров:
+
+- `./eng/build-local-images.ps1 workers`
+- `./eng/build-local-images.sh workers`
+
+Сборка integration-сервисов:
+
+- `./eng/build-local-images.ps1 integrations`
+- `./eng/build-local-images.sh integrations`
+
+Полная сборка:
+
+- `./eng/build-local-images.ps1 all`
+- `./eng/build-local-images.sh all`

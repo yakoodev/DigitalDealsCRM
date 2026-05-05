@@ -20,6 +20,8 @@ public sealed class CoreApiFactory : WebApplicationFactory<Program>
     private const string Issuer = "ddcrm-tests";
     private const string Audience = "ddcrm-tests-api";
     private const string SigningKey = "ddcrm-tests-signing-key-which-is-long-enough-123";
+    public const string SuperAdminEmail = "root@ddcrm.local";
+    public const string SuperAdminPassword = "ChangeMe123!";
 
     public FakeBillingClient BillingClient { get; } = new();
     public FakeAccountsManagerClient AccountsManagerClient { get; } = new();
@@ -43,6 +45,10 @@ public sealed class CoreApiFactory : WebApplicationFactory<Program>
                 ["EXTERNAL_API_CORS_MAX_AGE_SECONDS"] = "600",
                 ["EXTERNAL_API_SYSTEM_PERMISSION_CLAIM_TYPE"] = "ddcrm.system.permissions",
                 ["EXTERNAL_API_SYSTEM_PERMISSION_CLAIM_VALUE"] = "system.accountManager.manage",
+                ["EXTERNAL_API_SYSTEM_INTEGRATIONS_PERMISSION_CLAIM_VALUE"] = "system.integrations.manage",
+                ["EXTERNAL_API_SUPER_ADMIN_EMAIL"] = SuperAdminEmail,
+                ["EXTERNAL_API_SUPER_ADMIN_PASSWORD"] = SuperAdminPassword,
+                ["EXTERNAL_API_SUPER_ADMIN_DISPLAY_NAME"] = "Root Admin",
                 ["TEST_USE_INMEMORY_DB"] = "true",
                 ["TEST_INMEMORY_DB_NAME"] = $"core-tests-{Guid.NewGuid():N}",
             });

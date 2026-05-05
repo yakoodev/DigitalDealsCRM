@@ -12,7 +12,7 @@ Frontend проекта `WP-RBAC-UI` на `Next.js App Router + TypeScript + Tan
 
 ## Route Map (W9)
 
-- `/login` — авторизация (demo/manual JWT).
+- `/login` — авторизация/регистрация (`email + password`) + обязательная смена пароля при `forcePasswordChange`.
 - `/dashboard` — стартовый экран после логина (`Dashboard root`).
 - `/projects` — портфель проектов + создание проекта.
 - `/admin/account-manager` — системный admin overview для AccountManager control plane.
@@ -54,7 +54,7 @@ Frontend проекта `WP-RBAC-UI` на `Next.js App Router + TypeScript + Tan
 - `/projects/[projectId]/products/edit` -> `/projects/[projectId]/products?modal=edit&accountId=<...>&productId=<...>`
 - `/projects/[projectId]/messages/thread` -> `/projects/[projectId]/messages?modal=thread&accountId=<...>&conversationId=<...>`
 
-## Env для demo JWT
+## Env для JWT валидации UI
 
 - `NEXT_PUBLIC_EXTERNAL_API_JWT_ISSUER` (`ddcrm-local` по умолчанию)
 - `NEXT_PUBLIC_EXTERNAL_API_JWT_AUDIENCE` (`ddcrm-api` по умолчанию)
@@ -68,3 +68,4 @@ Frontend проекта `WP-RBAC-UI` на `Next.js App Router + TypeScript + Tan
 - UI role-aware: чувствительные account lifecycle/proxy операции доступны только owner/admin.
 - System admin зона `/admin/account-manager/*` доступна только при JWT claim `system.accountManager.manage`.
 - Техполя (`id/requestId/worker instance`) показываются в `Details`-блоках, а не в основном потоке.
+- Вход через Telegram/GitHub/Google заранее заложен как `provider-ready`, но требует отдельной backend-интеграции providers.

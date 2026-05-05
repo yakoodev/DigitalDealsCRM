@@ -63,5 +63,12 @@
 - [rollout-rollback-plan.md](./operations/rollout-rollback-plan.md)
 - [service-auth-rotation-playbook.md](./operations/service-auth-rotation-playbook.md)
 
+## Product Readiness Гайды
+- [how-to-run.md](./operations/how-to-run.md)
+- [how-to-deploy.md](./operations/how-to-deploy.md)
+- [how-to-add-worker-template.md](./operations/how-to-add-worker-template.md)
+- [how-to-add-account.md](./operations/how-to-add-account.md)
+- [db-reset.md](./operations/db-reset.md)
+
 ## Правила Для Агентов
 - [../AGENTS.md](../AGENTS.md) — обязательные инструкции для coding-агентов в репозитории

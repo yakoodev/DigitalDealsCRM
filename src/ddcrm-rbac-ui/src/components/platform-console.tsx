@@ -22,7 +22,6 @@ import {
   updateProxyCredentialsRequest,
 } from "@/lib/api-client";
 import {
-  demoUsers,
   readJwtInfo,
   updateSessionRole,
   type PlatformSession,
@@ -1278,12 +1277,6 @@ export function PlatformConsole({
     setGatewayRouteKeyInput(buildRouteKey(accountId));
   };
 
-  const fillMemberUserId = (userId: string) => {
-    setMemberUserIdInput(userId);
-    setMemberChangeUserIdInput(userId);
-    setMemberRemoveUserIdInput(userId);
-  };
-
   const clearProjectActivityLog = () => {
     if (!activeProjectId) {
       return;
@@ -1803,21 +1796,9 @@ export function PlatformConsole({
                         </p>
 
                         <div className="stack">
-                          <div className="field">
-                            <span>Быстро подставить demo userId</span>
-                            <div className="project-tab-row">
-                              {demoUsers.map((demoUser) => (
-                                <button
-                                  key={demoUser.userId}
-                                  type="button"
-                                  className="project-tab-btn"
-                                  onClick={() => fillMemberUserId(demoUser.userId)}
-                                >
-                                  {demoUser.displayName}
-                                </button>
-                              ))}
-                            </div>
-                          </div>
+                          <p className="hint">
+                            Введите `userId` участника вручную (GUID), затем выберите роль.
+                          </p>
 
                           <div className="stack">
                             <h3>Добавить участника</h3>

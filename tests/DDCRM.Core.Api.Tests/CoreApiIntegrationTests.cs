@@ -2,12 +2,97 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
+using DDCRM.Core.Api.AccountsManager;
 using DDCRM.Core.Api.Tests.Infrastructure;
 
 namespace DDCRM.Core.Api.Tests;
 
 public sealed class CoreApiIntegrationTests(CoreApiFactory factory) : IClassFixture<CoreApiFactory>
 {
+    [Fact]
+    [Trait("Category", "Auth")]
+    public async Task AuthRegister_ThenLogin_Works()
+    {
+        using var client = factory.CreateClient();
+        var email = $"user-{Guid.NewGuid():N}@ddcrm.local";
+        const string password = "Passw0rd!123";
+
+        var registerResponse = await client.PostAsJsonAsync(
+            "/v1/auth/register",
+            new
+            {
+                email,
+                password,
+                displayName = "Integration User",
+            });
+
+        Assert.Equal(HttpStatusCode.Created, registerResponse.StatusCode);
+        using (var registerJson = JsonDocument.Parse(await registerResponse.Content.ReadAsStringAsync()))
+        {
+            Assert.False(string.IsNullOrWhiteSpace(registerJson.RootElement.GetProperty("token").GetString()));
+            Assert.Equal(email, registerJson.RootElement.GetProperty("user").GetProperty("email").GetString());
+            Assert.False(registerJson.RootElement.GetProperty("user").GetProperty("requiresPasswordChange").GetBoolean());
+        }
+
+        var loginResponse = await client.PostAsJsonAsync(
+            "/v1/auth/login",
+            new
+            {
+                email,
+                password,
+            });
+
+        Assert.Equal(HttpStatusCode.OK, loginResponse.StatusCode);
+        using var loginJson = JsonDocument.Parse(await loginResponse.Content.ReadAsStringAsync());
+        Assert.False(string.IsNullOrWhiteSpace(loginJson.RootElement.GetProperty("token").GetString()));
+        Assert.Equal(email, loginJson.RootElement.GetProperty("user").GetProperty("email").GetString());
+        Assert.False(loginJson.RootElement.GetProperty("user").GetProperty("requiresPasswordChange").GetBoolean());
+    }
+
+    [Fact]
+    [Trait("Category", "Auth")]
+    public async Task SuperAdmin_Login_RequiresPasswordChange_ThenUnlocksProtectedEndpoints()
+    {
+        using var client = factory.CreateClient();
+
+        var loginResponse = await client.PostAsJsonAsync(
+            "/v1/auth/login",
+            new
+            {
+                email = CoreApiFactory.SuperAdminEmail,
+                password = CoreApiFactory.SuperAdminPassword,
+            });
+
+        Assert.Equal(HttpStatusCode.OK, loginResponse.StatusCode);
+        using var loginJson = JsonDocument.Parse(await loginResponse.Content.ReadAsStringAsync());
+        var token = loginJson.RootElement.GetProperty("token").GetString();
+        Assert.False(string.IsNullOrWhiteSpace(token));
+        Assert.True(loginJson.RootElement.GetProperty("user").GetProperty("requiresPasswordChange").GetBoolean());
+
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+        var blockedResponse = await client.GetAsync("/v1/projects");
+        Assert.Equal(HttpStatusCode.Forbidden, blockedResponse.StatusCode);
+        using (var blockedJson = JsonDocument.Parse(await blockedResponse.Content.ReadAsStringAsync()))
+        {
+            var details = blockedJson.RootElement.GetProperty("details");
+            Assert.True(details.GetProperty("passwordChangeRequired").GetBoolean());
+        }
+
+        var newPassword = $"N3wPass!{Guid.NewGuid():N}".Substring(0, 20);
+        var changeResponse = await client.PostAsJsonAsync(
+            "/v1/auth/change-password",
+            new
+            {
+                currentPassword = CoreApiFactory.SuperAdminPassword,
+                newPassword,
+            });
+        Assert.Equal(HttpStatusCode.OK, changeResponse.StatusCode);
+
+        var projectsResponse = await client.GetAsync("/v1/projects");
+        Assert.Equal(HttpStatusCode.OK, projectsResponse.StatusCode);
+    }
+
     [Fact]
     [Trait("Category", "Integration")]
     public async Task CreateProject_ThenListProjects_ReturnsCreatedProject()
@@ -133,6 +218,7 @@ public sealed class CoreApiIntegrationTests(CoreApiFactory factory) : IClassFixt
     public async Task CreateAccount_WithMarketplaceAuth_ForwardsPayloadToAccountsManager()
     {
         factory.AccountsManagerClient.Reset();
+        SeedAccountType("test-worker.funpay", "funpay");
 
         using var client = CreateAuthorizedClient(Guid.NewGuid());
         var projectId = await CreateProjectAsync(client, "Accounts-MarketplaceAuth");
@@ -181,6 +267,7 @@ public sealed class CoreApiIntegrationTests(CoreApiFactory factory) : IClassFixt
     public async Task CreateAccount_WithMarketplaceAuthTokensWithoutDdg5_ReturnsBadRequest()
     {
         factory.AccountsManagerClient.Reset();
+        SeedAccountType("test-worker.playerok", "playerok");
 
         using var client = CreateAuthorizedClient(Guid.NewGuid());
         var projectId = await CreateProjectAsync(client, "Accounts-PlayerokAuthValidation");
@@ -223,6 +310,10 @@ public sealed class CoreApiIntegrationTests(CoreApiFactory factory) : IClassFixt
     [Trait("Category", "Integration")]
     public async Task ListProjectAccountTypes_ReturnsAccountsManagerCatalog()
     {
+        factory.AccountsManagerClient.Reset();
+        SeedAccountType("it.funpay", "funpay");
+        SeedAccountType("it.playerok", "playerok");
+
         using var client = CreateAuthorizedClient(Guid.NewGuid());
         var projectId = await CreateProjectAsync(client, "AccountTypes-A");
 
@@ -235,20 +326,20 @@ public sealed class CoreApiIntegrationTests(CoreApiFactory factory) : IClassFixt
             .EnumerateArray()
             .ToArray();
 
-        Assert.Equal(4, items.Length);
+        Assert.Equal(2, items.Length);
 
         var accountTypeIds = items
             .Select(x => x.GetProperty("accountTypeId").GetString() ?? string.Empty)
             .ToArray();
         Assert.Equal(
-            ["test-worker.funpay", "test-worker.playerok", "test-worker.ggsell", "test-worker.platimarket"],
+            ["it.funpay", "it.playerok"],
             accountTypeIds);
 
         foreach (var item in items)
         {
-            Assert.Equal("test-worker", item.GetProperty("workerProfileId").GetString());
+            Assert.Equal("it-worker", item.GetProperty("workerProfileId").GetString());
             Assert.True(item.GetProperty("enabled").GetBoolean());
-            Assert.True(item.GetProperty("formFields").GetArrayLength() >= 5);
+            Assert.True(item.GetProperty("formFields").GetArrayLength() >= 1);
         }
     }
 
@@ -913,6 +1004,43 @@ public sealed class CoreApiIntegrationTests(CoreApiFactory factory) : IClassFixt
         factory.GrantProjectIntegration(projectId, "platform.platimarket", "use");
 
         return projectId;
+    }
+
+    private void SeedAccountType(string accountTypeId, string platform)
+    {
+        factory.AccountsManagerClient.AccountTypes.RemoveAll(item =>
+            string.Equals(item.AccountTypeId, accountTypeId, StringComparison.OrdinalIgnoreCase));
+
+        factory.AccountsManagerClient.AccountTypes.Add(
+            new AccountsManagerAccountTypeDefinition(
+                accountTypeId,
+                platform,
+                $"Integration template: {platform}",
+                $"Template for integration tests ({platform}).",
+                "it-worker",
+                true,
+                10,
+                [
+                    new AccountsManagerAccountTypeField(
+                        "displayName",
+                        "Название аккаунта",
+                        "text",
+                        true,
+                        false,
+                        "Test account",
+                        "Test account"),
+                ],
+                new AccountsManagerAccountTypeRuntime(
+                    true,
+                    "ddcrm/worker-api:local",
+                    "/internal/v2/worker",
+                    "/health",
+                    8080,
+                    new Dictionary<string, string>(StringComparer.Ordinal)
+                    {
+                        ["TEST_WORKER_PROVIDER"] = platform,
+                    },
+                    ["DDCRM.Worker.Api.dll"])));
     }
 
     private static async Task<Guid> CreateAccountAsync(HttpClient client, Guid projectId, string displayName)

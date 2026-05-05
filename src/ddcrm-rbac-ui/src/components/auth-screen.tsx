@@ -1,88 +1,138 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { listProjectsRequest } from "@/lib/api-client";
 import {
-  authenticateDemo,
-  authenticateManual,
-  demoUsers,
+  changePasswordWithSession,
   getDefaultBaseUrl,
   getJwtMeta,
+  loadAuthProviders,
+  loginWithPassword,
+  registerWithPassword,
+  type AuthProviderInfo,
   type PlatformSession,
 } from "@/lib/auth";
-import { listProjectsRequest } from "@/lib/api-client";
-import { projectRoles, type ProjectRole } from "@/lib/rbac";
 
 interface AuthScreenProps {
   onAuthenticated: (session: PlatformSession) => void;
 }
 
-type AuthMode = "demo" | "manual";
+type AuthMode = "login" | "register";
 
 export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
   const jwtMeta = useMemo(() => getJwtMeta(), []);
-  const [authMode, setAuthMode] = useState<AuthMode>("demo");
   const [statusMessage, setStatusMessage] = useState(
-    "Войдите в DDCRM, чтобы открыть dashboard и project workflow.",
+    "Войдите по email и паролю или зарегистрируйте новый аккаунт.",
   );
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isLoadingProviders, setIsLoadingProviders] = useState(false);
+  const [authMode, setAuthMode] = useState<AuthMode>("login");
 
   const [baseUrl, setBaseUrl] = useState(getDefaultBaseUrl());
-  const [demoEmail, setDemoEmail] = useState(demoUsers[0].email);
-  const [demoPassword, setDemoPassword] = useState(demoUsers[0].password);
-  const [manualToken, setManualToken] = useState("");
-  const [manualRole, setManualRole] = useState<ProjectRole>("owner");
-  const [manualDisplayName, setManualDisplayName] = useState("Manual User");
-  const [manualEmail, setManualEmail] = useState("manual@ddcrm.local");
-  const [manualUserId, setManualUserId] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [displayName, setDisplayName] = useState("");
+  const [providers, setProviders] = useState<AuthProviderInfo[]>([]);
 
-  const selectedDemoUser = useMemo(
-    () => demoUsers.find((user) => user.email === demoEmail) ?? demoUsers[0],
-    [demoEmail],
-  );
+  const [pendingSession, setPendingSession] = useState<PlatformSession | null>(null);
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
 
-  const handleDemoSignIn = async () => {
+  const requiresPasswordChange = Boolean(pendingSession);
+
+  const loadProviders = async () => {
+    setIsLoadingProviders(true);
+    try {
+      const items = await loadAuthProviders(baseUrl);
+      setProviders(items);
+    } catch {
+      setProviders([]);
+    } finally {
+      setIsLoadingProviders(false);
+    }
+  };
+
+  useEffect(() => {
+    void loadProviders();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const handleAuthSubmit = async () => {
     setIsSubmitting(true);
-    setStatusMessage("Проверяю demo-аккаунт...");
+    setStatusMessage(
+      authMode === "register"
+        ? "Регистрирую пользователя..."
+        : "Проверяю email и пароль...",
+    );
 
     try {
-      const session = await authenticateDemo({
-        email: demoEmail,
-        password: demoPassword,
-        baseUrl,
-      });
-      await listProjectsRequest({
-        token: session.token,
-        baseUrl: session.baseUrl,
-      });
-      onAuthenticated(session);
+      const authResult =
+        authMode === "register"
+          ? await registerWithPassword({
+              baseUrl,
+              email,
+              password,
+              displayName,
+            })
+          : await loginWithPassword({
+              baseUrl,
+              email,
+              password,
+            });
+
+      if (authResult.requiresPasswordChange) {
+        setPendingSession(authResult.session);
+        setCurrentPassword(password);
+        setStatusMessage(
+          "Для этого аккаунта обязательна смена пароля. Задайте новый пароль, чтобы продолжить.",
+        );
+        return;
+      }
+
+      await listProjectsRequest(authResult.session);
+      onAuthenticated(authResult.session);
     } catch (error) {
-      setStatusMessage(error instanceof Error ? error.message : "Не удалось выполнить demo-вход.");
+      setStatusMessage(error instanceof Error ? error.message : "Не удалось выполнить вход.");
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const handleManualSignIn = async () => {
+  const handlePasswordChange = async () => {
+    if (!pendingSession) {
+      return;
+    }
+
+    if (newPassword.length < 8) {
+      setStatusMessage("Новый пароль должен содержать минимум 8 символов.");
+      return;
+    }
+
+    if (newPassword !== confirmPassword) {
+      setStatusMessage("Подтверждение пароля не совпадает.");
+      return;
+    }
+
     setIsSubmitting(true);
-    setStatusMessage("Проверяю JWT...");
+    setStatusMessage("Сохраняю новый пароль...");
 
     try {
-      const session = authenticateManual({
-        token: manualToken,
-        baseUrl,
-        displayName: manualDisplayName,
-        email: manualEmail,
-        role: manualRole,
-        userId: manualUserId,
+      await changePasswordWithSession({
+        session: pendingSession,
+        currentPassword,
+        newPassword,
       });
-      await listProjectsRequest({
-        token: session.token,
-        baseUrl: session.baseUrl,
-      });
-      onAuthenticated(session);
+      await listProjectsRequest(pendingSession);
+      setPendingSession(null);
+      setNewPassword("");
+      setConfirmPassword("");
+      onAuthenticated(pendingSession);
     } catch (error) {
-      setStatusMessage(error instanceof Error ? error.message : "Не удалось выполнить ручной вход.");
+      setStatusMessage(
+        error instanceof Error ? error.message : "Не удалось сменить пароль.",
+      );
     } finally {
       setIsSubmitting(false);
     }
@@ -92,48 +142,29 @@ export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
     <main className="auth-layout" data-testid="auth-screen">
       <section className="auth-hero-card">
         <p className="module-page-kicker">DigitalDeals CRM</p>
-        <h1>Clean control plane для проектов, аккаунтов и воркеров</h1>
+        <h1>Control plane для проектов, аккаунтов и воркеров</h1>
         <p>
-          После входа вы попадете на `/dashboard`, затем сможете перейти в `/projects`
-          и открыть любой проект по чистым route-страницам.
+          После входа вы попадете на `/dashboard`, затем сможете открыть `/projects` и
+          управлять аккаунтами, templates и интеграциями.
         </p>
         <div className="auth-hero-stats">
           <article>
             <span>Flow</span>
-            <strong>Projects → Accounts → Products → Messages</strong>
+            <strong>Register/Login → Dashboard → Projects</strong>
           </article>
           <article>
             <span>Theme</span>
             <strong>System / Light / Dark</strong>
           </article>
           <article>
-            <span>UI language</span>
-            <strong>RU + EN terms</strong>
+            <span>Auth</span>
+            <strong>Email + Password (+ integration-ready)</strong>
           </article>
         </div>
       </section>
 
       <section className="auth-form-card">
         <ThemeToggle />
-
-        <div className="segmented-control">
-          <button
-            className={`button ${authMode === "demo" ? "button-primary" : "button-ghost"}`}
-            onClick={() => setAuthMode("demo")}
-            type="button"
-            data-testid="auth-mode-demo"
-          >
-            Demo вход
-          </button>
-          <button
-            className={`button ${authMode === "manual" ? "button-primary" : "button-ghost"}`}
-            onClick={() => setAuthMode("manual")}
-            type="button"
-            data-testid="auth-mode-manual"
-          >
-            Ручной JWT
-          </button>
-        </div>
 
         <label className="field">
           <span>Core API Base URL</span>
@@ -146,41 +177,62 @@ export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
           />
         </label>
 
-        {authMode === "demo" ? (
+        {!requiresPasswordChange ? (
           <>
-            <label className="field">
-              <span>Demo user</span>
-              <select
-                className="input"
-                value={demoEmail}
-                onChange={(event) => {
-                  const nextEmail = event.target.value;
-                  setDemoEmail(nextEmail);
-                  const user = demoUsers.find((candidate) => candidate.email === nextEmail);
-                  if (user) {
-                    setDemoPassword(user.password);
-                  }
-                }}
-                data-testid="auth-demo-user-select"
+            <div className="grid-2">
+              <button
+                type="button"
+                className={`button ${authMode === "login" ? "button-primary" : ""}`}
+                onClick={() => setAuthMode("login")}
+                data-testid="auth-mode-login"
               >
-                {demoUsers.map((user) => (
-                  <option key={user.email} value={user.email}>
-                    {user.displayName} · {user.email} · role={user.role}
-                  </option>
-                ))}
-              </select>
+                Вход
+              </button>
+              <button
+                type="button"
+                className={`button ${authMode === "register" ? "button-primary" : ""}`}
+                onClick={() => setAuthMode("register")}
+                data-testid="auth-mode-register"
+              >
+                Регистрация
+              </button>
+            </div>
+
+            <label className="field">
+              <span>Email</span>
+              <input
+                className="input"
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+                placeholder="owner@ddcrm.local"
+                data-testid="auth-email"
+              />
             </label>
 
             <label className="field">
-              <span>Password</span>
+              <span>Пароль</span>
               <input
-                type="password"
                 className="input"
-                value={demoPassword}
-                onChange={(event) => setDemoPassword(event.target.value)}
-                data-testid="auth-demo-password"
+                type="password"
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                placeholder="********"
+                data-testid="auth-password"
               />
             </label>
+
+            {authMode === "register" ? (
+              <label className="field">
+                <span>Display name (optional)</span>
+                <input
+                  className="input"
+                  value={displayName}
+                  onChange={(event) => setDisplayName(event.target.value)}
+                  placeholder="My Team"
+                  data-testid="auth-display-name"
+                />
+              </label>
+            ) : null}
 
             <section className="hint-block">
               <p>
@@ -188,93 +240,83 @@ export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
                 <strong>{jwtMeta.audience}</strong>
               </p>
               <p>
-                Выбран пользователь:{" "}
-                <strong>
-                  {selectedDemoUser.displayName} ({selectedDemoUser.userId})
-                </strong>
+                Planned providers:{" "}
+                {providers.length > 0
+                  ? providers
+                      .filter((item) => item.provider !== "local")
+                      .map((item) => `${item.displayName} (${item.status})`)
+                      .join(", ")
+                  : "loading..."}
               </p>
+              <button
+                type="button"
+                className="button"
+                onClick={loadProviders}
+                disabled={isLoadingProviders}
+                data-testid="auth-refresh-providers"
+              >
+                Обновить providers
+              </button>
             </section>
 
             <button
               type="button"
               className="button button-primary"
               disabled={isSubmitting}
-              onClick={handleDemoSignIn}
-              data-testid="auth-demo-submit"
+              onClick={handleAuthSubmit}
+              data-testid="auth-submit"
             >
-              Войти
+              {authMode === "register" ? "Создать аккаунт" : "Войти"}
             </button>
           </>
         ) : (
           <>
+            <p className="hint">
+              Первый вход супер-админа требует обязательной смены пароля.
+            </p>
+
             <label className="field">
-              <span>Bearer JWT</span>
-              <textarea
-                className="input textarea"
-                value={manualToken}
-                onChange={(event) => setManualToken(event.target.value)}
-                placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
-                data-testid="auth-manual-token"
+              <span>Текущий пароль</span>
+              <input
+                className="input"
+                type="password"
+                value={currentPassword}
+                onChange={(event) => setCurrentPassword(event.target.value)}
+                data-testid="auth-current-password"
               />
             </label>
 
-            <div className="grid-2">
-              <label className="field">
-                <span>Display name</span>
-                <input
-                  className="input"
-                  value={manualDisplayName}
-                  onChange={(event) => setManualDisplayName(event.target.value)}
-                  data-testid="auth-manual-display-name"
-                />
-              </label>
-              <label className="field">
-                <span>Email</span>
-                <input
-                  className="input"
-                  value={manualEmail}
-                  onChange={(event) => setManualEmail(event.target.value)}
-                  data-testid="auth-manual-email"
-                />
-              </label>
-            </div>
+            <label className="field">
+              <span>Новый пароль</span>
+              <input
+                className="input"
+                type="password"
+                value={newPassword}
+                onChange={(event) => setNewPassword(event.target.value)}
+                placeholder="минимум 8 символов"
+                data-testid="auth-new-password"
+              />
+            </label>
 
-            <div className="grid-2">
-              <label className="field">
-                <span>UI role</span>
-                <select
-                  className="input"
-                  value={manualRole}
-                  onChange={(event) => setManualRole(event.target.value as ProjectRole)}
-                  data-testid="auth-manual-role"
-                >
-                  {projectRoles.map((role) => (
-                    <option key={role} value={role}>
-                      {role}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="field">
-                <span>User ID (optional)</span>
-                <input
-                  className="input"
-                  value={manualUserId}
-                  onChange={(event) => setManualUserId(event.target.value)}
-                  placeholder="GUID (если пусто, берется из JWT sub)"
-                  data-testid="auth-manual-user-id"
-                />
-              </label>
-            </div>
+            <label className="field">
+              <span>Подтвердите новый пароль</span>
+              <input
+                className="input"
+                type="password"
+                value={confirmPassword}
+                onChange={(event) => setConfirmPassword(event.target.value)}
+                data-testid="auth-new-password-confirm"
+              />
+            </label>
 
             <button
               type="button"
               className="button button-primary"
               disabled={isSubmitting}
-              onClick={handleManualSignIn}
-              data-testid="auth-manual-submit"
+              onClick={handlePasswordChange}
+              data-testid="auth-change-password-submit"
             >
-              Продолжить
+              Сменить пароль
             </button>
           </>
         )}

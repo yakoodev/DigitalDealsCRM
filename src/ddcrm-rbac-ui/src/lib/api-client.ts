@@ -277,7 +277,7 @@ function unwrapOrThrow<TSuccess>(response: ApiResponseEnvelope<TSuccess>): TSucc
 
     if (typeof details.authFailure === "string" && details.authFailure) {
       throw new Error(
-        `UNAUTHORIZED: JWT отклонён (${details.authFailure}). Перелогиньтесь через Demo вход. (requestId: ${requestId})`,
+        `UNAUTHORIZED: JWT отклонён (${details.authFailure}). Выполните вход по email и паролю заново. (requestId: ${requestId})`,
       );
     }
   }
