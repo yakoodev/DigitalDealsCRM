@@ -22,9 +22,25 @@ const tabMeta = {
     label: "Товары",
     hint: "Каталог и изменения",
   },
+  offers: {
+    label: "Offers",
+    hint: "Единые предложения CRM и variants",
+  },
+  workflows: {
+    label: "Workflows",
+    hint: "Draft/publish и история исполнения блок-схем",
+  },
   messages: {
     label: "Сообщения",
     hint: "Переписки и ответы",
+  },
+  integrations: {
+    label: "Интеграции",
+    hint: "Grant-ы, runtime worker и invoke read/jobs",
+  },
+  steam: {
+    label: "Steam",
+    hint: "Управление Steam аккаунтами и jobs интеграции",
   },
 } as const;
 

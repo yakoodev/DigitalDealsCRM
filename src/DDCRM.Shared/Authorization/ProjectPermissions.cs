@@ -14,4 +14,8 @@ public static class ProjectPermissions
     public const string ProjectBillingChangePlan = "project.billing.changePlan";
     public const string ProjectModulesOperate = "project.modules.operate";
     public const string ProjectIntegrationsUse = "project.integrations.use";
+    public const string ProjectOffersManage = "project.offers.manage";
+    public const string ProjectWorkflowsManage = "project.workflows.manage";
+    public const string ProjectWorkflowsRun = "project.workflows.run";
+    public const string ProjectIntegrationsCustomManage = "project.integrations.custom.manage";
 }

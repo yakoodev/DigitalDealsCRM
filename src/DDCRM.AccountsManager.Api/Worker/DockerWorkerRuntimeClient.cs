@@ -40,7 +40,7 @@ public sealed class DockerWorkerRuntimeClient(
                 .Where(x => !string.IsNullOrWhiteSpace(x))
                 .Select(x => x.Trim())
                 .ToArray()
-            : ["DDCRM.Worker.Api.dll"];
+            : null;
 
         var createParams = new CreateContainerParameters
         {

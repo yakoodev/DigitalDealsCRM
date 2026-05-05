@@ -14,6 +14,11 @@ export const projectPermissions = {
   billingView: "project.billing.view",
   billingChangePlan: "project.billing.changePlan",
   modulesOperate: "project.modules.operate",
+  integrationsUse: "project.integrations.use",
+  offersManage: "project.offers.manage",
+  workflowsManage: "project.workflows.manage",
+  workflowsRun: "project.workflows.run",
+  customIntegrationsManage: "project.integrations.custom.manage",
 } as const;
 
 export type ProjectPermission =
@@ -32,6 +37,11 @@ const permissionMatrix: Record<ProjectRole, ReadonlySet<ProjectPermission>> = {
     projectPermissions.billingView,
     projectPermissions.billingChangePlan,
     projectPermissions.modulesOperate,
+    projectPermissions.integrationsUse,
+    projectPermissions.offersManage,
+    projectPermissions.workflowsManage,
+    projectPermissions.workflowsRun,
+    projectPermissions.customIntegrationsManage,
   ]),
   admin: new Set<ProjectPermission>([
     projectPermissions.membersInvite,
@@ -45,6 +55,11 @@ const permissionMatrix: Record<ProjectRole, ReadonlySet<ProjectPermission>> = {
     projectPermissions.billingView,
     projectPermissions.billingChangePlan,
     projectPermissions.modulesOperate,
+    projectPermissions.integrationsUse,
+    projectPermissions.offersManage,
+    projectPermissions.workflowsManage,
+    projectPermissions.workflowsRun,
+    projectPermissions.customIntegrationsManage,
   ]),
   moderator: new Set<ProjectPermission>([
     projectPermissions.accountsView,

@@ -69,53 +69,7 @@ namespace DDCRM.Core.Persistence.Migrations
                     b.ToTable("accounts", (string)null);
                 });
 
-            modelBuilder.Entity("DDCRM.Core.Persistence.Entities.AuthExternalIdentityEntity", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTimeOffset?>("LastUsedAtUtc")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<DateTimeOffset>("LinkedAtUtc")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("timestamp with time zone")
-                        .HasDefaultValueSql("NOW()");
-
-                    b.Property<string>("MetadataJson")
-                        .HasMaxLength(4000)
-                        .HasColumnType("character varying(4000)");
-
-                    b.Property<string>("Provider")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("character varying(64)");
-
-                    b.Property<string>("ProviderEmail")
-                        .HasMaxLength(320)
-                        .HasColumnType("character varying(320)");
-
-                    b.Property<string>("ProviderUserId")
-                        .IsRequired()
-                        .HasMaxLength(256)
-                        .HasColumnType("character varying(256)");
-
-                    b.Property<Guid>("UserId")
-                        .HasColumnType("uuid");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("Provider", "ProviderUserId")
-                        .IsUnique();
-
-                    b.HasIndex("UserId", "Provider")
-                        .IsUnique();
-
-                    b.ToTable("auth_external_identities", (string)null);
-                });
-
-            modelBuilder.Entity("DDCRM.Core.Persistence.Entities.AuthUserEntity", b =>
+            modelBuilder.Entity("DDCRM.Core.Persistence.Entities.AdminCustomHttpAllowlistEntity", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
@@ -126,47 +80,88 @@ namespace DDCRM.Core.Persistence.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasDefaultValueSql("NOW()");
 
-                    b.Property<string>("DisplayName")
+                    b.Property<string>("HostPattern")
                         .IsRequired()
-                        .HasMaxLength(160)
-                        .HasColumnType("character varying(160)");
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)");
 
-                    b.Property<string>("Email")
-                        .IsRequired()
-                        .HasMaxLength(320)
-                        .HasColumnType("character varying(320)");
-
-                    b.Property<string>("EmailNormalized")
-                        .IsRequired()
-                        .HasMaxLength(320)
-                        .HasColumnType("character varying(320)");
-
-                    b.Property<bool>("ForcePasswordChange")
+                    b.Property<bool>("IsActive")
                         .HasColumnType("boolean");
 
-                    b.Property<DateTimeOffset?>("LastLoginAtUtc")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("PasswordHash")
-                        .IsRequired()
-                        .HasMaxLength(1024)
-                        .HasColumnType("character varying(1024)");
-
-                    b.Property<string>("SystemPermissionsCsv")
-                        .HasMaxLength(512)
-                        .HasColumnType("character varying(512)");
+                    b.Property<string>("Note")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
 
                     b.Property<DateTimeOffset>("UpdatedAtUtc")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("timestamp with time zone")
                         .HasDefaultValueSql("NOW()");
 
+                    b.Property<Guid>("UpdatedByUserId")
+                        .HasColumnType("uuid");
+
                     b.HasKey("Id");
 
-                    b.HasIndex("EmailNormalized")
+                    b.HasIndex("HostPattern")
                         .IsUnique();
 
-                    b.ToTable("auth_users", (string)null);
+                    b.HasIndex("IsActive");
+
+                    b.ToTable("admin_custom_http_allowlist", (string)null);
+                });
+
+            modelBuilder.Entity("DDCRM.Core.Persistence.Entities.IntegrationWorkerRuntimeOutboxEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("AttemptCount")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasDefaultValueSql("NOW()");
+
+                    b.Property<string>("IntegrationKey")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)");
+
+                    b.Property<string>("LastError")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<DateTimeOffset>("NextAttemptAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Operation")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<DateTimeOffset?>("ProcessedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("ProjectId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("RuntimeAccountId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Status", "NextAttemptAtUtc");
+
+                    b.HasIndex("ProjectId", "IntegrationKey", "Operation");
+
+                    b.ToTable("integration_worker_runtime_outbox", (string)null);
                 });
 
             modelBuilder.Entity("DDCRM.Core.Persistence.Entities.MembershipCacheInvalidationAuditEntity", b =>
@@ -266,6 +261,174 @@ namespace DDCRM.Core.Persistence.Migrations
                     b.ToTable("notification_outbox", (string)null);
                 });
 
+            modelBuilder.Entity("DDCRM.Core.Persistence.Entities.OfferEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasDefaultValueSql("NOW()");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<Guid>("ProjectId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<DateTimeOffset>("UpdatedAtUtc")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasDefaultValueSql("NOW()");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProjectId", "Name");
+
+                    b.ToTable("offers", (string)null);
+                });
+
+            modelBuilder.Entity("DDCRM.Core.Persistence.Entities.OfferVariantEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("AccountId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasDefaultValueSql("NOW()");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("ObservedCurrency")
+                        .IsRequired()
+                        .HasMaxLength(8)
+                        .HasColumnType("character varying(8)");
+
+                    b.Property<string>("ObservedDescription")
+                        .HasMaxLength(4000)
+                        .HasColumnType("character varying(4000)");
+
+                    b.Property<decimal>("ObservedPrice")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)");
+
+                    b.Property<string>("ObservedTitle")
+                        .IsRequired()
+                        .HasMaxLength(400)
+                        .HasColumnType("character varying(400)");
+
+                    b.Property<Guid>("OfferId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Platform")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)");
+
+                    b.Property<int>("Priority")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid>("ProjectId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("UpdatedAtUtc")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasDefaultValueSql("NOW()");
+
+                    b.Property<string>("WorkerProductId")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProjectId", "AccountId");
+
+                    b.HasIndex("OfferId", "AccountId", "WorkerProductId")
+                        .IsUnique();
+
+                    b.ToTable("offer_variants", (string)null);
+                });
+
+            modelBuilder.Entity("DDCRM.Core.Persistence.Entities.ProjectCustomHttpIntegrationEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("BaseUrl")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<string>("BearerTokenCiphertext")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("BearerTokenMasked")
+                        .IsRequired()
+                        .HasMaxLength(24)
+                        .HasColumnType("character varying(24)");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasDefaultValueSql("NOW()");
+
+                    b.Property<string>("DefaultHeadersJson")
+                        .HasColumnType("text");
+
+                    b.Property<DateTimeOffset?>("LastTestedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)");
+
+                    b.Property<Guid>("ProjectId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<DateTimeOffset>("UpdatedAtUtc")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasDefaultValueSql("NOW()");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProjectId", "Name")
+                        .IsUnique();
+
+                    b.HasIndex("ProjectId", "Status");
+
+                    b.ToTable("project_custom_http_integrations", (string)null);
+                });
+
             modelBuilder.Entity("DDCRM.Core.Persistence.Entities.ProjectEntity", b =>
                 {
                     b.Property<Guid>("Id")
@@ -339,6 +502,59 @@ namespace DDCRM.Core.Persistence.Migrations
                         .IsUnique();
 
                     b.ToTable("project_integration_grants", (string)null);
+                });
+
+            modelBuilder.Entity("DDCRM.Core.Persistence.Entities.ProjectIntegrationWorkerRuntimeEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasDefaultValueSql("NOW()");
+
+                    b.Property<DateTimeOffset?>("DeprovisionedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("IntegrationKey")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)");
+
+                    b.Property<string>("LastError")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<Guid>("ProjectId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset?>("ProvisionedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("RuntimeAccountId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<DateTimeOffset>("UpdatedAtUtc")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasDefaultValueSql("NOW()");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RuntimeAccountId")
+                        .IsUnique();
+
+                    b.HasIndex("ProjectId", "IntegrationKey")
+                        .IsUnique();
+
+                    b.ToTable("project_integration_worker_runtimes", (string)null);
                 });
 
             modelBuilder.Entity("DDCRM.Core.Persistence.Entities.ProjectMemberEntity", b =>
@@ -667,6 +883,326 @@ namespace DDCRM.Core.Persistence.Migrations
                     b.ToTable("telegram_proxy_profiles", (string)null);
                 });
 
+            modelBuilder.Entity("DDCRM.Core.Persistence.Entities.WorkflowDefinitionEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasDefaultValueSql("NOW()");
+
+                    b.Property<string>("DraftJson")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<int>("MaxDurationSeconds")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("MaxRetries")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("MaxSteps")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid>("OfferId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("ProjectId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset?>("PublishedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("PublishedByUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("PublishedJson")
+                        .HasColumnType("text");
+
+                    b.Property<int>("PublishedVersion")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<DateTimeOffset>("UpdatedAtUtc")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasDefaultValueSql("NOW()");
+
+                    b.Property<Guid>("UpdatedByUserId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OfferId")
+                        .IsUnique();
+
+                    b.HasIndex("ProjectId");
+
+                    b.ToTable("workflow_definitions", (string)null);
+                });
+
+            modelBuilder.Entity("DDCRM.Core.Persistence.Entities.WorkflowExecutionEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset?>("FinishedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("LastError")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<Guid>("OfferId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("OutputJson")
+                        .HasColumnType("text");
+
+                    b.Property<Guid>("ProjectId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("SourceOrderId")
+                        .IsRequired()
+                        .HasMaxLength(160)
+                        .HasColumnType("character varying(160)");
+
+                    b.Property<DateTimeOffset>("StartedAtUtc")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasDefaultValueSql("NOW()");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<Guid>("TriggerEventId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("WorkflowDefinitionId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("WorkflowVersion")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OfferId");
+
+                    b.HasIndex("TriggerEventId");
+
+                    b.HasIndex("WorkflowDefinitionId");
+
+                    b.HasIndex("ProjectId", "OfferId", "StartedAtUtc");
+
+                    b.ToTable("workflow_executions", (string)null);
+                });
+
+            modelBuilder.Entity("DDCRM.Core.Persistence.Entities.WorkflowExecutionStepEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Error")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<Guid>("ExecutionId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset?>("FinishedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("InputJson")
+                        .HasColumnType("text");
+
+                    b.Property<string>("NodeId")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)");
+
+                    b.Property<string>("NodeType")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)");
+
+                    b.Property<string>("OutputJson")
+                        .HasColumnType("text");
+
+                    b.Property<DateTimeOffset>("StartedAtUtc")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasDefaultValueSql("NOW()");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<int>("StepIndex")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ExecutionId", "StepIndex");
+
+                    b.ToTable("workflow_execution_steps", (string)null);
+                });
+
+            modelBuilder.Entity("DDCRM.Core.Persistence.Entities.WorkflowMessageCursorEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("AccountId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("ConversationId")
+                        .IsRequired()
+                        .HasMaxLength(160)
+                        .HasColumnType("character varying(160)");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasDefaultValueSql("NOW()");
+
+                    b.Property<string>("LastSeenMessageId")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<Guid>("ProjectId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("UpdatedAtUtc")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasDefaultValueSql("NOW()");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProjectId", "UpdatedAtUtc");
+
+                    b.HasIndex("ProjectId", "AccountId", "ConversationId")
+                        .IsUnique();
+
+                    b.ToTable("workflow_message_cursors", (string)null);
+                });
+
+            modelBuilder.Entity("DDCRM.Core.Persistence.Entities.WorkflowOutboxEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("AttemptCount")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasDefaultValueSql("NOW()");
+
+                    b.Property<string>("LastError")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<DateTimeOffset>("NextAttemptAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("OfferId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset?>("ProcessedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("ProjectId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<Guid>("TriggerEventId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TriggerEventId");
+
+                    b.HasIndex("Status", "NextAttemptAtUtc");
+
+                    b.ToTable("workflow_outbox", (string)null);
+                });
+
+            modelBuilder.Entity("DDCRM.Core.Persistence.Entities.WorkflowTriggerEventEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("BuyerId")
+                        .HasMaxLength(160)
+                        .HasColumnType("character varying(160)");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasDefaultValueSql("NOW()");
+
+                    b.Property<Guid>("OfferId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("PayloadJson")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<DateTimeOffset?>("ProcessedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("ProjectId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)");
+
+                    b.Property<string>("SourceOrderId")
+                        .IsRequired()
+                        .HasMaxLength(160)
+                        .HasColumnType("character varying(160)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OfferId");
+
+                    b.HasIndex("ProjectId", "SourceOrderId")
+                        .IsUnique();
+
+                    b.HasIndex("ProjectId", "OfferId", "CreatedAtUtc");
+
+                    b.ToTable("workflow_trigger_events", (string)null);
+                });
+
             modelBuilder.Entity("DDCRM.Shared.Idempotency.IdempotencyRecord", b =>
                 {
                     b.Property<Guid>("Id")
@@ -714,17 +1250,6 @@ namespace DDCRM.Core.Persistence.Migrations
                     b.Navigation("Project");
                 });
 
-            modelBuilder.Entity("DDCRM.Core.Persistence.Entities.AuthExternalIdentityEntity", b =>
-                {
-                    b.HasOne("DDCRM.Core.Persistence.Entities.AuthUserEntity", "User")
-                        .WithMany("ExternalIdentities")
-                        .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("User");
-                });
-
             modelBuilder.Entity("DDCRM.Core.Persistence.Entities.NotificationOutboxEntity", b =>
                 {
                     b.HasOne("DDCRM.Core.Persistence.Entities.ProjectEntity", "Project")
@@ -736,10 +1261,60 @@ namespace DDCRM.Core.Persistence.Migrations
                     b.Navigation("Project");
                 });
 
+            modelBuilder.Entity("DDCRM.Core.Persistence.Entities.OfferEntity", b =>
+                {
+                    b.HasOne("DDCRM.Core.Persistence.Entities.ProjectEntity", "Project")
+                        .WithMany("Offers")
+                        .HasForeignKey("ProjectId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Project");
+                });
+
+            modelBuilder.Entity("DDCRM.Core.Persistence.Entities.OfferVariantEntity", b =>
+                {
+                    b.HasOne("DDCRM.Core.Persistence.Entities.OfferEntity", "Offer")
+                        .WithMany("Variants")
+                        .HasForeignKey("OfferId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("DDCRM.Core.Persistence.Entities.ProjectEntity", null)
+                        .WithMany("OfferVariants")
+                        .HasForeignKey("ProjectId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Offer");
+                });
+
+            modelBuilder.Entity("DDCRM.Core.Persistence.Entities.ProjectCustomHttpIntegrationEntity", b =>
+                {
+                    b.HasOne("DDCRM.Core.Persistence.Entities.ProjectEntity", "Project")
+                        .WithMany("CustomHttpIntegrations")
+                        .HasForeignKey("ProjectId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Project");
+                });
+
             modelBuilder.Entity("DDCRM.Core.Persistence.Entities.ProjectIntegrationGrantEntity", b =>
                 {
                     b.HasOne("DDCRM.Core.Persistence.Entities.ProjectEntity", "Project")
                         .WithMany("IntegrationGrants")
+                        .HasForeignKey("ProjectId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Project");
+                });
+
+            modelBuilder.Entity("DDCRM.Core.Persistence.Entities.ProjectIntegrationWorkerRuntimeEntity", b =>
+                {
+                    b.HasOne("DDCRM.Core.Persistence.Entities.ProjectEntity", "Project")
+                        .WithMany("IntegrationWorkerRuntimes")
                         .HasForeignKey("ProjectId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
@@ -791,26 +1366,169 @@ namespace DDCRM.Core.Persistence.Migrations
                     b.Navigation("Project");
                 });
 
-            modelBuilder.Entity("DDCRM.Core.Persistence.Entities.AuthUserEntity", b =>
+            modelBuilder.Entity("DDCRM.Core.Persistence.Entities.WorkflowDefinitionEntity", b =>
                 {
-                    b.Navigation("ExternalIdentities");
+                    b.HasOne("DDCRM.Core.Persistence.Entities.OfferEntity", "Offer")
+                        .WithMany("WorkflowDefinitions")
+                        .HasForeignKey("OfferId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("DDCRM.Core.Persistence.Entities.ProjectEntity", "Project")
+                        .WithMany("WorkflowDefinitions")
+                        .HasForeignKey("ProjectId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Offer");
+
+                    b.Navigation("Project");
+                });
+
+            modelBuilder.Entity("DDCRM.Core.Persistence.Entities.WorkflowExecutionEntity", b =>
+                {
+                    b.HasOne("DDCRM.Core.Persistence.Entities.OfferEntity", "Offer")
+                        .WithMany("WorkflowExecutions")
+                        .HasForeignKey("OfferId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("DDCRM.Core.Persistence.Entities.ProjectEntity", "Project")
+                        .WithMany("WorkflowExecutions")
+                        .HasForeignKey("ProjectId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("DDCRM.Core.Persistence.Entities.WorkflowTriggerEventEntity", "TriggerEvent")
+                        .WithMany("Executions")
+                        .HasForeignKey("TriggerEventId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("DDCRM.Core.Persistence.Entities.WorkflowDefinitionEntity", "WorkflowDefinition")
+                        .WithMany("Executions")
+                        .HasForeignKey("WorkflowDefinitionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Offer");
+
+                    b.Navigation("Project");
+
+                    b.Navigation("TriggerEvent");
+
+                    b.Navigation("WorkflowDefinition");
+                });
+
+            modelBuilder.Entity("DDCRM.Core.Persistence.Entities.WorkflowExecutionStepEntity", b =>
+                {
+                    b.HasOne("DDCRM.Core.Persistence.Entities.WorkflowExecutionEntity", "Execution")
+                        .WithMany("Steps")
+                        .HasForeignKey("ExecutionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Execution");
+                });
+
+            modelBuilder.Entity("DDCRM.Core.Persistence.Entities.WorkflowMessageCursorEntity", b =>
+                {
+                    b.HasOne("DDCRM.Core.Persistence.Entities.ProjectEntity", "Project")
+                        .WithMany()
+                        .HasForeignKey("ProjectId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Project");
+                });
+
+            modelBuilder.Entity("DDCRM.Core.Persistence.Entities.WorkflowOutboxEntity", b =>
+                {
+                    b.HasOne("DDCRM.Core.Persistence.Entities.WorkflowTriggerEventEntity", "TriggerEvent")
+                        .WithMany("OutboxItems")
+                        .HasForeignKey("TriggerEventId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("TriggerEvent");
+                });
+
+            modelBuilder.Entity("DDCRM.Core.Persistence.Entities.WorkflowTriggerEventEntity", b =>
+                {
+                    b.HasOne("DDCRM.Core.Persistence.Entities.OfferEntity", "Offer")
+                        .WithMany("WorkflowTriggerEvents")
+                        .HasForeignKey("OfferId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("DDCRM.Core.Persistence.Entities.ProjectEntity", "Project")
+                        .WithMany("WorkflowTriggerEvents")
+                        .HasForeignKey("ProjectId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Offer");
+
+                    b.Navigation("Project");
+                });
+
+            modelBuilder.Entity("DDCRM.Core.Persistence.Entities.OfferEntity", b =>
+                {
+                    b.Navigation("Variants");
+
+                    b.Navigation("WorkflowDefinitions");
+
+                    b.Navigation("WorkflowExecutions");
+
+                    b.Navigation("WorkflowTriggerEvents");
                 });
 
             modelBuilder.Entity("DDCRM.Core.Persistence.Entities.ProjectEntity", b =>
                 {
                     b.Navigation("Accounts");
 
+                    b.Navigation("CustomHttpIntegrations");
+
                     b.Navigation("IntegrationGrants");
+
+                    b.Navigation("IntegrationWorkerRuntimes");
 
                     b.Navigation("Members");
 
                     b.Navigation("NotificationOutboxItems");
+
+                    b.Navigation("OfferVariants");
+
+                    b.Navigation("Offers");
 
                     b.Navigation("ServiceCredentials");
 
                     b.Navigation("TelegramChatBindings");
 
                     b.Navigation("TelegramLinkCodes");
+
+                    b.Navigation("WorkflowDefinitions");
+
+                    b.Navigation("WorkflowExecutions");
+
+                    b.Navigation("WorkflowTriggerEvents");
+                });
+
+            modelBuilder.Entity("DDCRM.Core.Persistence.Entities.WorkflowDefinitionEntity", b =>
+                {
+                    b.Navigation("Executions");
+                });
+
+            modelBuilder.Entity("DDCRM.Core.Persistence.Entities.WorkflowExecutionEntity", b =>
+                {
+                    b.Navigation("Steps");
+                });
+
+            modelBuilder.Entity("DDCRM.Core.Persistence.Entities.WorkflowTriggerEventEntity", b =>
+                {
+                    b.Navigation("Executions");
+
+                    b.Navigation("OutboxItems");
                 });
 #pragma warning restore 612, 618
         }

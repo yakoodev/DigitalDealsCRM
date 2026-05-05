@@ -4,6 +4,10 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using DDCRM.Core.Api.AccountsManager;
 using DDCRM.Core.Api.Tests.Infrastructure;
+using DDCRM.Core.Persistence;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace DDCRM.Core.Api.Tests;
 
@@ -978,6 +982,512 @@ public sealed class CoreApiIntegrationTests(CoreApiFactory factory) : IClassFixt
 
         Assert.Equal(HttpStatusCode.Forbidden, billingResponse.StatusCode);
         Assert.Empty(factory.BillingClient.CreatePaymentCalls);
+    }
+
+    [Fact]
+    [Trait("Category", "Integration")]
+    public async Task Offers_CreateReplaceVariantsAndReadAggregates_Works()
+    {
+        using var client = CreateAuthorizedClient(Guid.NewGuid());
+        var projectId = await CreateProjectAsync(client, "Offers-Project");
+        var accountId = await CreateAccountAsync(client, projectId, "Offer Account A");
+
+        var createOfferResponse = await SendJsonAsync(
+            client,
+            HttpMethod.Post,
+            $"/v1/projects/{projectId}/offers",
+            Guid.NewGuid().ToString("N"),
+            new
+            {
+                name = "Steam Prime Offer",
+                description = "Aggregated offer",
+                status = "active",
+            });
+
+        Assert.Equal(HttpStatusCode.Created, createOfferResponse.StatusCode);
+        using var createOfferJson = JsonDocument.Parse(await createOfferResponse.Content.ReadAsStringAsync());
+        var offer = createOfferJson.RootElement.GetProperty("offer");
+        var offerId = offer.GetProperty("id").GetGuid();
+
+        var replaceVariantsResponse = await SendJsonAsync(
+            client,
+            HttpMethod.Put,
+            $"/v1/projects/{projectId}/offers/{offerId}/variants",
+            Guid.NewGuid().ToString("N"),
+            new
+            {
+                items = new[]
+                {
+                    new
+                    {
+                        accountId,
+                        workerProductId = "steam-prod-1",
+                        platform = "steam",
+                        observedTitle = "Steam Product #1",
+                        observedDescription = "desc-1",
+                        observedPrice = 100m,
+                        observedCurrency = "RUB",
+                        priority = 10,
+                        isActive = true,
+                    },
+                    new
+                    {
+                        accountId,
+                        workerProductId = "steam-prod-2",
+                        platform = "steam",
+                        observedTitle = "Steam Product #2",
+                        observedDescription = "desc-2",
+                        observedPrice = 120m,
+                        observedCurrency = "RUB",
+                        priority = 20,
+                        isActive = true,
+                    },
+                },
+            });
+
+        Assert.Equal(HttpStatusCode.OK, replaceVariantsResponse.StatusCode);
+        using var replaceJson = JsonDocument.Parse(await replaceVariantsResponse.Content.ReadAsStringAsync());
+        var updatedOffer = replaceJson.RootElement.GetProperty("offer");
+        Assert.Equal(2, updatedOffer.GetProperty("variantCount").GetInt32());
+        Assert.Equal(100m, updatedOffer.GetProperty("minPrice").GetDecimal());
+        Assert.Equal(120m, updatedOffer.GetProperty("maxPrice").GetDecimal());
+        Assert.Equal(110m, updatedOffer.GetProperty("averagePrice").GetDecimal());
+
+        var getOfferResponse = await client.GetAsync($"/v1/projects/{projectId}/offers/{offerId}");
+        Assert.Equal(HttpStatusCode.OK, getOfferResponse.StatusCode);
+        using var getOfferJson = JsonDocument.Parse(await getOfferResponse.Content.ReadAsStringAsync());
+        var getOfferPayload = getOfferJson.RootElement.GetProperty("offer");
+        Assert.Equal(2, getOfferPayload.GetProperty("variants").GetArrayLength());
+        Assert.Equal("Steam Prime Offer", getOfferPayload.GetProperty("name").GetString());
+
+        var listOffersResponse = await client.GetAsync($"/v1/projects/{projectId}/offers");
+        Assert.Equal(HttpStatusCode.OK, listOffersResponse.StatusCode);
+        using var listOffersJson = JsonDocument.Parse(await listOffersResponse.Content.ReadAsStringAsync());
+        var offerItems = listOffersJson.RootElement.GetProperty("items");
+        Assert.Contains(offerItems.EnumerateArray(), item => item.GetProperty("id").GetGuid() == offerId);
+    }
+
+    [Fact]
+    [Trait("Category", "Integration")]
+    public async Task Workflow_PublishAndPurchaseWebhookDedup_Works()
+    {
+        using var client = CreateAuthorizedClient(Guid.NewGuid());
+        var projectId = await CreateProjectAsync(client, "Workflow-Project");
+
+        var createOfferResponse = await SendJsonAsync(
+            client,
+            HttpMethod.Post,
+            $"/v1/projects/{projectId}/offers",
+            Guid.NewGuid().ToString("N"),
+            new { name = "Webhook Offer" });
+        Assert.Equal(HttpStatusCode.Created, createOfferResponse.StatusCode);
+        using var createOfferJson = JsonDocument.Parse(await createOfferResponse.Content.ReadAsStringAsync());
+        var offerId = createOfferJson.RootElement.GetProperty("offer").GetProperty("id").GetGuid();
+
+        var draftResponse = await SendJsonAsync(
+            client,
+            HttpMethod.Put,
+            $"/v1/projects/{projectId}/offers/{offerId}/workflow/draft",
+            Guid.NewGuid().ToString("N"),
+            new
+            {
+                version = "v1",
+                maxSteps = 100,
+                maxDurationSeconds = 120,
+                maxRetries = 3,
+                nodes = new[]
+                {
+                    new
+                    {
+                        id = "purchase-start",
+                        type = "PurchaseStart",
+                        config = new { },
+                        ui = new
+                        {
+                            position = new
+                            {
+                                x = 20.0,
+                                y = 40.0,
+                            },
+                        },
+                    },
+                    new
+                    {
+                        id = "load-offer",
+                        type = "LoadOffer",
+                        config = new { },
+                        ui = new
+                        {
+                            position = new
+                            {
+                                x = 120.5,
+                                y = 40.25,
+                            },
+                        },
+                    },
+                    new
+                    {
+                        id = "end",
+                        type = "End",
+                        config = new { },
+                        ui = new
+                        {
+                            position = new
+                            {
+                                x = 420.0,
+                                y = 260.0,
+                            },
+                        },
+                    },
+                },
+                edges = new[]
+                {
+                    new
+                    {
+                        id = "edge-0",
+                        source = "purchase-start",
+                        sourceHandle = "out-flow",
+                        target = "load-offer",
+                        targetHandle = "in-flow",
+                    },
+                    new
+                    {
+                        id = "edge-1",
+                        source = "load-offer",
+                        sourceHandle = "out-offer",
+                        target = "end",
+                        targetHandle = "in-flow",
+                    },
+                },
+                ui = new
+                {
+                    viewport = new
+                    {
+                        x = -60,
+                        y = 15,
+                        zoom = 1.15,
+                    },
+                    entryNodeId = "purchase-start",
+                },
+            });
+        Assert.Equal(HttpStatusCode.OK, draftResponse.StatusCode);
+        using (var draftJson = JsonDocument.Parse(await draftResponse.Content.ReadAsStringAsync()))
+        {
+            var loadOfferNode = draftJson.RootElement
+                .GetProperty("draft")
+                .GetProperty("nodes")
+                .EnumerateArray()
+                .Single(node => string.Equals(node.GetProperty("id").GetString(), "load-offer", StringComparison.Ordinal));
+            var nodeUi = loadOfferNode
+                .GetProperty("ui")
+                .GetProperty("position");
+            Assert.Equal(120.5m, nodeUi.GetProperty("x").GetDecimal());
+            Assert.Equal(40.25m, nodeUi.GetProperty("y").GetDecimal());
+        }
+
+        var getDraftResponse = await client.GetAsync($"/v1/projects/{projectId}/offers/{offerId}/workflow/draft");
+        Assert.Equal(HttpStatusCode.OK, getDraftResponse.StatusCode);
+        using (var getDraftJson = JsonDocument.Parse(await getDraftResponse.Content.ReadAsStringAsync()))
+        {
+            var viewport = getDraftJson.RootElement
+                .GetProperty("draft")
+                .GetProperty("ui")
+                .GetProperty("viewport");
+            Assert.Equal(-60m, viewport.GetProperty("x").GetDecimal());
+            Assert.Equal(15m, viewport.GetProperty("y").GetDecimal());
+            Assert.Equal(1.15m, viewport.GetProperty("zoom").GetDecimal());
+
+            var edge = getDraftJson.RootElement
+                .GetProperty("draft")
+                .GetProperty("edges")
+                .EnumerateArray()
+                .Single(item => string.Equals(item.GetProperty("id").GetString(), "edge-1", StringComparison.Ordinal));
+            Assert.Equal("out-offer", edge.GetProperty("sourceHandle").GetString());
+            Assert.Equal("in-flow", edge.GetProperty("targetHandle").GetString());
+            Assert.Equal(
+                "purchase-start",
+                getDraftJson.RootElement
+                    .GetProperty("draft")
+                    .GetProperty("ui")
+                    .GetProperty("entryNodeId")
+                    .GetString());
+        }
+
+        var publishResponse = await SendJsonAsync(
+            client,
+            HttpMethod.Post,
+            $"/v1/projects/{projectId}/offers/{offerId}/workflow/publish",
+            Guid.NewGuid().ToString("N"),
+            new { });
+        Assert.Equal(HttpStatusCode.OK, publishResponse.StatusCode);
+        using (var publishJson = JsonDocument.Parse(await publishResponse.Content.ReadAsStringAsync()))
+        {
+            var viewport = publishJson.RootElement
+                .GetProperty("draft")
+                .GetProperty("ui")
+                .GetProperty("viewport");
+            Assert.Equal(-60m, viewport.GetProperty("x").GetDecimal());
+            Assert.Equal(15m, viewport.GetProperty("y").GetDecimal());
+            Assert.Equal(1.15m, viewport.GetProperty("zoom").GetDecimal());
+            Assert.Equal(
+                "purchase-start",
+                publishJson.RootElement
+                    .GetProperty("draft")
+                    .GetProperty("ui")
+                    .GetProperty("entryNodeId")
+                    .GetString());
+        }
+
+        using var configScope = factory.Services.CreateScope();
+        var configuration = configScope.ServiceProvider.GetRequiredService<IConfiguration>();
+        var webhookSecret = configuration["WORKFLOW_PURCHASE_WEBHOOK_SECRET"];
+        Assert.False(string.IsNullOrWhiteSpace(webhookSecret));
+
+        var sourceOrderId = "order-12345";
+        var firstWebhookRequest = new HttpRequestMessage(HttpMethod.Post, "/v1/integrations/workflow/purchase")
+        {
+            Content = JsonContent.Create(new
+            {
+                projectId,
+                offerId,
+                sourceOrderId,
+                buyerId = "buyer-1",
+                payload = new
+                {
+                    quantity = 1,
+                },
+            }),
+        };
+        firstWebhookRequest.Headers.Add("X-Workflow-Purchase-Secret", webhookSecret);
+
+        var firstWebhookResponse = await client.SendAsync(firstWebhookRequest);
+        Assert.Equal(HttpStatusCode.Accepted, firstWebhookResponse.StatusCode);
+
+        var duplicateWebhookRequest = new HttpRequestMessage(HttpMethod.Post, "/v1/integrations/workflow/purchase")
+        {
+            Content = JsonContent.Create(new
+            {
+                projectId,
+                offerId,
+                sourceOrderId,
+                buyerId = "buyer-1",
+                payload = new
+                {
+                    quantity = 1,
+                },
+            }),
+        };
+        duplicateWebhookRequest.Headers.Add("X-Workflow-Purchase-Secret", webhookSecret);
+
+        var duplicateWebhookResponse = await client.SendAsync(duplicateWebhookRequest);
+        Assert.Equal(HttpStatusCode.OK, duplicateWebhookResponse.StatusCode);
+
+        using var duplicateJson = JsonDocument.Parse(await duplicateWebhookResponse.Content.ReadAsStringAsync());
+        Assert.Equal("duplicate", duplicateJson.RootElement.GetProperty("status").GetString());
+
+        using var scope = factory.Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<CoreDbContext>();
+        var eventsCount = await dbContext.WorkflowTriggerEvents.CountAsync(
+            x => x.ProjectId == projectId && x.SourceOrderId == sourceOrderId);
+        Assert.Equal(1, eventsCount);
+    }
+
+    [Fact]
+    [Trait("Category", "Integration")]
+    public async Task WorkflowDraft_WithoutUi_BackwardCompatible()
+    {
+        using var client = CreateAuthorizedClient(Guid.NewGuid());
+        var projectId = await CreateProjectAsync(client, "Workflow-Compat");
+
+        var createOfferResponse = await SendJsonAsync(
+            client,
+            HttpMethod.Post,
+            $"/v1/projects/{projectId}/offers",
+            Guid.NewGuid().ToString("N"),
+            new { name = "Compat Offer" });
+        Assert.Equal(HttpStatusCode.Created, createOfferResponse.StatusCode);
+        using var createOfferJson = JsonDocument.Parse(await createOfferResponse.Content.ReadAsStringAsync());
+        var offerId = createOfferJson.RootElement.GetProperty("offer").GetProperty("id").GetGuid();
+
+        var draftResponse = await SendJsonAsync(
+            client,
+            HttpMethod.Put,
+            $"/v1/projects/{projectId}/offers/{offerId}/workflow/draft",
+            Guid.NewGuid().ToString("N"),
+            new
+            {
+                version = "v1",
+                maxSteps = 100,
+                maxDurationSeconds = 120,
+                maxRetries = 3,
+                nodes = new[]
+                {
+                    new
+                    {
+                        id = "purchase-start",
+                        type = "PurchaseStart",
+                        config = new { },
+                    },
+                    new
+                    {
+                        id = "load-offer",
+                        type = "LoadOffer",
+                        config = new { },
+                    },
+                    new
+                    {
+                        id = "end",
+                        type = "End",
+                        config = new { },
+                    },
+                },
+                edges = new[]
+                {
+                    new
+                    {
+                        id = "edge-0",
+                        source = "purchase-start",
+                        target = "load-offer",
+                    },
+                    new
+                    {
+                        id = "edge-1",
+                        source = "load-offer",
+                        target = "end",
+                    },
+                },
+            });
+        Assert.Equal(HttpStatusCode.OK, draftResponse.StatusCode);
+
+        var publishResponse = await SendJsonAsync(
+            client,
+            HttpMethod.Post,
+            $"/v1/projects/{projectId}/offers/{offerId}/workflow/publish",
+            Guid.NewGuid().ToString("N"),
+            new { });
+        Assert.Equal(HttpStatusCode.OK, publishResponse.StatusCode);
+    }
+
+    [Fact]
+    [Trait("Category", "Integration")]
+    public async Task CustomHttpIntegrations_RequireGrantAndSupportCrud()
+    {
+        using var ownerClient = CreateAuthorizedClient(Guid.NewGuid());
+        var projectId = await CreateProjectAsync(ownerClient, "CustomHttp-Project");
+
+        var noGrantResponse = await ownerClient.GetAsync($"/v1/projects/{projectId}/integrations/custom-http");
+        Assert.Equal(HttpStatusCode.Forbidden, noGrantResponse.StatusCode);
+
+        factory.GrantProjectIntegration(projectId, "custom-http", "use");
+
+        using var adminClient = factory.CreateClient();
+        adminClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
+            "Bearer",
+            factory.CreateToken(Guid.NewGuid(), "system.integrations.manage"));
+
+        var allowlistEntryId = Guid.NewGuid();
+        var allowlistResponse = await SendJsonAsync(
+            adminClient,
+            HttpMethod.Put,
+            $"/v1/admin/integrations/custom-http/allowlist/{allowlistEntryId}",
+            Guid.NewGuid().ToString("N"),
+            new
+            {
+                hostPattern = "8.8.8.8",
+                isActive = true,
+                note = "unit-test",
+            });
+        Assert.Equal(HttpStatusCode.OK, allowlistResponse.StatusCode);
+
+        var createResponse = await SendJsonAsync(
+            ownerClient,
+            HttpMethod.Post,
+            $"/v1/projects/{projectId}/integrations/custom-http",
+            Guid.NewGuid().ToString("N"),
+            new
+            {
+                name = "Fulfillment API",
+                baseUrl = "https://8.8.8.8",
+                bearerToken = "secret-token-123",
+                status = "active",
+            });
+        Assert.Equal(HttpStatusCode.Created, createResponse.StatusCode);
+        using var createJson = JsonDocument.Parse(await createResponse.Content.ReadAsStringAsync());
+        var integration = createJson.RootElement.GetProperty("integration");
+        var integrationId = integration.GetProperty("id").GetGuid();
+        var masked = integration.GetProperty("bearerTokenMasked").GetString();
+        Assert.NotNull(masked);
+        Assert.DoesNotContain("secret-token-123", masked!, StringComparison.Ordinal);
+
+        var listResponse = await ownerClient.GetAsync($"/v1/projects/{projectId}/integrations/custom-http");
+        Assert.Equal(HttpStatusCode.OK, listResponse.StatusCode);
+        using var listJson = JsonDocument.Parse(await listResponse.Content.ReadAsStringAsync());
+        Assert.Contains(
+            listJson.RootElement.GetProperty("items").EnumerateArray(),
+            item => item.GetProperty("id").GetGuid() == integrationId);
+
+        var patchResponse = await SendJsonAsync(
+            ownerClient,
+            HttpMethod.Patch,
+            $"/v1/projects/{projectId}/integrations/custom-http/{integrationId}",
+            Guid.NewGuid().ToString("N"),
+            new
+            {
+                status = "disabled",
+            });
+        Assert.Equal(HttpStatusCode.OK, patchResponse.StatusCode);
+
+        var deleteResponse = await SendJsonAsync(
+            ownerClient,
+            HttpMethod.Delete,
+            $"/v1/projects/{projectId}/integrations/custom-http/{integrationId}",
+            Guid.NewGuid().ToString("N"),
+            null);
+        Assert.Equal(HttpStatusCode.OK, deleteResponse.StatusCode);
+    }
+
+    [Fact]
+    [Trait("Category", "Security")]
+    public async Task OffersWorkflowsAndCustomHttp_Moderator_IsForbidden()
+    {
+        var ownerId = Guid.NewGuid();
+        var moderatorId = Guid.NewGuid();
+
+        using var ownerClient = CreateAuthorizedClient(ownerId);
+        var projectId = await CreateProjectAsync(ownerClient, "Moderator-Forbidden");
+
+        var addMemberResponse = await SendJsonAsync(
+            ownerClient,
+            HttpMethod.Post,
+            $"/v1/projects/{projectId}/members",
+            Guid.NewGuid().ToString("N"),
+            new
+            {
+                userId = moderatorId,
+                role = "moderator",
+            });
+        Assert.Equal(HttpStatusCode.OK, addMemberResponse.StatusCode);
+
+        var createOfferResponse = await SendJsonAsync(
+            ownerClient,
+            HttpMethod.Post,
+            $"/v1/projects/{projectId}/offers",
+            Guid.NewGuid().ToString("N"),
+            new { name = "Owner Offer" });
+        Assert.Equal(HttpStatusCode.Created, createOfferResponse.StatusCode);
+        using var createOfferJson = JsonDocument.Parse(await createOfferResponse.Content.ReadAsStringAsync());
+        var offerId = createOfferJson.RootElement.GetProperty("offer").GetProperty("id").GetGuid();
+
+        using var moderatorClient = CreateAuthorizedClient(moderatorId);
+
+        var offersResponse = await moderatorClient.GetAsync($"/v1/projects/{projectId}/offers");
+        Assert.Equal(HttpStatusCode.Forbidden, offersResponse.StatusCode);
+
+        var workflowResponse = await moderatorClient.GetAsync($"/v1/projects/{projectId}/offers/{offerId}/workflow/draft");
+        Assert.Equal(HttpStatusCode.Forbidden, workflowResponse.StatusCode);
+
+        var customHttpResponse = await moderatorClient.GetAsync($"/v1/projects/{projectId}/integrations/custom-http");
+        Assert.Equal(HttpStatusCode.Forbidden, customHttpResponse.StatusCode);
     }
 
     private HttpClient CreateAuthorizedClient(Guid userId, bool withSystemPermission = false)

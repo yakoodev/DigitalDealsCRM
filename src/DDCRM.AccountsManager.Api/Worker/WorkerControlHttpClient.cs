@@ -8,7 +8,8 @@ namespace DDCRM.AccountsManager.Api.Worker;
 
 public sealed class WorkerControlHttpClient(
     HttpClient httpClient,
-    IOptions<WorkerControlClientOptions> options)
+    IOptions<WorkerControlClientOptions> options,
+    ILogger<WorkerControlHttpClient> logger)
     : IWorkerControlClient
 {
     private readonly WorkerControlClientOptions _options = options.Value;
@@ -49,6 +50,15 @@ public sealed class WorkerControlHttpClient(
         var response = await httpClient.SendAsync(request, cancellationToken);
         if (response.IsSuccessStatusCode)
         {
+            return;
+        }
+
+        if (response.StatusCode == System.Net.HttpStatusCode.NotFound && _options.IgnoreNotFoundOnApplyActions)
+        {
+            logger.LogWarning(
+                "Worker control proxy-credentials apply ignored due to 404. worker={WorkerId} account={AccountId}",
+                workerBinding.WorkerId,
+                accountId);
             return;
         }
 
@@ -104,6 +114,15 @@ public sealed class WorkerControlHttpClient(
         var response = await httpClient.SendAsync(request, cancellationToken);
         if (response.IsSuccessStatusCode)
         {
+            return;
+        }
+
+        if (response.StatusCode == System.Net.HttpStatusCode.NotFound && _options.IgnoreNotFoundOnApplyActions)
+        {
+            logger.LogWarning(
+                "Worker control marketplace-auth apply ignored due to 404. worker={WorkerId} account={AccountId}",
+                workerBinding.WorkerId,
+                accountId);
             return;
         }
 

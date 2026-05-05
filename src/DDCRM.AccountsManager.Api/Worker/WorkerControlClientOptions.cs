@@ -11,4 +11,8 @@ public sealed class WorkerControlClientOptions
     public string PathPrefix { get; set; } = "/internal/v2/worker";
 
     public string? ServiceToken { get; set; }
+
+    public int RequestTimeoutSeconds { get; set; } = 20;
+
+    public bool IgnoreNotFoundOnApplyActions { get; set; } = true;
 }

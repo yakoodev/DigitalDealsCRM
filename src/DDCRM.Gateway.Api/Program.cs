@@ -56,7 +56,12 @@ builder.Services.AddHttpClient<IEntitlementClient, EntitlementHttpClient>((servi
     client.BaseAddress = new Uri(options.BaseUrl);
 });
 
-builder.Services.AddHttpClient<IWorkerProxyClient, WorkerProxyHttpClient>();
+builder.Services.AddHttpClient<IWorkerProxyClient, WorkerProxyHttpClient>((serviceProvider, client) =>
+{
+    var options = serviceProvider.GetRequiredService<IOptions<WorkerProxyClientOptions>>().Value;
+    var timeoutSeconds = Math.Clamp(options.RequestTimeoutSeconds, 5, 120);
+    client.Timeout = TimeSpan.FromSeconds(timeoutSeconds);
+});
 
 builder.Services
     .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
@@ -343,6 +348,11 @@ static JsonElement NormalizeProxyResult(JsonElement rawPayload)
 
 static string ResolvePermissionForAction(string action)
 {
+    if (action.StartsWith("ext.integration.", StringComparison.Ordinal))
+    {
+        return ProjectPermissions.ProjectIntegrationsUse;
+    }
+
     if (action.StartsWith("ext.account.lifecycle.", StringComparison.Ordinal))
     {
         return ProjectPermissions.ProjectAccountsLifecycleManage;

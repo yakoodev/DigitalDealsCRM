@@ -11,4 +11,6 @@ public sealed class WorkerProxyClientOptions
     public string PathPrefix { get; set; } = "/internal/v2/worker";
 
     public string? ServiceToken { get; set; }
+
+    public int RequestTimeoutSeconds { get; set; } = 20;
 }

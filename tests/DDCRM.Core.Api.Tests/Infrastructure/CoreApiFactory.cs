@@ -49,6 +49,10 @@ public sealed class CoreApiFactory : WebApplicationFactory<Program>
                 ["EXTERNAL_API_SUPER_ADMIN_EMAIL"] = SuperAdminEmail,
                 ["EXTERNAL_API_SUPER_ADMIN_PASSWORD"] = SuperAdminPassword,
                 ["EXTERNAL_API_SUPER_ADMIN_DISPLAY_NAME"] = "Root Admin",
+                ["FEATURE_OFFERS_ENABLED"] = "true",
+                ["FEATURE_WORKFLOWS_ENABLED"] = "true",
+                ["FEATURE_CUSTOM_HTTP_INTEGRATIONS_ENABLED"] = "true",
+                ["WORKFLOW_PURCHASE_WEBHOOK_SECRET"] = "workflow-secret-tests",
                 ["TEST_USE_INMEMORY_DB"] = "true",
                 ["TEST_INMEMORY_DB_NAME"] = $"core-tests-{Guid.NewGuid():N}",
             });

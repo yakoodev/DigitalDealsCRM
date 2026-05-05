@@ -6,6 +6,15 @@ import { ProjectProductCreatePanel } from "@/components/project-pages/product-cr
 import { runAccountActionRequest } from "@/lib/api-client";
 
 const pushSpy = vi.fn();
+let mockAccounts = [
+  {
+    id: "acc-1",
+    projectId: "project-1",
+    platform: "funpay",
+    displayName: "Account 1",
+    businessStatus: "active",
+  },
+];
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: pushSpy }),
@@ -13,15 +22,7 @@ vi.mock("next/navigation", () => ({
 
 vi.mock("@/hooks/use-project-accounts", () => ({
   useProjectAccounts: () => ({
-    accounts: [
-      {
-        id: "acc-1",
-        projectId: "project-1",
-        platform: "funpay",
-        displayName: "Account 1",
-        businessStatus: "active",
-      },
-    ],
+    accounts: mockAccounts,
     selectedAccountId: "acc-1",
     selectedAccount: null,
     isLoading: false,
@@ -67,6 +68,15 @@ function renderPanel() {
 describe("ProjectProductCreatePanel", () => {
   beforeEach(() => {
     pushSpy.mockReset();
+    mockAccounts = [
+      {
+        id: "acc-1",
+        projectId: "project-1",
+        platform: "funpay",
+        displayName: "Account 1",
+        businessStatus: "active",
+      },
+    ];
     vi.mocked(runAccountActionRequest).mockReset();
     vi.mocked(runAccountActionRequest).mockImplementation(
       async (_session, _accountId, action) => {
@@ -113,7 +123,7 @@ describe("ProjectProductCreatePanel", () => {
     await userEvent.clear(screen.getByLabelText("Цена"));
     await userEvent.type(screen.getByLabelText("Цена"), "199");
 
-    await userEvent.click(screen.getByRole("button", { name: "Создать товар" }));
+    await userEvent.click(screen.getByRole("button", { name: "Создать товары" }));
 
     await waitFor(() => {
       expect(runAccountActionRequest).toHaveBeenCalledWith(
@@ -135,5 +145,69 @@ describe("ProjectProductCreatePanel", () => {
     await waitFor(() => {
       expect(pushSpy).toHaveBeenCalledWith("/projects/project-1/products");
     });
+  });
+
+  it("подгружает Playerok metadata helper и не блокирует ручной ввод", async () => {
+    mockAccounts = [
+      {
+        id: "acc-playerok-1",
+        projectId: "project-1",
+        platform: "playerok",
+        displayName: "Playerok Account",
+        businessStatus: "active",
+      },
+    ];
+
+    vi.mocked(runAccountActionRequest).mockImplementation(
+      async (_session, _accountId, action) => {
+        if (action === "products.schemas.list") {
+          return {
+            items: [
+              {
+                schemaId: "playerok.item.v1",
+                provider: "playerok",
+                title: "Playerok Item",
+                fields: [
+                  { key: "title", type: "string", required: true },
+                  { key: "price.amount", type: "number", required: true },
+                  { key: "price.currency", type: "string", required: true },
+                  { key: "attributes.gameCategoryId", type: "string", required: true },
+                  { key: "attributes.options", type: "object", required: false },
+                ],
+              },
+            ],
+          };
+        }
+
+        if (action === "ext.playerok.products.metadata") {
+          return {
+            categories: [{ id: "cat-1", gameId: "game-1", name: "MMORPG" }],
+            obtainingTypes: [{ id: "obt-1", name: "Trade" }],
+            options: [{ field: "server", value: "eu", label: "EU" }],
+            dataFields: [{ id: "field-1", name: "Логин", required: true }],
+          };
+        }
+
+        return {
+          productId: "prod-1",
+          status: "active",
+          version: "1",
+        };
+      },
+    );
+
+    renderPanel();
+
+    await waitFor(() => {
+      expect(runAccountActionRequest).toHaveBeenCalledWith(
+        { baseUrl: "http://localhost:5073", token: "token" },
+        "acc-playerok-1",
+        "ext.playerok.products.metadata",
+        {},
+      );
+    });
+
+    expect(screen.getByText("Playerok metadata helper")).toBeInTheDocument();
+    expect(screen.queryByText(/Форма остаётся в ручном режиме/)).not.toBeInTheDocument();
   });
 });

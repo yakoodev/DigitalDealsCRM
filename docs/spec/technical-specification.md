@@ -86,6 +86,15 @@
 - значения `trialDays` и `graceDays` задаются политикой тарифа
 - без явных `trialDays/graceDays` тариф не может быть активирован
 
+### 5.7 Offer, Workflow и Custom HTTP integrations
+- `Offer` — канонический CRM-объект, объединяющий несколько `OfferVariant` (из разных аккаунтов/площадок) в единое коммерческое предложение;
+- каноническая цена Offer не хранится отдельным полем; read-модель цены строится из variants (`min/max/average`, currencies set);
+- workflow для Offer поддерживает `draft -> published` и исполняется только асинхронно через trigger event + outbox + retries;
+- старт workflow выполняется входящим purchase webhook в Core (`/v1/integrations/workflow/purchase`) с секретом и дедупликацией по `projectId + sourceOrderId`;
+- custom integrations первой версии: только project-level `HTTP service` с `Authorization: Bearer <token>`;
+- custom HTTP endpoint должен быть `HTTPS`, соответствовать admin allowlist, проходить SSRF-hardening (запрет loopback/link-local/private targets и небезопасных redirect-ов);
+- legacy `attributes.ddcrmDeliveryProfile` исключается из рабочего контура (без обратной совместимости).
+
 ## 6. Нефункциональные требования
 Канонический источник всех числовых NFR/SLO, порогов инцидентов и recovery-критериев:
 - `docs/standards/quality-gates.md`
@@ -122,6 +131,8 @@
 - service-auth internal API через `X-Service-Token` обязателен, runtime-значения задаются по `docs/standards/runtime-configuration.md`
 - service-auth worker API через `X-Service-Token` обязателен, runtime-значения задаются по `docs/standards/runtime-configuration.md`
 - service-auth токены internal и worker контуров изолированы и не переиспользуются
+- Offer/Workflow API доступны только ролям owner/admin через permissions `project.offers.manage`, `project.workflows.manage`, `project.workflows.run`
+- custom HTTP integrations требуют permission `project.integrations.custom.manage` и активный grant `custom-http` (`scope=use`)
 
 ## 9. Критерии готовности документации к старту разработки (уровень C)
 - архитектура синхронизирована без противоречий

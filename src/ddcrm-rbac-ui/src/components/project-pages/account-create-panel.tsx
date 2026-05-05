@@ -283,8 +283,14 @@ export function ProjectAccountCreatePanel({
       {!accountTypesQuery.isPending && !accountTypesQuery.error && accountTypes.length === 0 ? (
         <section className="panel-card">
           <p className="route-hint">
-            Accounts Manager пока не вернул доступные типы аккаунтов.
+            Для проекта нет доступных типов аккаунтов. Обычно это значит, что админ не выдал платформенный grant
+            (например, <code>platform.funpay</code>) на странице интеграций.
           </p>
+          <div className="panel-actions">
+            <Link href="/admin/account-manager/integrations" className="button button-ghost">
+              Открыть выдачу integration grants
+            </Link>
+          </div>
         </section>
       ) : null}
 
