@@ -172,7 +172,7 @@ export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
             className="input"
             value={baseUrl}
             onChange={(event) => setBaseUrl(event.target.value)}
-            placeholder="http://localhost:5073"
+            placeholder="http://localhost:15073"
             data-testid="auth-base-url"
           />
         </label>

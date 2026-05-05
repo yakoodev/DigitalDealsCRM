@@ -3,7 +3,8 @@ import { projectRoles, type ProjectRole } from "@/lib/rbac";
 
 const SESSION_STORAGE_KEY = "ddcrm-platform.session";
 
-const DEFAULT_EXTERNAL_API_BASE_URL = "http://localhost:5073";
+const DEFAULT_EXTERNAL_API_BASE_URL =
+  process.env.NEXT_PUBLIC_EXTERNAL_API_BASE_URL ?? "http://localhost:15073";
 const DEFAULT_JWT_ISSUER =
   process.env.NEXT_PUBLIC_EXTERNAL_API_JWT_ISSUER ?? "ddcrm-local";
 const DEFAULT_JWT_AUDIENCE =
@@ -18,6 +19,9 @@ const DEFAULT_SYSTEM_INTEGRATIONS_PERMISSION_CLAIM_VALUE =
   process.env.NEXT_PUBLIC_EXTERNAL_API_SYSTEM_INTEGRATIONS_PERMISSION_CLAIM_VALUE ??
   "system.integrations.manage";
 const JWT_TIME_SKEW_SECONDS = 120;
+
+export const SYSTEM_ACCOUNT_MANAGER_PERMISSION = DEFAULT_SYSTEM_PERMISSION_CLAIM_VALUE;
+export const SYSTEM_INTEGRATIONS_PERMISSION = DEFAULT_SYSTEM_INTEGRATIONS_PERMISSION_CLAIM_VALUE;
 
 export interface PlatformUserProfile {
   userId: string;
