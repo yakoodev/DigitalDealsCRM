@@ -572,6 +572,7 @@ lifecycle.MapPost("/update", async (
     CancellationToken cancellationToken) =>
 {
     var idempotencyKey = httpContext.RequireIdempotencyKey();
+    var mailConfig = NormalizeMailConfig(request.MailConfig);
 
     if (request.ProxyConfig is null || request.ProxyConfig.Count == 0)
     {
@@ -612,6 +613,18 @@ lifecycle.MapPost("/update", async (
                 idempotencyKey,
                 workerControlBaseUrlTemplate,
                 ct);
+
+            if (mailConfig is not null)
+            {
+                await workerControlClient.ApplyMailConfigAsync(
+                    new WorkerBindingDto(existing.ServerId, existing.WorkerId, existing.PodId),
+                    existing.ProjectId,
+                    request.AccountId,
+                    mailConfig,
+                    idempotencyKey,
+                    workerControlBaseUrlTemplate,
+                    ct);
+            }
 
             existing.ProxyConfigured = true;
             existing.UpdatedAtUtc = DateTimeOffset.UtcNow;
@@ -2181,7 +2194,10 @@ public sealed record LifecycleCreateRequest(
     MarketplaceAuthDto? MarketplaceAuth,
     MailConfigDto? MailConfig);
 
-public sealed record LifecycleUpdateRequest(Guid AccountId, Dictionary<string, object?>? ProxyConfig);
+public sealed record LifecycleUpdateRequest(
+    Guid AccountId,
+    Dictionary<string, object?>? ProxyConfig,
+    MailConfigDto? MailConfig);
 
 public sealed record MarketplaceAuthDto(string Scheme, Dictionary<string, string> Credentials);
 

@@ -5,6 +5,7 @@ import {
   type ErrorResponse,
   type GenericObjectRequest,
   type GenericObjectResponseData,
+  type MailConfig,
   type Project,
   type ProxyConfig,
   type ProxyCredentialsMasked,
@@ -476,6 +477,11 @@ export interface TelegramLinkCodePayload {
   code: string;
   bindingType: "group" | "user";
   expiresAtUtc: string;
+}
+
+export interface ProjectIntegrationRuntimeConfigurePayload {
+  proxyConfig: ProxyConfig;
+  mailConfig?: MailConfig;
 }
 
 interface ProxyCredentialsUpdateInput {
@@ -1240,6 +1246,23 @@ export async function triggerProjectIntegrationRuntimeRequest(
     `/v1/projects/${encodeURIComponent(projectId)}/integrations/${encodeURIComponent(integrationKey)}/runtime/${operation}`,
     {
       method: "POST",
+      idempotent: true,
+    },
+  );
+}
+
+export async function configureProjectIntegrationRuntimeRequest(
+  session: ApiSession,
+  projectId: string,
+  integrationKey: string,
+  payload: ProjectIntegrationRuntimeConfigurePayload,
+) {
+  return requestAuthedEnvelope<{ requestId: string; status: string }>(
+    session,
+    `/v1/projects/${encodeURIComponent(projectId)}/integrations/${encodeURIComponent(integrationKey)}/runtime/configure`,
+    {
+      method: "POST",
+      body: payload,
       idempotent: true,
     },
   );

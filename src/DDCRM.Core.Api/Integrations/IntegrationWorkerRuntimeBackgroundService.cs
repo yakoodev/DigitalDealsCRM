@@ -5,16 +5,19 @@ using DDCRM.Shared.Errors;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
+using System.Text.Json;
 
 namespace DDCRM.Core.Api.Integrations;
 
 public sealed class IntegrationWorkerRuntimeBackgroundService(
     IServiceProvider serviceProvider,
     IOptions<IntegrationWorkerRuntimeOptions> options,
+    ProjectSecretCrypto crypto,
     ILogger<IntegrationWorkerRuntimeBackgroundService> logger)
     : BackgroundService
 {
     private readonly IntegrationWorkerRuntimeOptions _options = options.Value;
+    private readonly ProjectSecretCrypto _crypto = crypto;
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -89,6 +92,11 @@ public sealed class IntegrationWorkerRuntimeBackgroundService(
                 }
 
                 var idempotencyKey = $"worker-runtime-{item.Operation}-{item.Id:N}";
+                var runtimeConfiguration = ReadRuntimeConfiguration(runtime);
+                var proxyConfig = runtimeConfiguration?.ProxyConfig is null
+                    ? BuildDefaultProxyConfig()
+                    : ToProxyConfigDictionary(runtimeConfiguration.ProxyConfig);
+                var mailConfig = runtimeConfiguration?.MailConfig;
                 if (normalizedOperation == "provision")
                 {
                     var grantIsActive = await dbContext.ProjectIntegrationGrants.AnyAsync(
@@ -105,25 +113,27 @@ public sealed class IntegrationWorkerRuntimeBackgroundService(
                         continue;
                     }
 
-                    var defaultProxy = BuildDefaultProxyConfig();
                     try
                     {
                         await accountsManagerClient.CreateLifecycleAsync(
                             item.ProjectId,
                             runtime.RuntimeAccountId,
                             ResolveWorkerPlatform(item.IntegrationKey),
-                            defaultProxy,
+                            proxyConfig,
                             marketplaceAuth: null,
-                            mailConfig: null,
+                            mailConfig,
                             idempotencyKey,
                             cancellationToken);
                     }
-                    catch (ApiErrorException exception) when (exception.StatusCode == StatusCodes.Status409Conflict)
+                    catch (ApiErrorException exception) when (
+                        exception.StatusCode == StatusCodes.Status409Conflict
+                        && IsExistingPlacementConflict(exception))
                     {
                         // Runtime account уже существует в placement — считаем provision идемпотентным и применяем update.
                         await accountsManagerClient.UpdateLifecycleAsync(
                             runtime.RuntimeAccountId,
-                            defaultProxy,
+                            proxyConfig,
+                            mailConfig,
                             $"{idempotencyKey}:reconcile",
                             cancellationToken);
                     }
@@ -198,6 +208,40 @@ public sealed class IntegrationWorkerRuntimeBackgroundService(
         };
     }
 
+    private Dictionary<string, object?> ToProxyConfigDictionary(ProxyConfigPayload proxyConfig)
+    {
+        return new Dictionary<string, object?>
+        {
+            ["host"] = proxyConfig.Host,
+            ["port"] = proxyConfig.Port,
+            ["login"] = proxyConfig.Login,
+            ["password"] = proxyConfig.Password,
+        };
+    }
+
+    private IntegrationWorkerRuntimeConfiguration? ReadRuntimeConfiguration(ProjectIntegrationWorkerRuntimeEntity runtime)
+    {
+        if (string.IsNullOrWhiteSpace(runtime.ConfigurationCiphertext))
+        {
+            return null;
+        }
+
+        try
+        {
+            var json = _crypto.Decrypt(runtime.ConfigurationCiphertext);
+            return JsonSerializer.Deserialize<IntegrationWorkerRuntimeConfiguration>(json, RuntimeJson.Defaults);
+        }
+        catch (Exception exception)
+        {
+            logger.LogWarning(
+                exception,
+                "Failed to read runtime configuration for project {ProjectId}, integration {IntegrationKey}.",
+                runtime.ProjectId,
+                runtime.IntegrationKey);
+            return null;
+        }
+    }
+
     private static void MarkRetry(IntegrationWorkerRuntimeOutboxEntity item, string error)
     {
         item.AttemptCount += 1;
@@ -205,5 +249,27 @@ public sealed class IntegrationWorkerRuntimeBackgroundService(
         item.LastError = error.Length > 1000 ? error[..1000] : error;
         var delaySeconds = Math.Min(300, 5 * Math.Max(1, item.AttemptCount));
         item.NextAttemptAtUtc = DateTimeOffset.UtcNow.AddSeconds(delaySeconds);
+    }
+
+    private static bool IsExistingPlacementConflict(ApiErrorException exception)
+    {
+        if (exception.Details is not IReadOnlyDictionary<string, object?> details)
+        {
+            return false;
+        }
+
+        if (!details.TryGetValue("upstreamBody", out var upstreamBodyObj))
+        {
+            return false;
+        }
+
+        var upstreamBody = upstreamBodyObj as string;
+        if (string.IsNullOrWhiteSpace(upstreamBody))
+        {
+            return false;
+        }
+
+        return upstreamBody.Contains("уже существует", StringComparison.OrdinalIgnoreCase)
+               || upstreamBody.Contains("already exists", StringComparison.OrdinalIgnoreCase);
     }
 }

@@ -51,7 +51,6 @@ build_workers() {
   echo "==> group: workers"
   local ddcrm_repo="${REPO_ROOT}"
   local funpay_repo="${WORKSPACE_ROOT}/DDCRM-FunPay"
-  local playerok_repo="${WORKSPACE_ROOT}/DDCRM-Playerok"
 
   assert_dir "${ddcrm_repo}" "DigitalDealsCRM"
   assert_file "${ddcrm_repo}/docker/api.Dockerfile" "DigitalDealsCRM docker/api.Dockerfile"
@@ -69,14 +68,6 @@ build_workers() {
     "${funpay_repo}" \
     "${funpay_repo}/Dockerfile" \
     "ddcrm/funpay-worker:local"
-
-  assert_dir "${playerok_repo}" "DDCRM-Playerok"
-  assert_file "${playerok_repo}/Dockerfile" "DDCRM-Playerok Dockerfile"
-  build_image \
-    "DDCRM Playerok worker" \
-    "${playerok_repo}" \
-    "${playerok_repo}/Dockerfile" \
-    "ddcrm/playerok-worker:local"
 }
 
 build_integrations() {

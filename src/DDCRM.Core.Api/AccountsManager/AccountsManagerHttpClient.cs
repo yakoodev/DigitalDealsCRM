@@ -159,6 +159,7 @@ public sealed class AccountsManagerHttpClient(
     public async Task UpdateLifecycleAsync(
         Guid accountId,
         IDictionary<string, object?> proxyConfig,
+        AccountsManagerMailConfig? mailConfig,
         string idempotencyKey,
         CancellationToken cancellationToken)
     {
@@ -170,6 +171,7 @@ public sealed class AccountsManagerHttpClient(
             {
                 accountId,
                 proxyConfig,
+                mailConfig,
             }),
         };
 

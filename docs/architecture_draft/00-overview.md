@@ -62,7 +62,7 @@ flowchart LR
     AM --> ADB[(Accounts Manager DB)]
     AM --> GATE
     AM --> W1[FunPay Account Worker]
-    AM --> W2[Playerok Account Worker]
+    AM --> W2[Steam Integration Worker]
     AM --> W3[FunPay Account Worker 2]
 
     GATE --> RDB[(Route Registry DB)]

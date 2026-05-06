@@ -20,6 +20,10 @@ public sealed class ProjectIntegrationWorkerRuntimeEntity
     [MaxLength(1000)]
     public string? LastError { get; set; }
 
+    public string? ConfigurationCiphertext { get; set; }
+
+    public DateTimeOffset? ConfigurationUpdatedAtUtc { get; set; }
+
     public DateTimeOffset CreatedAtUtc { get; set; }
 
     public DateTimeOffset UpdatedAtUtc { get; set; }

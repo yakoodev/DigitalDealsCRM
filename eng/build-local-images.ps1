@@ -74,13 +74,6 @@ $workers = @(
         Dockerfile = (Join-Path $workspaceRoot "DDCRM-FunPay/Dockerfile")
         Tag = "ddcrm/funpay-worker:local"
         BuildArgs = @()
-    },
-    @{
-        Name = "DDCRM Playerok worker"
-        Repo = (Join-Path $workspaceRoot "DDCRM-Playerok")
-        Dockerfile = (Join-Path $workspaceRoot "DDCRM-Playerok/Dockerfile")
-        Tag = "ddcrm/playerok-worker:local"
-        BuildArgs = @()
     }
 )
 

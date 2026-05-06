@@ -6,7 +6,12 @@ import { useMemo, type ReactNode } from "react";
 import type { Project } from "@/generated/external-api";
 import { DashboardLayout } from "@/components/layout/dashboard-layout";
 import { ThemeToggle } from "@/components/theme-toggle";
-import { listAccountsRequest, listProjectsRequest, type ApiSession } from "@/lib/api-client";
+import {
+  listAccountsRequest,
+  listProjectsRequest,
+  listProjectIntegrationsStatusRequest,
+  type ApiSession,
+} from "@/lib/api-client";
 import type { PlatformSession } from "@/lib/auth";
 
 const tabMeta = {
@@ -91,6 +96,18 @@ export function ProjectLayout({
   const projects = useMemo(() => projectsQuery.data ?? [], [projectsQuery.data]);
   const activeProject = projects.find((project) => project.id === projectId) ?? null;
 
+  const integrationsQuery = useQuery({
+    queryKey: [
+      "project-layout-integrations",
+      apiSession.baseUrl,
+      apiSession.token,
+      activeProject?.id ?? "",
+    ] as const,
+    queryFn: () => listProjectIntegrationsStatusRequest(apiSession, activeProject?.id ?? ""),
+    enabled: Boolean(activeProject?.id),
+    staleTime: 15_000,
+  });
+
   const projectAccountsQuery = useQuery({
     queryKey: [
       "project-layout-accounts",
@@ -108,6 +125,17 @@ export function ProjectLayout({
     (account) => account.businessStatus === "active",
   ).length;
   const pausedAccountsCount = projectAccounts.length - activeAccountsCount;
+  const steamTabVisible = useMemo(
+    () =>
+      integrationsQuery.data?.items.some(
+        (item) => item.integrationKey === "steam-accounts-manager" && item.status === "active",
+      ) ?? false,
+    [integrationsQuery.data?.items],
+  );
+  const visibleTabs = useMemo(
+    () => (Object.keys(tabMeta) as ProjectTab[]).filter((tab) => tab !== "steam" || steamTabVisible),
+    [steamTabVisible],
+  );
 
   if (projectsQuery.isPending) {
     return (
@@ -175,7 +203,7 @@ export function ProjectLayout({
               <div className="sidebar-group">
                 <p className="sidebar-kicker">Раздел проекта</p>
                 <nav className="sidebar-nav">
-                  {(Object.keys(tabMeta) as ProjectTab[]).map((tab) => (
+                  {visibleTabs.map((tab) => (
                     <Link
                       key={tab}
                       href={tabHref(activeProject.id, tab)}

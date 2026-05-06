@@ -168,10 +168,26 @@ public sealed class FakeAccountsManagerClient : IAccountsManagerClient
     public Task UpdateLifecycleAsync(
         Guid accountId,
         IDictionary<string, object?> proxyConfig,
+        AccountsManagerMailConfig? mailConfig,
         string idempotencyKey,
         CancellationToken cancellationToken)
     {
-        UpdateCalls.Add(new UpdateLifecycleCall(accountId, idempotencyKey, new Dictionary<string, object?>(proxyConfig, StringComparer.Ordinal)));
+        UpdateCalls.Add(new UpdateLifecycleCall(
+            accountId,
+            idempotencyKey,
+            new Dictionary<string, object?>(proxyConfig, StringComparer.Ordinal),
+            mailConfig is null
+                ? null
+                : new AccountsManagerMailConfig(
+                    mailConfig.Enabled,
+                    mailConfig.ImapHost,
+                    mailConfig.ImapPort,
+                    mailConfig.ImapSecurity,
+                    mailConfig.ImapUsername,
+                    mailConfig.ImapPassword,
+                    mailConfig.Mailbox,
+                    mailConfig.SearchFrom,
+                    mailConfig.SearchSubject)));
         return Task.CompletedTask;
     }
 
@@ -214,7 +230,8 @@ public sealed record CreateLifecycleCall(
 public sealed record UpdateLifecycleCall(
     Guid AccountId,
     string IdempotencyKey,
-    IReadOnlyDictionary<string, object?> ProxyConfig);
+    IReadOnlyDictionary<string, object?> ProxyConfig,
+    AccountsManagerMailConfig? MailConfig);
 
 public sealed record DeleteLifecycleCall(
     Guid AccountId,

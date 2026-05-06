@@ -100,6 +100,7 @@ const quickJobPresets = [
   { type: "SessionValidate", label: "Проверить сессии" },
   { type: "SessionRefresh", label: "Обновить сессии" },
   { type: "PasswordChange", label: "Сменить пароль" },
+  { type: "SessionsDeauthorize", label: "Деавторизовать сессии" },
 ] as const;
 
 function formatDate(value?: string | null) {
@@ -340,12 +341,14 @@ export function ProjectSteamPanel({ apiSession, projectId }: ProjectSteamPanelPr
         page: 1,
         pageSize: 200,
       }),
+    enabled: Boolean(steamRuntime),
     staleTime: 5_000,
   });
 
   const jobsQuery = useQuery({
     queryKey: ["steam-jobs", apiSession.baseUrl, apiSession.token, projectId, jobsTake],
     queryFn: () => listSteamIntegrationJobsRequest(apiSession, projectId, Number(jobsTake) || 40),
+    enabled: Boolean(steamRuntime),
     staleTime: 5_000,
   });
 
@@ -1077,8 +1080,11 @@ export function ProjectSteamPanel({ apiSession, projectId }: ProjectSteamPanelPr
                 <option value="SessionValidate">SessionValidate</option>
                 <option value="SessionRefresh">SessionRefresh</option>
                 <option value="ProfileUpdate">ProfileUpdate</option>
+                <option value="NicknameUpdate">NicknameUpdate</option>
                 <option value="PrivacyUpdate">PrivacyUpdate</option>
+                <option value="AvatarUpdate">AvatarUpdate</option>
                 <option value="PasswordChange">PasswordChange</option>
+                <option value="SessionsDeauthorize">SessionsDeauthorize</option>
               </select>
             </label>
             <div className="grid-2">

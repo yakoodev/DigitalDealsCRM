@@ -189,6 +189,8 @@ public sealed class CoreDbContext(DbContextOptions<CoreDbContext> options)
             entity.Property(x => x.IntegrationKey).HasMaxLength(80).IsRequired();
             entity.Property(x => x.Status).HasMaxLength(32).IsRequired();
             entity.Property(x => x.LastError).HasMaxLength(1000);
+            entity.Property(x => x.ConfigurationCiphertext);
+            entity.Property(x => x.ConfigurationUpdatedAtUtc);
             entity.Property(x => x.CreatedAtUtc).HasDefaultValueSql("NOW()");
             entity.Property(x => x.UpdatedAtUtc).HasDefaultValueSql("NOW()");
             entity.HasIndex(x => new { x.ProjectId, x.IntegrationKey }).IsUnique();

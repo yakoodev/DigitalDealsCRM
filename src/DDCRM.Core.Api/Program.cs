@@ -2165,6 +2165,123 @@ external.MapPost("/projects/{projectId:guid}/integrations/{integrationKey}/runti
         cancellationToken);
 });
 
+external.MapPost("/projects/{projectId:guid}/integrations/{integrationKey}/runtime/configure", async (
+    HttpContext httpContext,
+    Guid projectId,
+    string integrationKey,
+    Dictionary<string, JsonElement> request,
+    CoreDbContext dbContext,
+    ProjectSecretCrypto crypto,
+    IdempotencyExecutor idempotency,
+    CancellationToken cancellationToken) =>
+{
+    var actorId = GetCurrentUserId(httpContext);
+    var idempotencyKey = httpContext.RequireIdempotencyKey();
+    await EnsurePermissionAsync(dbContext, projectId, actorId, ProjectPermissions.ProjectIntegrationsUse, cancellationToken);
+
+    var normalizedIntegrationKey = NormalizeIntegrationKey(integrationKey);
+    if (!IntegrationKeys.WorkerIntegrations.Contains(normalizedIntegrationKey))
+    {
+        throw new ApiErrorException(StatusCodes.Status400BadRequest, ApiErrorCodes.ValidationError, "Runtime configure поддержан только для worker-интеграций.");
+    }
+
+    var proxyConfig = ReadProxyConfig(request, "proxyConfig", required: true)!;
+    var mailConfigRequested = request.ContainsKey("mailConfig");
+    var mailConfig = mailConfigRequested ? ReadMailConfig(request, "mailConfig") : null;
+
+    return await idempotency.ExecuteAsync(
+        dbContext,
+        $"core:projectIntegrationRuntimeConfigure:{projectId}:{normalizedIntegrationKey}",
+        idempotencyKey,
+        async ct =>
+        {
+            var now = DateTimeOffset.UtcNow;
+            var grant = await dbContext.ProjectIntegrationGrants
+                .SingleOrDefaultAsync(x => x.ProjectId == projectId && x.IntegrationKey == normalizedIntegrationKey, ct);
+            var scopes = NormalizeScopes(normalizedIntegrationKey, requestedScopes: null);
+            if (grant is null)
+            {
+                grant = new ProjectIntegrationGrantEntity
+                {
+                    Id = Guid.NewGuid(),
+                    ProjectId = projectId,
+                    IntegrationKey = normalizedIntegrationKey,
+                    Status = "active",
+                    ScopesCsv = string.Join(',', scopes),
+                    GrantedByUserId = actorId,
+                    GrantedAtUtc = now,
+                };
+                dbContext.ProjectIntegrationGrants.Add(grant);
+            }
+            else
+            {
+                grant.Status = "active";
+                grant.ScopesCsv = string.Join(',', scopes);
+                grant.GrantedByUserId = actorId;
+                grant.GrantedAtUtc = now;
+                grant.RevokedByUserId = null;
+                grant.RevokedAtUtc = null;
+            }
+
+            var legacyCredential = await dbContext.ProjectServiceCredentials
+                .SingleOrDefaultAsync(x => x.ProjectId == projectId && x.IntegrationKey == normalizedIntegrationKey, ct);
+            if (legacyCredential is not null)
+            {
+                legacyCredential.Status = "revoked";
+                legacyCredential.RevokedAtUtc = now;
+                legacyCredential.UpdatedAtUtc = now;
+            }
+
+            var runtime = await dbContext.ProjectIntegrationWorkerRuntimes
+                .SingleOrDefaultAsync(x => x.ProjectId == projectId && x.IntegrationKey == normalizedIntegrationKey, ct);
+            var existingRuntimeConfig = ReadWorkerRuntimeConfiguration(runtime, crypto);
+            runtime = EnsureWorkerRuntime(
+                dbContext,
+                runtime,
+                projectId,
+                normalizedIntegrationKey,
+                now,
+                status: "pending_provision",
+                clearDeprovisionedAt: true);
+
+            var requestedMailConfig = mailConfigRequested && mailConfig is not null
+                ? ToAccountsManagerMailConfig(mailConfig)
+                : null;
+            var effectiveMailConfig = mailConfigRequested
+                ? requestedMailConfig
+                : existingRuntimeConfig?.MailConfig;
+            runtime.ConfigurationCiphertext = crypto.Encrypt(
+                JsonSerializer.Serialize(
+                    new IntegrationWorkerRuntimeConfiguration(proxyConfig, effectiveMailConfig),
+                    RuntimeJson.Defaults));
+            runtime.ConfigurationUpdatedAtUtc = now;
+
+            await QueueWorkerRuntimeOutboxOperationAsync(
+                dbContext,
+                projectId,
+                normalizedIntegrationKey,
+                runtime.RuntimeAccountId,
+                operation: "provision",
+                now,
+                suppressProvisionOperations: false,
+                suppressDeprovisionOperations: true,
+                ct);
+
+            dbContext.NotificationOutbox.Add(CreateNotificationOutbox(
+                projectId,
+                "integration.runtime.configured",
+                $"Интеграция `{normalizedIntegrationKey}` настроена и поставлена на provision.",
+                $"{projectId:N}:{normalizedIntegrationKey}:runtime-configure:{idempotencyKey}"));
+
+            await dbContext.SaveChangesAsync(ct);
+
+            return new IdempotentExecutionResult(
+                StatusCodes.Status200OK,
+                new AckResponse(httpContext.GetOrCreateRequestId(), "queued"));
+        },
+        cancellationToken);
+});
+
 external.MapGet("/projects/{projectId:guid}/integrations/steam/accounts", async (
     HttpContext httpContext,
     Guid projectId,
@@ -4062,6 +4179,7 @@ external.MapPatch("/projects/{projectId:guid}/accounts/{accountId:guid}/proxy-cr
             await accountsManagerClient.UpdateLifecycleAsync(
                 accountId,
                 ToProxyConfigDictionary(proxyConfig),
+                mailConfig: null,
                 idempotencyKey,
                 ct);
 
@@ -5109,6 +5227,26 @@ static ProjectIntegrationWorkerRuntimeEntity EnsureWorkerRuntime(
     }
 
     return runtime;
+}
+
+static IntegrationWorkerRuntimeConfiguration? ReadWorkerRuntimeConfiguration(
+    ProjectIntegrationWorkerRuntimeEntity? runtime,
+    ProjectSecretCrypto crypto)
+{
+    if (runtime is null || string.IsNullOrWhiteSpace(runtime.ConfigurationCiphertext))
+    {
+        return null;
+    }
+
+    try
+    {
+        var json = crypto.Decrypt(runtime.ConfigurationCiphertext);
+        return JsonSerializer.Deserialize<IntegrationWorkerRuntimeConfiguration>(json, RuntimeJson.Defaults);
+    }
+    catch
+    {
+        return null;
+    }
 }
 
 static async Task QueueWorkerRuntimeOutboxOperationAsync(

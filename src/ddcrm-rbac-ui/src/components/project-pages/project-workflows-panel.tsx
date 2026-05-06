@@ -128,7 +128,7 @@ const workflowNodeCatalog: readonly WorkflowNodeCatalogItem[] = [
   { type: "SelectAccountPriorityFallback", label: "Select Account", description: "Приоритет + fallback.", tone: "routing", group: "base" },
   { type: "InvokeWorkerAction", label: "Invoke Worker", description: "Вызывает действие воркера.", tone: "worker", group: "base" },
   { type: "InvokeCustomHttp", label: "Invoke HTTP", description: "Вызывает custom HTTP integration.", tone: "http", group: "integration", integrationKey: "custom-http" },
-  { type: "SteamAction", label: "Steam Action", description: "Интеграционная node Steam (jobs/actions).", tone: "integration", group: "integration", integrationKey: "steam-accounts-manager" },
+  { type: "SteamAction", label: "Steam Action", description: "Интеграционная node Steam (typed jobs/actions + JSON fallback).", tone: "integration", group: "integration", integrationKey: "steam-accounts-manager" },
   { type: "Task", label: "Task", description: "Планирует отложенную задачу (например через 3 часа).", tone: "task", group: "base" },
   { type: "SendBuyerResponse", label: "Buyer Response", description: "Формирует ответ покупателю.", tone: "response", group: "base" },
   { type: "Notify", label: "Notify", description: "Служебное уведомление.", tone: "notify", group: "base" },
@@ -409,10 +409,10 @@ const nodeFieldDescriptors: Record<WorkflowNode["type"], readonly WorkflowFieldD
     {
       key: "action",
       label: "action",
-      description: "Тип steam-задачи, например: change-password, relogin, refresh-cookies.",
+      description: "Тип steam-задачи, например: accounts.profile.update, accounts.nickname.update, accounts.avatar.update, accounts.privacy.update, accounts.sessions.deauthorize.",
       required: true,
       type: "string",
-      placeholder: "change-password",
+      placeholder: "accounts.nickname.update",
     },
     {
       key: "accountId",
@@ -977,7 +977,7 @@ function buildEmptyTypedEditorState(): WorkflowTypedEditorState {
     customPath: "",
     customHeadersText: "{}",
     customPayloadText: "{}",
-    steamAction: "change-password",
+    steamAction: "accounts.profile.update",
     steamAccountId: "",
     steamDelaySeconds: "",
     steamPayloadText: "{}",
@@ -1968,7 +1968,7 @@ export function ProjectWorkflowsPanel({ apiSession, projectId, currentRole }: Pr
       nextTypedEditor.customHeadersText = stringifyConfigObject(config.headers);
       nextTypedEditor.customPayloadText = stringifyConfigObject(config.payload);
     } else if (selectedNode.data.nodeType === "SteamAction") {
-      nextTypedEditor.steamAction = readString(config, "action") || "change-password";
+      nextTypedEditor.steamAction = readString(config, "action") || "accounts.profile.update";
       nextTypedEditor.steamAccountId = readString(config, "accountId");
       nextTypedEditor.steamDelaySeconds = typeof config.delaySeconds === "number" ? String(config.delaySeconds) : readString(config, "delaySeconds");
       nextTypedEditor.steamPayloadText = stringifyConfigObject(config.payload);
@@ -3033,7 +3033,7 @@ export function ProjectWorkflowsPanel({ apiSession, projectId, currentRole }: Pr
                   <>
                     <label className="field">
                       <span>action</span>
-                      <input className="input" value={typedEditor.steamAction} onChange={(event) => setTypedEditor((prev) => ({ ...prev, steamAction: event.target.value }))} placeholder="change-password" />
+                      <input className="input" value={typedEditor.steamAction} onChange={(event) => setTypedEditor((prev) => ({ ...prev, steamAction: event.target.value }))} placeholder="accounts.nickname.update" />
                       <small className="workflow-field-hint">{readFieldHintText("SteamAction", "action")}</small>
                     </label>
                     <label className="field">

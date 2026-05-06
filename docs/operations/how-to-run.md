@@ -4,7 +4,6 @@
 - Установите Docker + Docker Compose.
 - Проверьте, что рядом с репозиторием есть соседние директории:
   - `F:\ddcrm\DDCRM-FunPay`
-  - `F:\ddcrm\DDCRM-Playerok`
   - `F:\ddcrm\DigitalDealsStats`
   - `F:\ddcrm\DDCRM-Steam`
 
@@ -26,7 +25,6 @@ Linux/macOS:
 `workers` собирает:
 - `ddcrm/worker-api:local`
 - `ddcrm/funpay-worker:local`
-- `ddcrm/playerok-worker:local`
 
 `integrations` собирает:
 - `ddcrm/marketstat:local`

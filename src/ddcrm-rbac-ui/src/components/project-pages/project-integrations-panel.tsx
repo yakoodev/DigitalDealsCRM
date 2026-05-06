@@ -7,6 +7,7 @@ import type { ApiSession, ProjectCustomHttpIntegration, ProjectIntegrationStatus
 import {
   createProjectCustomHttpIntegrationRequest,
   createTelegramLinkCodeRequest,
+  configureProjectIntegrationRuntimeRequest,
   deleteProjectCustomHttpIntegrationRequest,
   invokeProjectIntegrationActionRequest,
   listProjectCustomHttpIntegrationsRequest,
@@ -263,6 +264,19 @@ export function ProjectIntegrationsPanel({ apiSession, projectId, currentRole }:
   const [customHttpTestHeadersJson, setCustomHttpTestHeadersJson] = useState("{}");
   const [customHttpTestPayloadJson, setCustomHttpTestPayloadJson] = useState("{}");
   const [customHttpTestResult, setCustomHttpTestResult] = useState("");
+  const [steamRuntimeProxyHost, setSteamRuntimeProxyHost] = useState("");
+  const [steamRuntimeProxyPort, setSteamRuntimeProxyPort] = useState("8080");
+  const [steamRuntimeProxyLogin, setSteamRuntimeProxyLogin] = useState("");
+  const [steamRuntimeProxyPassword, setSteamRuntimeProxyPassword] = useState("");
+  const [steamRuntimeMailEnabled, setSteamRuntimeMailEnabled] = useState(true);
+  const [steamRuntimeMailHost, setSteamRuntimeMailHost] = useState("");
+  const [steamRuntimeMailPort, setSteamRuntimeMailPort] = useState("993");
+  const [steamRuntimeMailSecurity, setSteamRuntimeMailSecurity] = useState("ssl");
+  const [steamRuntimeMailUsername, setSteamRuntimeMailUsername] = useState("");
+  const [steamRuntimeMailPassword, setSteamRuntimeMailPassword] = useState("");
+  const [steamRuntimeMailbox, setSteamRuntimeMailbox] = useState("");
+  const [steamRuntimeMailSearchFrom, setSteamRuntimeMailSearchFrom] = useState("");
+  const [steamRuntimeMailSearchSubject, setSteamRuntimeMailSearchSubject] = useState("");
 
   const statusQuery = useQuery({
     queryKey: ["project-integrations-status", apiSession.baseUrl, apiSession.token, projectId],
@@ -273,6 +287,13 @@ export function ProjectIntegrationsPanel({ apiSession, projectId, currentRole }:
   const integrationItems = useMemo(
     () => statusQuery.data?.items ?? [],
     [statusQuery.data?.items],
+  );
+  const steamRuntimeItem = useMemo(
+    () =>
+      integrationItems.find(
+        (item) => item.integrationKey === "steam-accounts-manager",
+      ) ?? null,
+    [integrationItems],
   );
   const customHttpGrantActive = useMemo(
     () => hasCustomHttpGrant(integrationItems),
@@ -395,6 +416,104 @@ export function ProjectIntegrationsPanel({ apiSession, projectId, currentRole }:
     },
     onError: (error) => {
       setStatusMessage(error instanceof Error ? error.message : "Не удалось выполнить runtime-операцию.");
+    },
+  });
+
+  const steamRuntimeConfigureMutation = useMutation({
+    mutationFn: async () => {
+      const proxyHost = steamRuntimeProxyHost.trim();
+      const proxyLogin = steamRuntimeProxyLogin.trim();
+      const proxyPassword = steamRuntimeProxyPassword.trim();
+      const proxyPort = Number(steamRuntimeProxyPort);
+
+      if (!proxyHost) {
+        throw new Error("Для Steam runtime обязателен proxy host.");
+      }
+
+      if (!Number.isInteger(proxyPort) || proxyPort < 1 || proxyPort > 65535) {
+        throw new Error("Proxy port должен быть числом в диапазоне 1..65535.");
+      }
+
+      if (!proxyLogin) {
+        throw new Error("Для Steam runtime обязателен proxy login.");
+      }
+
+      if (!proxyPassword) {
+        throw new Error("Для Steam runtime обязателен proxy password.");
+      }
+
+      const mailConfig = steamRuntimeMailEnabled
+        ? {
+            enabled: true,
+            imapHost: steamRuntimeMailHost.trim(),
+            imapPort: Number(steamRuntimeMailPort),
+            imapSecurity: steamRuntimeMailSecurity.trim().toLowerCase(),
+            imapUsername: steamRuntimeMailUsername.trim(),
+            imapPassword: steamRuntimeMailPassword.trim(),
+            mailbox: steamRuntimeMailbox.trim() || undefined,
+            searchFrom: steamRuntimeMailSearchFrom.trim() || undefined,
+            searchSubject: steamRuntimeMailSearchSubject.trim() || undefined,
+          }
+        : {
+            enabled: false,
+            imapHost: "",
+            imapPort: 993,
+            imapSecurity: "ssl",
+            imapUsername: "",
+            imapPassword: "",
+            mailbox: undefined,
+            searchFrom: undefined,
+            searchSubject: undefined,
+          };
+
+      if (steamRuntimeMailEnabled) {
+        if (!mailConfig.imapHost) {
+          throw new Error("Для Steam runtime обязателен mail host.");
+        }
+
+        if (!mailConfig.imapUsername) {
+          throw new Error("Для Steam runtime обязателен mail username.");
+        }
+
+        if (!mailConfig.imapPassword) {
+          throw new Error("Для Steam runtime обязателен mail password.");
+        }
+
+        if (!Number.isInteger(mailConfig.imapPort) || mailConfig.imapPort < 1 || mailConfig.imapPort > 65535) {
+          throw new Error("Mail port должен быть числом в диапазоне 1..65535.");
+        }
+
+        if (!["ssl", "starttls", "plain"].includes(mailConfig.imapSecurity)) {
+          throw new Error("Mail security должен быть ssl, starttls или plain.");
+        }
+      }
+
+      return configureProjectIntegrationRuntimeRequest(apiSession, projectId, "steam-accounts-manager", {
+        proxyConfig: {
+          host: proxyHost,
+          port: proxyPort,
+          login: proxyLogin,
+          password: proxyPassword,
+        },
+        mailConfig,
+      });
+    },
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: ["project-integrations-status", apiSession.baseUrl, apiSession.token, projectId],
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ["project-layout-integrations", apiSession.baseUrl, apiSession.token, projectId],
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ["project-custom-http", apiSession.baseUrl, apiSession.token, projectId],
+        }),
+      ]);
+      setStatusMessage("Steam runtime container сохранён и поставлен на provision.");
+    },
+    onError: (error) => {
+      setStatusMessage(error instanceof Error ? error.message : "Не удалось сохранить Steam runtime.");
     },
   });
 
@@ -618,6 +737,97 @@ export function ProjectIntegrationsPanel({ apiSession, projectId, currentRole }:
 
       <section className="module-board">
         <section className="module-main-column">
+          <article className="glass-card page-stack">
+            <div className="panel-title-row">
+              <h3>Steam runtime container</h3>
+            </div>
+            {steamRuntimeItem ? (
+              <div className="entity-pills">
+                <span className="entity-pill">grant: {steamRuntimeItem.status}</span>
+                <span className="entity-pill">runtime: {steamRuntimeItem.runtimeStatus ?? "n/a"}</span>
+                <span className="entity-pill">scopes: {steamRuntimeItem.scopes.join(", ") || "n/a"}</span>
+                {steamRuntimeItem.runtimeAccountId ? (
+                  <span className="entity-pill">rk.{steamRuntimeItem.runtimeAccountId.replaceAll("-", "")}</span>
+                ) : null}
+              </div>
+            ) : (
+              <p className="route-hint">
+                Steam runtime ещё не создан. Заполните proxy и IMAP, чтобы после save появилась отдельная вкладка Steam.
+              </p>
+            )}
+            {steamRuntimeItem?.runtimeLastError ? <p className="route-error">{steamRuntimeItem.runtimeLastError}</p> : null}
+            <div className="grid-2">
+              <label className="field">
+                <span>Proxy host *</span>
+                <input className="input" value={steamRuntimeProxyHost} onChange={(event) => setSteamRuntimeProxyHost(event.target.value)} placeholder="127.0.0.1" />
+              </label>
+              <label className="field">
+                <span>Proxy port *</span>
+                <input className="input" value={steamRuntimeProxyPort} onChange={(event) => setSteamRuntimeProxyPort(event.target.value)} placeholder="8080" />
+              </label>
+              <label className="field">
+                <span>Proxy login *</span>
+                <input className="input" value={steamRuntimeProxyLogin} onChange={(event) => setSteamRuntimeProxyLogin(event.target.value)} placeholder="integration-runtime" />
+              </label>
+              <label className="field">
+                <span>Proxy password *</span>
+                <input className="input" type="password" value={steamRuntimeProxyPassword} onChange={(event) => setSteamRuntimeProxyPassword(event.target.value)} />
+              </label>
+            </div>
+            <label className="field field-inline">
+              <span>IMAP auto-confirmation</span>
+              <input type="checkbox" checked={steamRuntimeMailEnabled} onChange={(event) => setSteamRuntimeMailEnabled(event.target.checked)} />
+            </label>
+            <div className="grid-2">
+              <label className="field">
+                <span>IMAP host *</span>
+                <input className="input" value={steamRuntimeMailHost} onChange={(event) => setSteamRuntimeMailHost(event.target.value)} placeholder="imap.example.com" />
+              </label>
+              <label className="field">
+                <span>IMAP port *</span>
+                <input className="input" value={steamRuntimeMailPort} onChange={(event) => setSteamRuntimeMailPort(event.target.value)} placeholder="993" />
+              </label>
+              <label className="field">
+                <span>IMAP security *</span>
+                <select className="input" value={steamRuntimeMailSecurity} onChange={(event) => setSteamRuntimeMailSecurity(event.target.value)}>
+                  <option value="ssl">ssl</option>
+                  <option value="starttls">starttls</option>
+                  <option value="plain">plain</option>
+                </select>
+              </label>
+              <label className="field">
+                <span>Mailbox</span>
+                <input className="input" value={steamRuntimeMailbox} onChange={(event) => setSteamRuntimeMailbox(event.target.value)} placeholder="INBOX" />
+              </label>
+              <label className="field">
+                <span>IMAP username *</span>
+                <input className="input" value={steamRuntimeMailUsername} onChange={(event) => setSteamRuntimeMailUsername(event.target.value)} />
+              </label>
+              <label className="field">
+                <span>IMAP password *</span>
+                <input className="input" type="password" value={steamRuntimeMailPassword} onChange={(event) => setSteamRuntimeMailPassword(event.target.value)} />
+              </label>
+              <label className="field">
+                <span>Search from</span>
+                <input className="input" value={steamRuntimeMailSearchFrom} onChange={(event) => setSteamRuntimeMailSearchFrom(event.target.value)} />
+              </label>
+              <label className="field">
+                <span>Search subject</span>
+                <input className="input" value={steamRuntimeMailSearchSubject} onChange={(event) => setSteamRuntimeMailSearchSubject(event.target.value)} />
+              </label>
+            </div>
+            <div className="hero-actions">
+              <button
+                type="button"
+                className="button button-primary"
+                disabled={steamRuntimeConfigureMutation.isPending}
+                onClick={() => steamRuntimeConfigureMutation.mutate()}
+              >
+                {steamRuntimeItem ? "Обновить Steam runtime" : "Создать Steam runtime"}
+              </button>
+            </div>
+          </article>
+
           <article className="glass-card page-stack">
             <div className="panel-title-row">
               <h3>Доступы и runtime</h3>

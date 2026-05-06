@@ -33,6 +33,7 @@ public interface IAccountsManagerClient
     Task UpdateLifecycleAsync(
         Guid accountId,
         IDictionary<string, object?> proxyConfig,
+        AccountsManagerMailConfig? mailConfig,
         string idempotencyKey,
         CancellationToken cancellationToken);
 
