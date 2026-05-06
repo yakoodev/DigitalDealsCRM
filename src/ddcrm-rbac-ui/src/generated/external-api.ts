@@ -85,12 +85,29 @@ export interface MarketplaceAuth {
   credentials: MarketplaceAuthCredentials;
 }
 
+export interface MailConfig {
+  enabled: boolean;
+  imapHost: string;
+  /**
+     * @minimum 1
+     * @maximum 65535
+     */
+  imapPort: number;
+  imapSecurity: string;
+  imapUsername: string;
+  imapPassword: string;
+  mailbox?: string;
+  searchFrom?: string;
+  searchSubject?: string;
+}
+
 export interface AccountCreateRequest {
   accountTypeId?: string;
   platform: string;
   displayName: string;
   proxyConfig: ProxyConfig;
   marketplaceAuth?: MarketplaceAuth;
+  mailConfig?: MailConfig;
 }
 
 export type AccountTypeFieldInputType = typeof AccountTypeFieldInputType[keyof typeof AccountTypeFieldInputType];

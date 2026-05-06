@@ -138,6 +138,80 @@ public sealed class WorkerControlHttpClient(
             });
     }
 
+    public async Task ApplyMailConfigAsync(
+        WorkerBindingDto workerBinding,
+        Guid projectId,
+        Guid accountId,
+        MailConfigPayload mailConfig,
+        string idempotencyKey,
+        string? baseUrlTemplateOverride,
+        CancellationToken cancellationToken)
+    {
+        if (!IsEnabled())
+        {
+            return;
+        }
+
+        var absoluteUri = BuildAbsoluteUri(
+            workerBinding,
+            BuildPath("/actions/ext.integration.steam.jobs"),
+            baseUrlTemplateOverride);
+        var payload = new Dictionary<string, object?>
+        {
+            ["projectId"] = projectId,
+            ["operation"] = "accounts.mail-config.apply",
+            ["accountId"] = accountId,
+            ["mailConfig"] = new Dictionary<string, object?>
+            {
+                ["enabled"] = mailConfig.Enabled,
+                ["imapHost"] = mailConfig.ImapHost,
+                ["imapPort"] = mailConfig.ImapPort,
+                ["imapSecurity"] = mailConfig.ImapSecurity,
+                ["imapUsername"] = mailConfig.ImapUsername,
+                ["imapPassword"] = mailConfig.ImapPassword,
+                ["mailbox"] = mailConfig.Mailbox,
+                ["searchFrom"] = mailConfig.SearchFrom,
+                ["searchSubject"] = mailConfig.SearchSubject,
+            },
+        };
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, absoluteUri)
+        {
+            Content = JsonContent.Create(new Dictionary<string, object?>
+            {
+                ["payload"] = payload,
+            }),
+        };
+
+        ApplyHeaders(request, idempotencyKey);
+
+        var response = await httpClient.SendAsync(request, cancellationToken);
+        if (response.IsSuccessStatusCode)
+        {
+            return;
+        }
+
+        if (response.StatusCode == System.Net.HttpStatusCode.NotFound && _options.IgnoreNotFoundOnApplyActions)
+        {
+            logger.LogWarning(
+                "Worker control mail-config apply ignored due to 404. worker={WorkerId} account={AccountId}",
+                workerBinding.WorkerId,
+                accountId);
+            return;
+        }
+
+        var body = await response.Content.ReadAsStringAsync(cancellationToken);
+        throw new ApiErrorException(
+            StatusCodes.Status502BadGateway,
+            ApiErrorCodes.InternalError,
+            "Worker control API недоступен или вернул ошибку при apply mail config.",
+            new Dictionary<string, object?>
+            {
+                ["statusCode"] = (int)response.StatusCode,
+                ["body"] = body,
+            });
+    }
+
     private bool IsEnabled() => _options.Enabled;
 
     private void ApplyHeaders(HttpRequestMessage message, string idempotencyKey)

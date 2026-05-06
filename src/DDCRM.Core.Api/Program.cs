@@ -3796,6 +3796,7 @@ external.MapPost("/projects/{projectId:guid}/accounts", async (
     var displayName = ReadString(request, "displayName");
     var proxyConfig = ReadProxyConfig(request, "proxyConfig", required: true)!;
     var marketplaceAuth = ReadMarketplaceAuth(request, "marketplaceAuth");
+    var mailConfig = ReadMailConfig(request, "mailConfig");
     await EnsureActiveIntegrationGrantAsync(
         dbContext,
         projectId,
@@ -3828,6 +3829,14 @@ external.MapPost("/projects/{projectId:guid}/accounts", async (
         platform = accountType.Platform;
     }
 
+    if (mailConfig is not null && !string.Equals(platform, "steam", StringComparison.OrdinalIgnoreCase))
+    {
+        throw new ApiErrorException(
+            StatusCodes.Status400BadRequest,
+            ApiErrorCodes.ValidationError,
+            "Поле mailConfig поддерживается только для platform=steam.");
+    }
+
     var accountId = CreateDeterministicGuid($"core:createAccount:{projectId}:{idempotencyKey}");
 
     return await idempotency.ExecuteAsync(
@@ -3848,6 +3857,7 @@ external.MapPost("/projects/{projectId:guid}/accounts", async (
                     platform,
                     ToProxyConfigDictionary(proxyConfig),
                     marketplaceAuth is null ? null : ToAccountsManagerMarketplaceAuth(marketplaceAuth),
+                    mailConfig is null ? null : ToAccountsManagerMailConfig(mailConfig),
                     idempotencyKey,
                     ct);
 
@@ -4584,6 +4594,151 @@ static MarketplaceAuthPayload? ReadMarketplaceAuth(Dictionary<string, JsonElemen
     return new MarketplaceAuthPayload(scheme, credentials);
 }
 
+static MailConfigPayload? ReadMailConfig(Dictionary<string, JsonElement> payload, string key)
+{
+    if (!payload.TryGetValue(key, out var value))
+    {
+        return null;
+    }
+
+    if (value.ValueKind != JsonValueKind.Object)
+    {
+        throw new ApiErrorException(
+            StatusCodes.Status400BadRequest,
+            ApiErrorCodes.ValidationError,
+            $"Поле {key} должно быть объектом.");
+    }
+
+    var objectValue = value.EnumerateObject()
+        .ToDictionary(x => x.Name, x => x.Value.Clone(), StringComparer.Ordinal);
+    var enabled = objectValue.TryGetValue("enabled", out var enabledValue)
+        ? ReadBoolValue(enabledValue, "mailConfig.enabled")
+        : true;
+
+    if (!enabled)
+    {
+        return new MailConfigPayload(
+            Enabled: false,
+            ImapHost: string.Empty,
+            ImapPort: 0,
+            ImapSecurity: "ssl",
+            ImapUsername: string.Empty,
+            ImapPassword: string.Empty,
+            Mailbox: null,
+            SearchFrom: null,
+            SearchSubject: null);
+    }
+
+    var host = ReadString(objectValue, "imapHost");
+    var username = ReadString(objectValue, "imapUsername");
+    var password = ReadString(objectValue, "imapPassword");
+
+    var port = objectValue.TryGetValue("imapPort", out var portValue)
+        ? ReadPortValue(portValue, "mailConfig.imapPort")
+        : 993;
+
+    var security = objectValue.TryGetValue("imapSecurity", out var securityValue)
+        ? ReadStringValue(securityValue, "mailConfig.imapSecurity").Trim().ToLowerInvariant()
+        : "ssl";
+    if (!MailConfigImapSecurityModes.All.Contains(security))
+    {
+        throw new ApiErrorException(
+            StatusCodes.Status400BadRequest,
+            ApiErrorCodes.ValidationError,
+            "Поле mailConfig.imapSecurity содержит неподдерживаемое значение.");
+    }
+
+    var mailbox = TryReadOptionalStringValue(objectValue, "mailbox");
+    var searchFrom = TryReadOptionalStringValue(objectValue, "searchFrom");
+    var searchSubject = TryReadOptionalStringValue(objectValue, "searchSubject");
+
+    return new MailConfigPayload(
+        Enabled: true,
+        ImapHost: host,
+        ImapPort: port,
+        ImapSecurity: security,
+        ImapUsername: username,
+        ImapPassword: password,
+        Mailbox: mailbox,
+        SearchFrom: searchFrom,
+        SearchSubject: searchSubject);
+}
+
+static bool ReadBoolValue(JsonElement value, string fieldName)
+{
+    if (value.ValueKind == JsonValueKind.True)
+    {
+        return true;
+    }
+
+    if (value.ValueKind == JsonValueKind.False)
+    {
+        return false;
+    }
+
+    if (value.ValueKind == JsonValueKind.String &&
+        bool.TryParse(value.GetString(), out var parsed))
+    {
+        return parsed;
+    }
+
+    throw new ApiErrorException(
+        StatusCodes.Status400BadRequest,
+        ApiErrorCodes.ValidationError,
+        $"Поле {fieldName} должно быть bool-значением.");
+}
+
+static int ReadPortValue(JsonElement value, string fieldName)
+{
+    var port = value.ValueKind switch
+    {
+        JsonValueKind.Number when value.TryGetInt32(out var intPort) => intPort,
+        JsonValueKind.String when int.TryParse(value.GetString(), out var stringPort) => stringPort,
+        _ => throw new ApiErrorException(
+            StatusCodes.Status400BadRequest,
+            ApiErrorCodes.ValidationError,
+            $"Поле {fieldName} должно быть числом."),
+    };
+
+    if (port is < 1 or > 65535)
+    {
+        throw new ApiErrorException(
+            StatusCodes.Status400BadRequest,
+            ApiErrorCodes.ValidationError,
+            $"Поле {fieldName} должно быть в диапазоне 1..65535.");
+    }
+
+    return port;
+}
+
+static string ReadStringValue(JsonElement value, string fieldName)
+{
+    if (value.ValueKind != JsonValueKind.String || string.IsNullOrWhiteSpace(value.GetString()))
+    {
+        throw new ApiErrorException(
+            StatusCodes.Status400BadRequest,
+            ApiErrorCodes.ValidationError,
+            $"Поле {fieldName} должно быть непустой строкой.");
+    }
+
+    return value.GetString()!.Trim();
+}
+
+static string? TryReadOptionalStringValue(Dictionary<string, JsonElement> payload, string key)
+{
+    if (!payload.TryGetValue(key, out var value))
+    {
+        return null;
+    }
+
+    if (value.ValueKind == JsonValueKind.Null)
+    {
+        return null;
+    }
+
+    return ReadStringValue(value, $"mailConfig.{key}");
+}
+
 static Dictionary<string, object?> ToProxyConfigDictionary(ProxyConfigPayload proxyConfig)
 {
     return new Dictionary<string, object?>
@@ -4598,6 +4753,20 @@ static Dictionary<string, object?> ToProxyConfigDictionary(ProxyConfigPayload pr
 static AccountsManagerMarketplaceAuth ToAccountsManagerMarketplaceAuth(MarketplaceAuthPayload payload)
 {
     return new AccountsManagerMarketplaceAuth(payload.Scheme, payload.Credentials);
+}
+
+static AccountsManagerMailConfig ToAccountsManagerMailConfig(MailConfigPayload payload)
+{
+    return new AccountsManagerMailConfig(
+        payload.Enabled,
+        payload.ImapHost,
+        payload.ImapPort,
+        payload.ImapSecurity,
+        payload.ImapUsername,
+        payload.ImapPassword,
+        payload.Mailbox,
+        payload.SearchFrom,
+        payload.SearchSubject);
 }
 
 static string BuildRouteKey(Guid accountId) => $"rk.{accountId:N}";
@@ -6418,6 +6587,17 @@ internal sealed record TelegramConnectivityFailureInfo(
 
 internal sealed record MarketplaceAuthPayload(string Scheme, IReadOnlyDictionary<string, string> Credentials);
 
+internal sealed record MailConfigPayload(
+    bool Enabled,
+    string ImapHost,
+    int ImapPort,
+    string ImapSecurity,
+    string ImapUsername,
+    string ImapPassword,
+    string? Mailbox,
+    string? SearchFrom,
+    string? SearchSubject);
+
 internal static class MarketplaceAuthSchemes
 {
     public const string GoldenKey = "golden_key";
@@ -6428,6 +6608,13 @@ internal static class MarketplaceAuthSchemes
     public static readonly HashSet<string> All = new(
         [GoldenKey, Cookies, Tokens, LoginPassword],
         StringComparer.Ordinal);
+}
+
+internal static class MailConfigImapSecurityModes
+{
+    public static readonly HashSet<string> All = new(
+        ["ssl", "tls", "implicit_tls", "starttls", "starttls_when_available", "none", "auto"],
+        StringComparer.OrdinalIgnoreCase);
 }
 
 public partial class Program;

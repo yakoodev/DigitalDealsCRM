@@ -6,7 +6,7 @@
   - `F:\ddcrm\DDCRM-FunPay`
   - `F:\ddcrm\DDCRM-Playerok`
   - `F:\ddcrm\DigitalDealsStats`
-  - `F:\ddcrm\SteamFleetControl`
+  - `F:\ddcrm\DDCRM-Steam`
 
 ## 2. Локальная сборка образов
 Из `F:\ddcrm\DigitalDealsCRM`:
@@ -30,8 +30,7 @@ Linux/macOS:
 
 `integrations` собирает:
 - `ddcrm/marketstat:local`
-- `ddcrm/steamfleet-web:local`
-- `ddcrm/steamfleet-worker:local`
+- `ddcrm/steam-worker:local`
 
 ## 3. Запуск основного контура DDCRM
 Из `F:\ddcrm\DigitalDealsCRM`:

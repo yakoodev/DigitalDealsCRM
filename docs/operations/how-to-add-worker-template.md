@@ -54,6 +54,47 @@ curl -X PUT "http://localhost:5073/v1/admin/account-manager/account-types/funpay
   }'
 ```
 
+### 2.3 Пример для `steam-integration` (DDCRM-Steam)
+
+```bash
+curl -X PUT "http://localhost:5073/v1/admin/account-manager/account-types/steam.integration" \
+  -H "Authorization: Bearer <jwt>" \
+  -H "Idempotency-Key: 35d2f5d8-3cda-4e35-8d38-b5e04d913e2c" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "platform": "steam-integration",
+    "displayName": "Steam Integration Runtime",
+    "description": "DDCRM-Steam worker runtime for ext.integration.steam.* actions",
+    "workerProfileId": "steam-integration-worker",
+    "enabled": true,
+    "sortOrder": 20,
+    "formFields": [
+      {
+        "key": "displayName",
+        "label": "Название runtime",
+        "inputType": "text",
+        "required": true,
+        "secret": false,
+        "placeholder": "Steam integration runtime"
+      }
+    ],
+    "runtime": {
+      "autospawnEnabled": true,
+      "workerImage": "ddcrm/steam-worker:local",
+      "workerPathPrefix": "/internal/v2/worker",
+      "healthPath": "/health",
+      "containerPort": 8080,
+      "environmentVariables": {
+        "WORKER_API_SERVICE_AUTH_ENABLED": "true",
+        "WORKER_API_SERVICE_AUTH_ACCEPTED_TOKENS": "worker-token-a,worker-token-b",
+        "INTERNAL_API_SERVICE_AUTH_ACCEPTED_TOKENS": "internal-token-a,internal-token-b",
+        "SECRETS_MASTER_KEY_B64": "replace-with-real-base64-key"
+      },
+      "workerCommand": null
+    }
+  }'
+```
+
 ## 3. UI путь
 - Откройте: `/admin/account-manager/templates`.
 - Заполните:

@@ -268,6 +268,109 @@ public sealed class CoreApiIntegrationTests(CoreApiFactory factory) : IClassFixt
 
     [Fact]
     [Trait("Category", "Integration")]
+    public async Task CreateAccount_WithMailConfig_ForwardsPayloadToAccountsManager()
+    {
+        factory.AccountsManagerClient.Reset();
+        SeedAccountType("test-worker.steam", "steam");
+
+        using var client = CreateAuthorizedClient(Guid.NewGuid());
+        var projectId = await CreateProjectAsync(client, "Accounts-MailConfig");
+        var idempotencyKey = Guid.NewGuid().ToString("N");
+
+        var payload = new
+        {
+            platform = "steam",
+            accountTypeId = "test-worker.steam",
+            displayName = "Steam Mail Account",
+            proxyConfig = new
+            {
+                host = "proxy-mail.internal",
+                port = 1508,
+                login = "seller-mail",
+                password = "proxy-secret",
+            },
+            mailConfig = new
+            {
+                enabled = true,
+                imapHost = "imap.mail.local",
+                imapPort = 993,
+                imapSecurity = "ssl",
+                imapUsername = "steam@mail.local",
+                imapPassword = "mail-secret",
+                mailbox = "INBOX",
+                searchFrom = "noreply@steampowered.com",
+                searchSubject = "Steam",
+            },
+        };
+
+        var response = await SendJsonAsync(
+            client,
+            HttpMethod.Post,
+            $"/v1/projects/{projectId}/accounts",
+            idempotencyKey,
+            payload);
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        var createCall = Assert.Single(factory.AccountsManagerClient.CreateCalls);
+        Assert.NotNull(createCall.MailConfig);
+        Assert.True(createCall.MailConfig!.Enabled);
+        Assert.Equal("imap.mail.local", createCall.MailConfig.ImapHost);
+        Assert.Equal(993, createCall.MailConfig.ImapPort);
+        Assert.Equal("ssl", createCall.MailConfig.ImapSecurity);
+        Assert.Equal("steam@mail.local", createCall.MailConfig.ImapUsername);
+        Assert.Equal("mail-secret", createCall.MailConfig.ImapPassword);
+        Assert.Equal("INBOX", createCall.MailConfig.Mailbox);
+        Assert.Equal("noreply@steampowered.com", createCall.MailConfig.SearchFrom);
+        Assert.Equal("Steam", createCall.MailConfig.SearchSubject);
+    }
+
+    [Fact]
+    [Trait("Category", "Integration")]
+    public async Task CreateAccount_WithMailConfigForNonSteam_ReturnsBadRequest()
+    {
+        factory.AccountsManagerClient.Reset();
+        SeedAccountType("test-worker.funpay", "funpay");
+
+        using var client = CreateAuthorizedClient(Guid.NewGuid());
+        var projectId = await CreateProjectAsync(client, "Accounts-MailConfig-NonSteam");
+        var idempotencyKey = Guid.NewGuid().ToString("N");
+
+        var payload = new
+        {
+            platform = "funpay",
+            accountTypeId = "test-worker.funpay",
+            displayName = "FunPay Mail Account",
+            proxyConfig = new
+            {
+                host = "proxy-mail.internal",
+                port = 1508,
+                login = "seller-mail",
+                password = "proxy-secret",
+            },
+            mailConfig = new
+            {
+                enabled = true,
+                imapHost = "imap.mail.local",
+                imapPort = 993,
+                imapSecurity = "ssl",
+                imapUsername = "steam@mail.local",
+                imapPassword = "mail-secret",
+            },
+        };
+
+        var response = await SendJsonAsync(
+            client,
+            HttpMethod.Post,
+            $"/v1/projects/{projectId}/accounts",
+            idempotencyKey,
+            payload);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Empty(factory.AccountsManagerClient.CreateCalls);
+    }
+
+    [Fact]
+    [Trait("Category", "Integration")]
     public async Task CreateAccount_WithMarketplaceAuthTokensWithoutDdg5_ReturnsBadRequest()
     {
         factory.AccountsManagerClient.Reset();
@@ -1512,6 +1615,7 @@ public sealed class CoreApiIntegrationTests(CoreApiFactory factory) : IClassFixt
         factory.GrantProjectIntegration(projectId, "platform.playerok", "use");
         factory.GrantProjectIntegration(projectId, "platform.ggsell", "use");
         factory.GrantProjectIntegration(projectId, "platform.platimarket", "use");
+        factory.GrantProjectIntegration(projectId, "platform.steam", "use");
 
         return projectId;
     }

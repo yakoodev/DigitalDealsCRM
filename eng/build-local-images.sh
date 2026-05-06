@@ -82,7 +82,7 @@ build_workers() {
 build_integrations() {
   echo "==> group: integrations"
   local stats_repo="${WORKSPACE_ROOT}/DigitalDealsStats"
-  local steamfleet_repo="${WORKSPACE_ROOT}/SteamFleetControl"
+  local steam_repo="${WORKSPACE_ROOT}/DDCRM-Steam"
 
   assert_dir "${stats_repo}" "DigitalDealsStats"
   assert_file "${stats_repo}/Dockerfile" "DigitalDealsStats Dockerfile"
@@ -92,20 +92,13 @@ build_integrations() {
     "${stats_repo}/Dockerfile" \
     "ddcrm/marketstat:local"
 
-  assert_dir "${steamfleet_repo}" "SteamFleetControl"
-  assert_file "${steamfleet_repo}/Dockerfile.web" "SteamFleetControl Dockerfile.web"
+  assert_dir "${steam_repo}" "DDCRM-Steam"
+  assert_file "${steam_repo}/Dockerfile" "DDCRM-Steam Dockerfile"
   build_image \
-    "SteamFleetControl web" \
-    "${steamfleet_repo}" \
-    "${steamfleet_repo}/Dockerfile.web" \
-    "ddcrm/steamfleet-web:local"
-
-  assert_file "${steamfleet_repo}/Dockerfile.worker" "SteamFleetControl Dockerfile.worker"
-  build_image \
-    "SteamFleetControl worker" \
-    "${steamfleet_repo}" \
-    "${steamfleet_repo}/Dockerfile.worker" \
-    "ddcrm/steamfleet-worker:local"
+    "DDCRM-Steam worker runtime" \
+    "${steam_repo}" \
+    "${steam_repo}/Dockerfile" \
+    "ddcrm/steam-worker:local"
 }
 
 case "${target}" in

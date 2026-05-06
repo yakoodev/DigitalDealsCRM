@@ -114,6 +114,7 @@ public sealed class IntegrationWorkerRuntimeBackgroundService(
                             ResolveWorkerPlatform(item.IntegrationKey),
                             defaultProxy,
                             marketplaceAuth: null,
+                            mailConfig: null,
                             idempotencyKey,
                             cancellationToken);
                     }

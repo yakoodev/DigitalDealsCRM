@@ -422,6 +422,7 @@ lifecycle.MapPost("/create", async (
         throw new ApiErrorException(StatusCodes.Status400BadRequest, ApiErrorCodes.ValidationError, "proxyConfig обязателен для lifecycle create.");
     }
     var marketplaceAuth = NormalizeMarketplaceAuth(request.MarketplaceAuth);
+    var mailConfig = NormalizeMailConfig(request.MailConfig);
 
     return await idempotency.ExecuteAsync(
         dbContext,
@@ -507,6 +508,18 @@ lifecycle.MapPost("/create", async (
                         workerBinding,
                         request.AccountId,
                         marketplaceAuth,
+                        idempotencyKey,
+                        workerControlBaseUrlTemplate,
+                        ct);
+                }
+
+                if (mailConfig is not null)
+                {
+                    await workerControlClient.ApplyMailConfigAsync(
+                        workerBinding,
+                        request.ProjectId,
+                        request.AccountId,
+                        mailConfig,
                         idempotencyKey,
                         workerControlBaseUrlTemplate,
                         ct);
@@ -954,6 +967,24 @@ static AccountTypeRuntimeConfigDto CreateDefaultAccountTypeRuntime(string platfo
             },
             WorkerCommand: ["python", "-m", "ddcrm_playerok_worker.main"]);
     }
+    if (string.Equals(platform, "steam-integration", StringComparison.Ordinal) ||
+        string.Equals(platform, "steam", StringComparison.Ordinal))
+    {
+        return new AccountTypeRuntimeConfigDto(
+            AutospawnEnabled: true,
+            WorkerImage: "ddcrm/steam-worker:local",
+            WorkerPathPrefix: "/internal/v2/worker",
+            HealthPath: "/health",
+            ContainerPort: 8080,
+            EnvironmentVariables: new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["WORKER_API_SERVICE_AUTH_ENABLED"] = "true",
+                ["WORKER_API_SERVICE_AUTH_ACCEPTED_TOKENS"] = "worker-token-a,worker-token-b",
+                ["INTERNAL_API_SERVICE_AUTH_ACCEPTED_TOKENS"] = "internal-token-a,internal-token-b",
+                ["SECRETS_MASTER_KEY_B64"] = "replace-with-real-base64-key",
+            },
+            WorkerCommand: null);
+    }
 
     return new AccountTypeRuntimeConfigDto(
         AutospawnEnabled: true,
@@ -1189,6 +1220,97 @@ static MarketplaceAuthPayload? NormalizeMarketplaceAuth(MarketplaceAuthDto? mark
     }
 
     return new MarketplaceAuthPayload(scheme, normalizedCredentials);
+}
+
+static MailConfigPayload? NormalizeMailConfig(MailConfigDto? mailConfig)
+{
+    if (mailConfig is null)
+    {
+        return null;
+    }
+
+    var enabled = mailConfig.Enabled ?? true;
+    if (!enabled)
+    {
+        return new MailConfigPayload(
+            Enabled: false,
+            ImapHost: string.Empty,
+            ImapPort: 0,
+            ImapSecurity: "ssl",
+            ImapUsername: string.Empty,
+            ImapPassword: string.Empty,
+            Mailbox: null,
+            SearchFrom: null,
+            SearchSubject: null);
+    }
+
+    var host = mailConfig.ImapHost?.Trim();
+    if (string.IsNullOrWhiteSpace(host))
+    {
+        throw new ApiErrorException(
+            StatusCodes.Status400BadRequest,
+            ApiErrorCodes.ValidationError,
+            "mailConfig.imapHost обязателен.");
+    }
+
+    var username = mailConfig.ImapUsername?.Trim();
+    if (string.IsNullOrWhiteSpace(username))
+    {
+        throw new ApiErrorException(
+            StatusCodes.Status400BadRequest,
+            ApiErrorCodes.ValidationError,
+            "mailConfig.imapUsername обязателен.");
+    }
+
+    var password = mailConfig.ImapPassword?.Trim();
+    if (string.IsNullOrWhiteSpace(password))
+    {
+        throw new ApiErrorException(
+            StatusCodes.Status400BadRequest,
+            ApiErrorCodes.ValidationError,
+            "mailConfig.imapPassword обязателен.");
+    }
+
+    var port = mailConfig.ImapPort ?? 993;
+    if (port is < 1 or > 65535)
+    {
+        throw new ApiErrorException(
+            StatusCodes.Status400BadRequest,
+            ApiErrorCodes.ValidationError,
+            "mailConfig.imapPort должен быть в диапазоне 1..65535.");
+    }
+
+    var security = string.IsNullOrWhiteSpace(mailConfig.ImapSecurity)
+        ? "ssl"
+        : mailConfig.ImapSecurity.Trim().ToLowerInvariant();
+    if (!MailConfigImapSecurityModes.All.Contains(security))
+    {
+        throw new ApiErrorException(
+            StatusCodes.Status400BadRequest,
+            ApiErrorCodes.ValidationError,
+            "mailConfig.imapSecurity содержит неподдерживаемое значение.");
+    }
+
+    var mailbox = string.IsNullOrWhiteSpace(mailConfig.Mailbox)
+        ? null
+        : mailConfig.Mailbox.Trim();
+    var searchFrom = string.IsNullOrWhiteSpace(mailConfig.SearchFrom)
+        ? null
+        : mailConfig.SearchFrom.Trim();
+    var searchSubject = string.IsNullOrWhiteSpace(mailConfig.SearchSubject)
+        ? null
+        : mailConfig.SearchSubject.Trim();
+
+    return new MailConfigPayload(
+        Enabled: true,
+        ImapHost: host,
+        ImapPort: port,
+        ImapSecurity: security,
+        ImapUsername: username,
+        ImapPassword: password,
+        Mailbox: mailbox,
+        SearchFrom: searchFrom,
+        SearchSubject: searchSubject);
 }
 
 static AccountTypeRuntimeConfigDto NormalizeRuntimeConfig(
@@ -2056,11 +2178,23 @@ public sealed record LifecycleCreateRequest(
     Guid ProjectId,
     string Platform,
     Dictionary<string, object?> ProxyConfig,
-    MarketplaceAuthDto? MarketplaceAuth);
+    MarketplaceAuthDto? MarketplaceAuth,
+    MailConfigDto? MailConfig);
 
 public sealed record LifecycleUpdateRequest(Guid AccountId, Dictionary<string, object?>? ProxyConfig);
 
 public sealed record MarketplaceAuthDto(string Scheme, Dictionary<string, string> Credentials);
+
+public sealed record MailConfigDto(
+    bool? Enabled,
+    string? ImapHost,
+    int? ImapPort,
+    string? ImapSecurity,
+    string? ImapUsername,
+    string? ImapPassword,
+    string? Mailbox,
+    string? SearchFrom,
+    string? SearchSubject);
 
 public sealed record LifecycleDeleteRequest(Guid AccountId);
 
@@ -2190,6 +2324,13 @@ internal static class MarketplaceAuthSchemeKeys
     public static readonly HashSet<string> All = new(
         [GoldenKey, Cookies, Tokens, LoginPassword],
         StringComparer.Ordinal);
+}
+
+internal static class MailConfigImapSecurityModes
+{
+    public static readonly HashSet<string> All = new(
+        ["ssl", "tls", "implicit_tls", "starttls", "starttls_when_available", "none", "auto"],
+        StringComparer.OrdinalIgnoreCase);
 }
 
 public partial class Program;

@@ -133,6 +133,7 @@ public sealed class AccountsManagerHttpClient(
         string platform,
         IDictionary<string, object?> proxyConfig,
         AccountsManagerMarketplaceAuth? marketplaceAuth,
+        AccountsManagerMailConfig? mailConfig,
         string idempotencyKey,
         CancellationToken cancellationToken)
     {
@@ -147,6 +148,7 @@ public sealed class AccountsManagerHttpClient(
                 platform,
                 proxyConfig,
                 marketplaceAuth,
+                mailConfig,
             }),
         };
 

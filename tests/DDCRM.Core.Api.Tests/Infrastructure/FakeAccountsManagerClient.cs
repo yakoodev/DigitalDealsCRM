@@ -135,6 +135,7 @@ public sealed class FakeAccountsManagerClient : IAccountsManagerClient
         string platform,
         IDictionary<string, object?> proxyConfig,
         AccountsManagerMarketplaceAuth? marketplaceAuth,
+        AccountsManagerMailConfig? mailConfig,
         string idempotencyKey,
         CancellationToken cancellationToken)
     {
@@ -148,7 +149,19 @@ public sealed class FakeAccountsManagerClient : IAccountsManagerClient
                 ? null
                 : new AccountsManagerMarketplaceAuth(
                     marketplaceAuth.Scheme,
-                    new Dictionary<string, string>(marketplaceAuth.Credentials, StringComparer.Ordinal))));
+                    new Dictionary<string, string>(marketplaceAuth.Credentials, StringComparer.Ordinal)),
+            mailConfig is null
+                ? null
+                : new AccountsManagerMailConfig(
+                    mailConfig.Enabled,
+                    mailConfig.ImapHost,
+                    mailConfig.ImapPort,
+                    mailConfig.ImapSecurity,
+                    mailConfig.ImapUsername,
+                    mailConfig.ImapPassword,
+                    mailConfig.Mailbox,
+                    mailConfig.SearchFrom,
+                    mailConfig.SearchSubject)));
         return Task.CompletedTask;
     }
 
@@ -195,7 +208,8 @@ public sealed record CreateLifecycleCall(
     string Platform,
     string IdempotencyKey,
     IReadOnlyDictionary<string, object?> ProxyConfig,
-    AccountsManagerMarketplaceAuth? MarketplaceAuth);
+    AccountsManagerMarketplaceAuth? MarketplaceAuth,
+    AccountsManagerMailConfig? MailConfig);
 
 public sealed record UpdateLifecycleCall(
     Guid AccountId,

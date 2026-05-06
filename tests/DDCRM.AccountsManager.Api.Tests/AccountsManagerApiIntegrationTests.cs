@@ -434,6 +434,103 @@ public sealed class AccountsManagerApiIntegrationTests
 
     [Fact]
     [Trait("Category", "Integration")]
+    public async Task LifecycleCreate_WithMailConfig_AppliesMailConfigViaWorkerControl()
+    {
+        using var factory = new AccountsManagerApiFactory();
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add("X-Service-Token", "internal-token-a");
+        await EnsureActiveAccountTypeAsync(client, "steam");
+
+        var accountId = Guid.NewGuid();
+        var projectId = Guid.NewGuid();
+        using var createRequest = CreateMutatingRequest(
+            HttpMethod.Post,
+            "/internal/v1/lifecycle/create",
+            Guid.NewGuid().ToString("N"),
+            new
+            {
+                accountId,
+                projectId,
+                platform = "steam",
+                proxyConfig = new
+                {
+                    host = "127.0.0.1",
+                    port = 1508,
+                },
+                mailConfig = new
+                {
+                    enabled = true,
+                    imapHost = "imap.mail.local",
+                    imapPort = 993,
+                    imapSecurity = "ssl",
+                    imapUsername = "steam@mail.local",
+                    imapPassword = "mail-secret",
+                    mailbox = "INBOX",
+                    searchFrom = "noreply@steampowered.com",
+                    searchSubject = "Steam",
+                },
+            });
+
+        var createResponse = await client.SendAsync(createRequest);
+        Assert.Equal(HttpStatusCode.Accepted, createResponse.StatusCode);
+
+        var mailApplyCall = Assert.Single(factory.WorkerControlClient.MailConfigApplyCalls);
+        Assert.Equal(projectId, mailApplyCall.ProjectId);
+        Assert.Equal(accountId, mailApplyCall.AccountId);
+        Assert.True(mailApplyCall.MailConfig.Enabled);
+        Assert.Equal("imap.mail.local", mailApplyCall.MailConfig.ImapHost);
+        Assert.Equal(993, mailApplyCall.MailConfig.ImapPort);
+        Assert.Equal("ssl", mailApplyCall.MailConfig.ImapSecurity);
+        Assert.Equal("steam@mail.local", mailApplyCall.MailConfig.ImapUsername);
+        Assert.Equal("mail-secret", mailApplyCall.MailConfig.ImapPassword);
+        Assert.Equal("INBOX", mailApplyCall.MailConfig.Mailbox);
+        Assert.Equal("noreply@steampowered.com", mailApplyCall.MailConfig.SearchFrom);
+        Assert.Equal("Steam", mailApplyCall.MailConfig.SearchSubject);
+    }
+
+    [Fact]
+    [Trait("Category", "Integration")]
+    public async Task LifecycleCreate_WithInvalidMailConfigPort_ReturnsBadRequest()
+    {
+        using var factory = new AccountsManagerApiFactory();
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add("X-Service-Token", "internal-token-a");
+        await EnsureActiveAccountTypeAsync(client, "steam");
+
+        var accountId = Guid.NewGuid();
+        var projectId = Guid.NewGuid();
+        using var createRequest = CreateMutatingRequest(
+            HttpMethod.Post,
+            "/internal/v1/lifecycle/create",
+            Guid.NewGuid().ToString("N"),
+            new
+            {
+                accountId,
+                projectId,
+                platform = "steam",
+                proxyConfig = new
+                {
+                    host = "127.0.0.1",
+                    port = 1508,
+                },
+                mailConfig = new
+                {
+                    enabled = true,
+                    imapHost = "imap.mail.local",
+                    imapPort = 70000,
+                    imapSecurity = "ssl",
+                    imapUsername = "steam@mail.local",
+                    imapPassword = "mail-secret",
+                },
+            });
+
+        var createResponse = await client.SendAsync(createRequest);
+        Assert.Equal(HttpStatusCode.BadRequest, createResponse.StatusCode);
+        Assert.Empty(factory.WorkerControlClient.MailConfigApplyCalls);
+    }
+
+    [Fact]
+    [Trait("Category", "Integration")]
     public async Task LifecycleCreate_WithMarketplaceAuthTokensWithoutDdg5_ReturnsBadRequest()
     {
         using var factory = new AccountsManagerApiFactory();

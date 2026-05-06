@@ -21,9 +21,9 @@ docker compose down -v
 docker compose up --build -d
 ```
 
-## 3. SteamFleetControl
+## 3. DDCRM-Steam
 ```powershell
-cd F:\ddcrm\SteamFleetControl
+cd F:\ddcrm\DDCRM-Steam
 docker compose down -v
 docker compose up --build -d
 ```

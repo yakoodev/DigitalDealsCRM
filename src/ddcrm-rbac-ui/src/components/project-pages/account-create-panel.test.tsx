@@ -339,6 +339,188 @@ describe("ProjectAccountCreatePanel", () => {
     });
   });
 
+  it("для steam формирует mailConfig (IMAP)", async () => {
+    vi.mocked(listProjectAccountTypesRequest).mockResolvedValueOnce([
+      {
+        accountTypeId: "test-worker.steam",
+        platform: "steam",
+        displayName: "Тестовый worker: Steam",
+        description: "Steam template",
+        workerProfileId: "test-worker",
+        enabled: true,
+        sortOrder: 30,
+        formFields: [
+          {
+            key: "displayName",
+            label: "Название аккаунта",
+            inputType: "text",
+            required: true,
+            secret: false,
+            placeholder: "Steam Test Account",
+            defaultValue: "Steam Test Account",
+          },
+          {
+            key: "proxyHost",
+            label: "Proxy host",
+            inputType: "text",
+            required: true,
+            secret: false,
+            placeholder: "45.88.208.237",
+            defaultValue: "",
+          },
+          {
+            key: "proxyPort",
+            label: "Proxy port",
+            inputType: "number",
+            required: true,
+            secret: false,
+            placeholder: "1508",
+            defaultValue: "1508",
+          },
+          {
+            key: "proxyLogin",
+            label: "Proxy login",
+            inputType: "text",
+            required: true,
+            secret: false,
+            placeholder: "user305829",
+            defaultValue: "",
+          },
+          {
+            key: "proxyPassword",
+            label: "Proxy password",
+            inputType: "password",
+            required: true,
+            secret: true,
+            placeholder: "Введите пароль",
+            defaultValue: "",
+          },
+          {
+            key: "imapHost",
+            label: "IMAP host",
+            inputType: "text",
+            required: false,
+            secret: false,
+            placeholder: "imap.mail.local",
+            defaultValue: "",
+          },
+          {
+            key: "imapPort",
+            label: "IMAP port",
+            inputType: "number",
+            required: false,
+            secret: false,
+            placeholder: "993",
+            defaultValue: "993",
+          },
+          {
+            key: "imapSecurity",
+            label: "IMAP security",
+            inputType: "text",
+            required: false,
+            secret: false,
+            placeholder: "ssl",
+            defaultValue: "ssl",
+          },
+          {
+            key: "imapUsername",
+            label: "IMAP username",
+            inputType: "text",
+            required: false,
+            secret: false,
+            placeholder: "steam@mail.local",
+            defaultValue: "",
+          },
+          {
+            key: "imapPassword",
+            label: "IMAP password",
+            inputType: "password",
+            required: false,
+            secret: true,
+            placeholder: "mail secret",
+            defaultValue: "",
+          },
+          {
+            key: "imapMailbox",
+            label: "IMAP mailbox",
+            inputType: "text",
+            required: false,
+            secret: false,
+            placeholder: "INBOX",
+            defaultValue: "INBOX",
+          },
+          {
+            key: "imapSearchFrom",
+            label: "IMAP searchFrom",
+            inputType: "text",
+            required: false,
+            secret: false,
+            placeholder: "noreply@steampowered.com",
+            defaultValue: "",
+          },
+          {
+            key: "imapSearchSubject",
+            label: "IMAP searchSubject",
+            inputType: "text",
+            required: false,
+            secret: false,
+            placeholder: "Steam",
+            defaultValue: "",
+          },
+        ],
+      },
+    ]);
+
+    renderPanel();
+
+    const titles = await screen.findAllByText("Тестовый worker: Steam");
+    expect(titles.length).toBeGreaterThan(0);
+
+    await userEvent.clear(screen.getByLabelText(/Название аккаунта/i));
+    await userEvent.type(screen.getByLabelText(/Название аккаунта/i), "QA Steam");
+    await userEvent.type(screen.getByLabelText(/Proxy host/i), "45.88.208.239");
+    await userEvent.type(screen.getByLabelText(/Proxy login/i), "user-steam");
+    await userEvent.type(screen.getByLabelText(/Proxy password/i), "proxy-secret");
+    await userEvent.type(screen.getByLabelText(/IMAP host/i), "imap.mail.local");
+    await userEvent.type(screen.getByLabelText(/IMAP username/i), "steam@mail.local");
+    await userEvent.type(screen.getByLabelText(/IMAP password/i), "mail-secret");
+    await userEvent.type(screen.getByLabelText(/IMAP searchFrom/i), "noreply@steampowered.com");
+    await userEvent.type(screen.getByLabelText(/IMAP searchSubject/i), "Steam");
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Добавить аккаунт в проект" }),
+    );
+
+    await waitFor(() => {
+      expect(createAccountRequest).toHaveBeenCalledWith(
+        { baseUrl: "http://localhost:5073", token: "token" },
+        "project-1",
+        {
+          accountTypeId: "test-worker.steam",
+          platform: "steam",
+          displayName: "QA Steam",
+          proxyConfig: {
+            host: "45.88.208.239",
+            port: 1508,
+            login: "user-steam",
+            password: "proxy-secret",
+          },
+          mailConfig: {
+            enabled: true,
+            imapHost: "imap.mail.local",
+            imapPort: 993,
+            imapSecurity: "ssl",
+            imapUsername: "steam@mail.local",
+            imapPassword: "mail-secret",
+            mailbox: "INBOX",
+            searchFrom: "noreply@steampowered.com",
+            searchSubject: "Steam",
+          },
+        },
+      );
+    });
+  });
+
   it("для moderator показывает запрет на создание аккаунта", () => {
     renderPanel("moderator");
 

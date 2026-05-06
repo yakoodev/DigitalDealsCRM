@@ -93,17 +93,10 @@ $integrations = @(
         BuildArgs = @()
     },
     @{
-        Name = "SteamFleetControl web"
-        Repo = (Join-Path $workspaceRoot "SteamFleetControl")
-        Dockerfile = (Join-Path $workspaceRoot "SteamFleetControl/Dockerfile.web")
-        Tag = "ddcrm/steamfleet-web:local"
-        BuildArgs = @()
-    },
-    @{
-        Name = "SteamFleetControl worker"
-        Repo = (Join-Path $workspaceRoot "SteamFleetControl")
-        Dockerfile = (Join-Path $workspaceRoot "SteamFleetControl/Dockerfile.worker")
-        Tag = "ddcrm/steamfleet-worker:local"
+        Name = "DDCRM-Steam worker runtime"
+        Repo = (Join-Path $workspaceRoot "DDCRM-Steam")
+        Dockerfile = (Join-Path $workspaceRoot "DDCRM-Steam/Dockerfile")
+        Tag = "ddcrm/steam-worker:local"
         BuildArgs = @()
     }
 )

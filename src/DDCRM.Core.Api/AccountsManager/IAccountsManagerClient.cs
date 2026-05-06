@@ -26,6 +26,7 @@ public interface IAccountsManagerClient
         string platform,
         IDictionary<string, object?> proxyConfig,
         AccountsManagerMarketplaceAuth? marketplaceAuth,
+        AccountsManagerMailConfig? mailConfig,
         string idempotencyKey,
         CancellationToken cancellationToken);
 
@@ -121,3 +122,14 @@ public sealed record AccountsManagerWorkerServerRegistryUpsertInput(
 public sealed record AccountsManagerMarketplaceAuth(
     string Scheme,
     IReadOnlyDictionary<string, string> Credentials);
+
+public sealed record AccountsManagerMailConfig(
+    bool Enabled,
+    string ImapHost,
+    int ImapPort,
+    string ImapSecurity,
+    string ImapUsername,
+    string ImapPassword,
+    string? Mailbox,
+    string? SearchFrom,
+    string? SearchSubject);

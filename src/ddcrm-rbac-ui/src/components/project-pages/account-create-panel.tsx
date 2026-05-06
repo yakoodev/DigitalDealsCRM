@@ -189,6 +189,54 @@ export function ProjectAccountCreatePanel({
           credentials,
         };
       }
+      else if (normalizedPlatform === "steam") {
+        const rawEnabled = (activeDraft.imapEnabled ?? "").trim().toLowerCase();
+        const hasMailFields =
+          (activeDraft.imapHost ?? "").trim().length > 0
+          || (activeDraft.imapUsername ?? "").trim().length > 0
+          || (activeDraft.imapPassword ?? "").trim().length > 0
+          || (activeDraft.imapSearchFrom ?? "").trim().length > 0
+          || (activeDraft.imapSearchSubject ?? "").trim().length > 0;
+        const enabled = rawEnabled
+          ? !(rawEnabled === "false" || rawEnabled === "0" || rawEnabled === "no")
+          : hasMailFields;
+
+        if (enabled || rawEnabled.length > 0) {
+          if (!enabled) {
+            payload.mailConfig = {
+              enabled: false,
+              imapHost: "",
+              imapPort: 0,
+              imapSecurity: "ssl",
+              imapUsername: "",
+              imapPassword: "",
+            };
+          }
+          else {
+            const imapHost = readRequiredDraftValue(activeDraft, "imapHost", "IMAP host");
+            const imapUsername = readRequiredDraftValue(activeDraft, "imapUsername", "IMAP username");
+            const imapPassword = readRequiredDraftValue(activeDraft, "imapPassword", "IMAP password");
+            const imapPortRaw = (activeDraft.imapPort ?? "").trim();
+            const imapPort = imapPortRaw.length === 0 ? 993 : Number(imapPortRaw);
+            if (!Number.isInteger(imapPort) || imapPort < 1 || imapPort > 65535) {
+              throw new Error("IMAP port должен быть целым числом от 1 до 65535.");
+            }
+
+            const imapSecurity = (activeDraft.imapSecurity ?? "").trim() || "ssl";
+            payload.mailConfig = {
+              enabled: true,
+              imapHost,
+              imapPort,
+              imapSecurity,
+              imapUsername,
+              imapPassword,
+              mailbox: (activeDraft.imapMailbox ?? "").trim() || undefined,
+              searchFrom: (activeDraft.imapSearchFrom ?? "").trim() || undefined,
+              searchSubject: (activeDraft.imapSearchSubject ?? "").trim() || undefined,
+            };
+          }
+        }
+      }
 
       return createAccountRequest(apiSession, projectId, payload);
     },

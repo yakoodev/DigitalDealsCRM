@@ -1785,6 +1785,8 @@ components:
           $ref: '#/components/schemas/ProxyConfig'
         marketplaceAuth:
           $ref: '#/components/schemas/MarketplaceAuth'
+        mailConfig:
+          $ref: '#/components/schemas/MailConfig'
 
     MarketplaceAuth:
       type: object
@@ -1798,6 +1800,32 @@ components:
           minProperties: 1
           additionalProperties:
             type: string
+
+    MailConfig:
+      type: object
+      required: [enabled, imapHost, imapPort, imapSecurity, imapUsername, imapPassword]
+      properties:
+        enabled:
+          type: boolean
+        imapHost:
+          type: string
+        imapPort:
+          type: integer
+          minimum: 1
+          maximum: 65535
+        imapSecurity:
+          type: string
+          description: ssl | tls | implicit_tls | starttls | starttls_when_available | none | auto
+        imapUsername:
+          type: string
+        imapPassword:
+          type: string
+        mailbox:
+          type: string
+        searchFrom:
+          type: string
+        searchSubject:
+          type: string
 
     AccountTypeField:
       type: object
