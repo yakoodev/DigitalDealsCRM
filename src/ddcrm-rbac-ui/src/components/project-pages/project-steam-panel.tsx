@@ -14,6 +14,7 @@ import {
   cancelSteamIntegrationJobRequest,
   createSteamIntegrationAccountRequest,
   createSteamIntegrationJobRequest,
+  invokeProjectIntegrationActionRequest,
   listProjectIntegrationsStatusRequest,
   listSteamIntegrationAccountsRequest,
   listSteamIntegrationJobsRequest,
@@ -53,6 +54,15 @@ interface AccountFormState {
   familyViewPin: string;
   countryCode: string;
   timeZone: string;
+  imapEnabled: boolean;
+  imapHost: string;
+  imapPort: string;
+  imapSecurity: string;
+  imapUsername: string;
+  imapPassword: string;
+  imapMailbox: string;
+  imapSearchFrom: string;
+  imapSearchSubject: string;
   authHeadersJson: string;
   sessionPayload: string;
   recoveryPayload: string;
@@ -88,6 +98,15 @@ const defaultAccountFormState: AccountFormState = {
   familyViewPin: "",
   countryCode: "",
   timeZone: "",
+  imapEnabled: false,
+  imapHost: "",
+  imapPort: "993",
+  imapSecurity: "ssl",
+  imapUsername: "",
+  imapPassword: "",
+  imapMailbox: "INBOX",
+  imapSearchFrom: "",
+  imapSearchSubject: "",
   authHeadersJson: "{}",
   sessionPayload: "",
   recoveryPayload: "",
@@ -293,6 +312,73 @@ function resolveMaFileStringValue(source: Record<string, unknown>, ...keys: stri
   return "";
 }
 
+function hasAccountMailConfigInput(form: AccountFormState) {
+  return form.imapEnabled
+    || form.imapHost.trim().length > 0
+    || form.imapUsername.trim().length > 0
+    || form.imapPassword.trim().length > 0
+    || form.imapSearchFrom.trim().length > 0
+    || form.imapSearchSubject.trim().length > 0;
+}
+
+function buildAccountMailConfig(form: AccountFormState) {
+  if (!hasAccountMailConfigInput(form)) {
+    return null;
+  }
+
+  if (!form.imapEnabled) {
+    return {
+      enabled: false,
+      imapHost: "",
+      imapPort: 993,
+      imapSecurity: "ssl",
+      imapUsername: "",
+      imapPassword: "",
+      mailbox: undefined,
+      searchFrom: undefined,
+      searchSubject: undefined,
+    };
+  }
+
+  const host = form.imapHost.trim();
+  const username = form.imapUsername.trim();
+  const password = form.imapPassword.trim();
+  const security = form.imapSecurity.trim().toLowerCase();
+  const port = Number(form.imapPort.trim() || "993");
+
+  if (!host) {
+    throw new Error("IMAP host обязателен, когда включено авто-подтверждение.");
+  }
+
+  if (!username) {
+    throw new Error("IMAP username обязателен, когда включено авто-подтверждение.");
+  }
+
+  if (!password) {
+    throw new Error("IMAP password обязателен, когда включено авто-подтверждение.");
+  }
+
+  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+    throw new Error("IMAP port должен быть целым числом от 1 до 65535.");
+  }
+
+  if (!["ssl", "starttls", "plain"].includes(security)) {
+    throw new Error("IMAP security должен быть: ssl, starttls или plain.");
+  }
+
+  return {
+    enabled: true,
+    imapHost: host,
+    imapPort: port,
+    imapSecurity: security,
+    imapUsername: username,
+    imapPassword: password,
+    mailbox: form.imapMailbox.trim() || undefined,
+    searchFrom: form.imapSearchFrom.trim() || undefined,
+    searchSubject: form.imapSearchSubject.trim() || undefined,
+  };
+}
+
 export function ProjectSteamPanel({ apiSession, projectId }: ProjectSteamPanelProps) {
   const queryClient = useQueryClient();
 
@@ -415,15 +501,38 @@ export function ProjectSteamPanel({ apiSession, projectId }: ProjectSteamPanelPr
         throw new Error("Логин аккаунта обязателен.");
       }
 
+      const mailConfig = buildAccountMailConfig(formState);
+      let account: SteamIntegrationAccount;
       if (editingAccountId) {
-        return updateSteamIntegrationAccountRequest(apiSession, projectId, editingAccountId, payload);
+        account = await updateSteamIntegrationAccountRequest(apiSession, projectId, editingAccountId, payload);
+      }
+      else {
+        account = await createSteamIntegrationAccountRequest(apiSession, projectId, payload);
       }
 
-      return createSteamIntegrationAccountRequest(apiSession, projectId, payload);
+      if (mailConfig) {
+        await invokeProjectIntegrationActionRequest(
+          apiSession,
+          projectId,
+          "steam-accounts-manager",
+          "jobs",
+          {
+            operation: "accounts.mail-config.apply",
+            accountId: account.id,
+            mailConfig,
+          },
+        );
+      }
+
+      return {
+        account,
+        mailConfigApplied: Boolean(mailConfig),
+      };
     },
-    onSuccess: async () => {
+    onSuccess: async (result) => {
       await refreshAll();
-      setStatusMessage(editingAccountId ? "Аккаунт обновлён." : "Аккаунт создан.");
+      const baseMessage = editingAccountId ? "Аккаунт обновлён." : "Аккаунт создан.";
+      setStatusMessage(result.mailConfigApplied ? `${baseMessage} IMAP-конфиг применён.` : baseMessage);
       setEditingAccountId(null);
       setFormState(defaultAccountFormState);
       setShowAdvancedAccountFields(false);
@@ -563,6 +672,15 @@ export function ProjectSteamPanel({ apiSession, projectId }: ProjectSteamPanelPr
       familyViewPin: "",
       countryCode: metadata.countryCode ?? "",
       timeZone: metadata.timeZone ?? "",
+      imapEnabled: false,
+      imapHost: "",
+      imapPort: "993",
+      imapSecurity: "ssl",
+      imapUsername: "",
+      imapPassword: "",
+      imapMailbox: "INBOX",
+      imapSearchFrom: "",
+      imapSearchSubject: "",
       authHeadersJson: "{}",
       sessionPayload: "",
       recoveryPayload: "",
@@ -974,6 +1092,58 @@ export function ProjectSteamPanel({ apiSession, projectId }: ProjectSteamPanelPr
                   <option value="Disabled">Disabled</option>
                   <option value="Archived">Archived</option>
                 </select>
+              </label>
+            </div>
+            <div className="panel-title-row">
+              <h4>4. IMAP auto-confirm (на уровне аккаунта)</h4>
+            </div>
+            <label className="field field-inline">
+              <span>Включить авто-подтверждение через IMAP</span>
+              <input
+                type="checkbox"
+                checked={formState.imapEnabled}
+                onChange={(event) => setFormState((current) => ({ ...current, imapEnabled: event.target.checked }))}
+              />
+            </label>
+            <p className="route-hint">
+              Для провайдера pqlxvrm.icu сначала уточните именно IMAP endpoint. `587/STARTTLS` обычно относится к SMTP.
+            </p>
+            <div className="grid-2">
+              <label className="field">
+                <span>IMAP host</span>
+                <input className="input" value={formState.imapHost} onChange={(event) => setFormState((current) => ({ ...current, imapHost: event.target.value }))} placeholder="imap.example.com" />
+              </label>
+              <label className="field">
+                <span>IMAP port</span>
+                <input className="input" value={formState.imapPort} onChange={(event) => setFormState((current) => ({ ...current, imapPort: event.target.value }))} placeholder="993" />
+              </label>
+              <label className="field">
+                <span>IMAP security</span>
+                <select className="input" value={formState.imapSecurity} onChange={(event) => setFormState((current) => ({ ...current, imapSecurity: event.target.value }))}>
+                  <option value="ssl">ssl</option>
+                  <option value="starttls">starttls</option>
+                  <option value="plain">plain</option>
+                </select>
+              </label>
+              <label className="field">
+                <span>Mailbox</span>
+                <input className="input" value={formState.imapMailbox} onChange={(event) => setFormState((current) => ({ ...current, imapMailbox: event.target.value }))} placeholder="INBOX" />
+              </label>
+              <label className="field">
+                <span>IMAP username</span>
+                <input className="input" value={formState.imapUsername} onChange={(event) => setFormState((current) => ({ ...current, imapUsername: event.target.value }))} />
+              </label>
+              <label className="field">
+                <span>IMAP password</span>
+                <input className="input" type="password" value={formState.imapPassword} onChange={(event) => setFormState((current) => ({ ...current, imapPassword: event.target.value }))} />
+              </label>
+              <label className="field">
+                <span>Search from</span>
+                <input className="input" value={formState.imapSearchFrom} onChange={(event) => setFormState((current) => ({ ...current, imapSearchFrom: event.target.value }))} placeholder="noreply@steampowered.com" />
+              </label>
+              <label className="field">
+                <span>Search subject</span>
+                <input className="input" value={formState.imapSearchSubject} onChange={(event) => setFormState((current) => ({ ...current, imapSearchSubject: event.target.value }))} placeholder="Steam" />
               </label>
             </div>
             <label className="field">

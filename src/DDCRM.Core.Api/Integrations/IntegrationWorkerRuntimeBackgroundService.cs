@@ -96,7 +96,6 @@ public sealed class IntegrationWorkerRuntimeBackgroundService(
                 var proxyConfig = runtimeConfiguration?.ProxyConfig is null
                     ? BuildDefaultProxyConfig()
                     : ToProxyConfigDictionary(runtimeConfiguration.ProxyConfig);
-                var mailConfig = runtimeConfiguration?.MailConfig;
                 if (normalizedOperation == "provision")
                 {
                     var grantIsActive = await dbContext.ProjectIntegrationGrants.AnyAsync(
@@ -121,7 +120,7 @@ public sealed class IntegrationWorkerRuntimeBackgroundService(
                             ResolveWorkerPlatform(item.IntegrationKey),
                             proxyConfig,
                             marketplaceAuth: null,
-                            mailConfig,
+                            mailConfig: null,
                             idempotencyKey,
                             cancellationToken);
                     }
@@ -133,7 +132,7 @@ public sealed class IntegrationWorkerRuntimeBackgroundService(
                         await accountsManagerClient.UpdateLifecycleAsync(
                             runtime.RuntimeAccountId,
                             proxyConfig,
-                            mailConfig,
+                            mailConfig: null,
                             $"{idempotencyKey}:reconcile",
                             cancellationToken);
                     }
@@ -269,7 +268,25 @@ public sealed class IntegrationWorkerRuntimeBackgroundService(
             return false;
         }
 
-        return upstreamBody.Contains("уже существует", StringComparison.OrdinalIgnoreCase)
-               || upstreamBody.Contains("already exists", StringComparison.OrdinalIgnoreCase);
+        var decodedMessage = upstreamBody;
+        try
+        {
+            using var json = JsonDocument.Parse(upstreamBody);
+            if (json.RootElement.TryGetProperty("message", out var messageElement))
+            {
+                var message = messageElement.GetString();
+                if (!string.IsNullOrWhiteSpace(message))
+                {
+                    decodedMessage = message;
+                }
+            }
+        }
+        catch
+        {
+            // Ignore parse errors and use raw upstream body text.
+        }
+
+        return decodedMessage.Contains("уже существует", StringComparison.OrdinalIgnoreCase)
+               || decodedMessage.Contains("already exists", StringComparison.OrdinalIgnoreCase);
     }
 }
