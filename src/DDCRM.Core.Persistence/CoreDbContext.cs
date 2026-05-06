@@ -164,6 +164,7 @@ public sealed class CoreDbContext(DbContextOptions<CoreDbContext> options)
             entity.Property(x => x.IntegrationKey).HasMaxLength(80).IsRequired();
             entity.Property(x => x.Status).HasMaxLength(32).IsRequired();
             entity.Property(x => x.ScopesCsv).HasMaxLength(120).IsRequired();
+            entity.Property(x => x.MaxInstances).HasDefaultValue(1);
             entity.Property(x => x.GrantedAtUtc).HasDefaultValueSql("NOW()");
             entity.HasIndex(x => new { x.ProjectId, x.IntegrationKey }).IsUnique();
         });
@@ -187,13 +188,15 @@ public sealed class CoreDbContext(DbContextOptions<CoreDbContext> options)
             entity.ToTable("project_integration_worker_runtimes");
             entity.HasKey(x => x.Id);
             entity.Property(x => x.IntegrationKey).HasMaxLength(80).IsRequired();
+            entity.Property(x => x.InstanceDisplayName).HasMaxLength(160).IsRequired();
             entity.Property(x => x.Status).HasMaxLength(32).IsRequired();
             entity.Property(x => x.LastError).HasMaxLength(1000);
             entity.Property(x => x.ConfigurationCiphertext);
             entity.Property(x => x.ConfigurationUpdatedAtUtc);
             entity.Property(x => x.CreatedAtUtc).HasDefaultValueSql("NOW()");
             entity.Property(x => x.UpdatedAtUtc).HasDefaultValueSql("NOW()");
-            entity.HasIndex(x => new { x.ProjectId, x.IntegrationKey }).IsUnique();
+            entity.HasIndex(x => new { x.ProjectId, x.IntegrationKey, x.Id }).IsUnique();
+            entity.HasIndex(x => new { x.ProjectId, x.IntegrationKey, x.IsDefault });
             entity.HasIndex(x => x.RuntimeAccountId).IsUnique();
         });
 
@@ -406,7 +409,7 @@ public sealed class CoreDbContext(DbContextOptions<CoreDbContext> options)
             entity.Property(x => x.LastError).HasMaxLength(1000);
             entity.Property(x => x.CreatedAtUtc).HasDefaultValueSql("NOW()");
             entity.HasIndex(x => new { x.Status, x.NextAttemptAtUtc });
-            entity.HasIndex(x => new { x.ProjectId, x.IntegrationKey, x.Operation });
+            entity.HasIndex(x => new { x.ProjectId, x.IntegrationKey, x.RuntimeAccountId, x.Operation });
         });
 
         modelBuilder.ConfigureIdempotencyRecord();

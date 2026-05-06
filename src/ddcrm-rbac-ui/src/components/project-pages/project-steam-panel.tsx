@@ -1,6 +1,8 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import type {
   ApiSession,
@@ -10,21 +12,24 @@ import type {
   SteamIntegrationJobCreatePayload,
 } from "@/lib/api-client";
 import {
-  archiveSteamIntegrationAccountRequest,
-  cancelSteamIntegrationJobRequest,
-  createSteamIntegrationAccountRequest,
-  createSteamIntegrationJobRequest,
-  invokeProjectIntegrationActionRequest,
+  archiveSteamIntegrationAccountByInstanceRequest,
+  cancelSteamIntegrationJobByInstanceRequest,
+  createSteamIntegrationAccountByInstanceRequest,
+  createSteamIntegrationJobByInstanceRequest,
+  invokeProjectIntegrationInstanceActionRequest,
+  listProjectIntegrationInstancesRequest,
   listProjectIntegrationsStatusRequest,
-  listSteamIntegrationAccountsRequest,
-  listSteamIntegrationJobsRequest,
-  triggerProjectIntegrationRuntimeRequest,
-  updateSteamIntegrationAccountRequest,
+  listSteamIntegrationAccountsByInstanceRequest,
+  listSteamIntegrationJobsByInstanceRequest,
+  triggerProjectIntegrationInstanceRuntimeRequest,
+  updateSteamIntegrationAccountByInstanceRequest,
 } from "@/lib/api-client";
 
 interface ProjectSteamPanelProps {
   apiSession: ApiSession;
   projectId: string;
+  integrationKey?: string;
+  instanceId?: string;
 }
 
 interface AccountFormState {
@@ -379,8 +384,14 @@ function buildAccountMailConfig(form: AccountFormState) {
   };
 }
 
-export function ProjectSteamPanel({ apiSession, projectId }: ProjectSteamPanelProps) {
+export function ProjectSteamPanel({
+  apiSession,
+  projectId,
+  integrationKey = "steam-accounts-manager",
+  instanceId,
+}: ProjectSteamPanelProps) {
   const queryClient = useQueryClient();
+  const router = useRouter();
 
   const [queryText, setQueryText] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -397,6 +408,13 @@ export function ProjectSteamPanel({ apiSession, projectId }: ProjectSteamPanelPr
   const [jobsTake, setJobsTake] = useState("40");
   const [jobsTypeFilter, setJobsTypeFilter] = useState("");
   const [bulkAccountsText, setBulkAccountsText] = useState("");
+  const [steamInstanceDisplayName, setSteamInstanceDisplayName] = useState("");
+  const [steamInstanceAutoProvision, setSteamInstanceAutoProvision] = useState(true);
+  const [steamInstanceMakeDefault, setSteamInstanceMakeDefault] = useState(true);
+  const [steamInstanceProxyHost, setSteamInstanceProxyHost] = useState("");
+  const [steamInstanceProxyPort, setSteamInstanceProxyPort] = useState("8080");
+  const [steamInstanceProxyLogin, setSteamInstanceProxyLogin] = useState("");
+  const [steamInstanceProxyPassword, setSteamInstanceProxyPassword] = useState("");
   const [showBulkImport, setShowBulkImport] = useState(
     () => typeof window !== "undefined" && window.location.hash === "#bulk-import",
   );
@@ -410,31 +428,84 @@ export function ProjectSteamPanel({ apiSession, projectId }: ProjectSteamPanelPr
     staleTime: 10_000,
   });
 
-  const steamRuntime = useMemo(
+  const steamGrant = useMemo(
     () =>
       (integrationStatusQuery.data?.items ?? []).find(
-        (item) => item.integrationKey === "steam-accounts-manager",
+        (item) => item.integrationKey === integrationKey,
       ) ?? null,
-    [integrationStatusQuery.data?.items],
+    [integrationStatusQuery.data?.items, integrationKey],
   );
 
+  const steamInstancesQuery = useQuery({
+    queryKey: ["steam-instances", apiSession.baseUrl, apiSession.token, projectId, integrationKey],
+    queryFn: () => listProjectIntegrationInstancesRequest(apiSession, projectId, integrationKey),
+    enabled: steamGrant?.status === "active",
+    staleTime: 5_000,
+  });
+
+  const steamInstances = useMemo(() => steamInstancesQuery.data?.items ?? [], [steamInstancesQuery.data?.items]);
+
+  const selectedSteamInstance = useMemo(() => {
+    const directMatch = instanceId?.trim()
+      ? steamInstances.find((item) => item.instanceId === instanceId.trim()) ?? null
+      : null;
+
+    if (directMatch) {
+      return directMatch;
+    }
+
+    return steamInstances.find((item) => item.isDefault) ?? steamInstances[0] ?? null;
+  }, [instanceId, steamInstances]);
+
+  const selectedSteamInstanceId = selectedSteamInstance?.instanceId ?? "";
+
   const accountsQuery = useQuery({
-    queryKey: ["steam-accounts", apiSession.baseUrl, apiSession.token, projectId, queryText, statusFilter],
+    queryKey: [
+      "steam-accounts",
+      apiSession.baseUrl,
+      apiSession.token,
+      projectId,
+      integrationKey,
+      selectedSteamInstanceId,
+      queryText,
+      statusFilter,
+    ],
     queryFn: () =>
-      listSteamIntegrationAccountsRequest(apiSession, projectId, {
-        query: queryText,
-        status: statusFilter === "all" ? undefined : statusFilter,
-        page: 1,
-        pageSize: 200,
-      }),
-    enabled: Boolean(steamRuntime),
+      listSteamIntegrationAccountsByInstanceRequest(
+        apiSession,
+        projectId,
+        integrationKey,
+        selectedSteamInstanceId,
+        {
+          query: queryText,
+          status: statusFilter === "all" ? undefined : statusFilter,
+          page: 1,
+          pageSize: 200,
+        },
+      ),
+    enabled: steamGrant?.status === "active" && Boolean(selectedSteamInstanceId),
     staleTime: 5_000,
   });
 
   const jobsQuery = useQuery({
-    queryKey: ["steam-jobs", apiSession.baseUrl, apiSession.token, projectId, jobsTake],
-    queryFn: () => listSteamIntegrationJobsRequest(apiSession, projectId, Number(jobsTake) || 40),
-    enabled: Boolean(steamRuntime),
+    queryKey: [
+      "steam-jobs",
+      apiSession.baseUrl,
+      apiSession.token,
+      projectId,
+      integrationKey,
+      selectedSteamInstanceId,
+      jobsTake,
+    ],
+    queryFn: () =>
+      listSteamIntegrationJobsByInstanceRequest(
+        apiSession,
+        projectId,
+        integrationKey,
+        selectedSteamInstanceId,
+        Number(jobsTake) || 40,
+      ),
+    enabled: steamGrant?.status === "active" && Boolean(selectedSteamInstanceId),
     staleTime: 5_000,
   });
 
@@ -471,10 +542,13 @@ export function ProjectSteamPanel({ apiSession, projectId }: ProjectSteamPanelPr
   const refreshAll = async () => {
     await Promise.all([
       queryClient.invalidateQueries({
-        queryKey: ["steam-accounts", apiSession.baseUrl, apiSession.token, projectId],
+        queryKey: ["steam-accounts", apiSession.baseUrl, apiSession.token, projectId, integrationKey],
       }),
       queryClient.invalidateQueries({
-        queryKey: ["steam-jobs", apiSession.baseUrl, apiSession.token, projectId],
+        queryKey: ["steam-jobs", apiSession.baseUrl, apiSession.token, projectId, integrationKey],
+      }),
+      queryClient.invalidateQueries({
+        queryKey: ["steam-instances", apiSession.baseUrl, apiSession.token, projectId, integrationKey],
       }),
       queryClient.invalidateQueries({
         queryKey: ["project-integrations-status", apiSession.baseUrl, apiSession.token, projectId],
@@ -484,7 +558,13 @@ export function ProjectSteamPanel({ apiSession, projectId }: ProjectSteamPanelPr
 
   const runtimeMutation = useMutation({
     mutationFn: (operation: "provision" | "deprovision" | "restart") =>
-      triggerProjectIntegrationRuntimeRequest(apiSession, projectId, "steam-accounts-manager", operation),
+      triggerProjectIntegrationInstanceRuntimeRequest(
+        apiSession,
+        projectId,
+        integrationKey,
+        selectedSteamInstanceId,
+        operation,
+      ),
     onSuccess: async (_data, operation) => {
       await refreshAll();
       setStatusMessage(`Runtime-операция \`${operation}\` поставлена в очередь.`);
@@ -496,6 +576,10 @@ export function ProjectSteamPanel({ apiSession, projectId }: ProjectSteamPanelPr
 
   const saveAccountMutation = useMutation({
     mutationFn: async () => {
+      if (!selectedSteamInstanceId) {
+        throw new Error("Сначала выберите или создайте Steam instance.");
+      }
+
       const payload = toPayload(formState);
       if (!payload.loginName.trim()) {
         throw new Error("Логин аккаунта обязателен.");
@@ -504,17 +588,31 @@ export function ProjectSteamPanel({ apiSession, projectId }: ProjectSteamPanelPr
       const mailConfig = buildAccountMailConfig(formState);
       let account: SteamIntegrationAccount;
       if (editingAccountId) {
-        account = await updateSteamIntegrationAccountRequest(apiSession, projectId, editingAccountId, payload);
+        account = await updateSteamIntegrationAccountByInstanceRequest(
+          apiSession,
+          projectId,
+          integrationKey,
+          selectedSteamInstanceId,
+          editingAccountId,
+          payload,
+        );
       }
       else {
-        account = await createSteamIntegrationAccountRequest(apiSession, projectId, payload);
+        account = await createSteamIntegrationAccountByInstanceRequest(
+          apiSession,
+          projectId,
+          integrationKey,
+          selectedSteamInstanceId,
+          payload,
+        );
       }
 
       if (mailConfig) {
-        await invokeProjectIntegrationActionRequest(
+        await invokeProjectIntegrationInstanceActionRequest(
           apiSession,
           projectId,
-          "steam-accounts-manager",
+          integrationKey,
+          selectedSteamInstanceId,
           "jobs",
           {
             operation: "accounts.mail-config.apply",
@@ -544,6 +642,10 @@ export function ProjectSteamPanel({ apiSession, projectId }: ProjectSteamPanelPr
 
   const bulkCreateMutation = useMutation({
     mutationFn: async () => {
+      if (!selectedSteamInstanceId) {
+        throw new Error("Сначала выберите или создайте Steam instance.");
+      }
+
       const payloads = parseBulkAccountsInput(bulkAccountsText);
       if (payloads.length === 0) {
         throw new Error("Добавьте минимум одну строку для массового импорта.");
@@ -554,7 +656,13 @@ export function ProjectSteamPanel({ apiSession, projectId }: ProjectSteamPanelPr
 
       for (const payload of payloads) {
         try {
-          await createSteamIntegrationAccountRequest(apiSession, projectId, payload);
+          await createSteamIntegrationAccountByInstanceRequest(
+            apiSession,
+            projectId,
+            integrationKey,
+            selectedSteamInstanceId,
+            payload,
+          );
           successCount += 1;
         } catch (error) {
           const reason = error instanceof Error ? error.message : "unknown error";
@@ -586,7 +694,19 @@ export function ProjectSteamPanel({ apiSession, projectId }: ProjectSteamPanelPr
   });
 
   const archiveAccountMutation = useMutation({
-    mutationFn: (accountId: string) => archiveSteamIntegrationAccountRequest(apiSession, projectId, accountId),
+    mutationFn: (accountId: string) => {
+      if (!selectedSteamInstanceId) {
+        throw new Error("Сначала выберите или создайте Steam instance.");
+      }
+
+      return archiveSteamIntegrationAccountByInstanceRequest(
+        apiSession,
+        projectId,
+        integrationKey,
+        selectedSteamInstanceId,
+        accountId,
+      );
+    },
     onSuccess: async () => {
       await refreshAll();
       setStatusMessage("Аккаунт архивирован.");
@@ -597,8 +717,19 @@ export function ProjectSteamPanel({ apiSession, projectId }: ProjectSteamPanelPr
   });
 
   const createJobMutation = useMutation({
-    mutationFn: (payload: SteamIntegrationJobCreatePayload) =>
-      createSteamIntegrationJobRequest(apiSession, projectId, payload),
+    mutationFn: (payload: SteamIntegrationJobCreatePayload) => {
+      if (!selectedSteamInstanceId) {
+        throw new Error("Сначала выберите или создайте Steam instance.");
+      }
+
+      return createSteamIntegrationJobByInstanceRequest(
+        apiSession,
+        projectId,
+        integrationKey,
+        selectedSteamInstanceId,
+        payload,
+      );
+    },
     onSuccess: async (job) => {
       await refreshAll();
       setStatusMessage(`Jobs-задача ${job.type} создана.`);
@@ -609,7 +740,19 @@ export function ProjectSteamPanel({ apiSession, projectId }: ProjectSteamPanelPr
   });
 
   const cancelJobMutation = useMutation({
-    mutationFn: (jobId: string) => cancelSteamIntegrationJobRequest(apiSession, projectId, jobId),
+    mutationFn: (jobId: string) => {
+      if (!selectedSteamInstanceId) {
+        throw new Error("Сначала выберите или создайте Steam instance.");
+      }
+
+      return cancelSteamIntegrationJobByInstanceRequest(
+        apiSession,
+        projectId,
+        integrationKey,
+        selectedSteamInstanceId,
+        jobId,
+      );
+    },
     onSuccess: async () => {
       await refreshAll();
       setStatusMessage("Jobs-задача отменена.");
@@ -765,17 +908,22 @@ export function ProjectSteamPanel({ apiSession, projectId }: ProjectSteamPanelPr
     <div className="page-stack" data-testid="project-steam-panel">
       <header className="page-section-header">
         <h2>Steam кабинет проекта</h2>
-        <p>Таблица аккаунтов, массовые jobs и контроль runtime.</p>
+        <p>Таблица аккаунтов, массовые jobs и контроль выбранного Steam instance.</p>
+        <p className="route-hint">
+          Instances создаются в разделе <Link href={`/projects/${projectId}/integrations`}>Интеграции</Link>.
+        </p>
       </header>
 
       <article className="glass-card page-stack">
         <div className="panel-title-row">
-          <h3>Runtime</h3>
+          <h3>Instance runtime</h3>
           <button
             type="button"
             className="button button-ghost"
-            disabled={integrationStatusQuery.isFetching}
-            onClick={() => integrationStatusQuery.refetch()}
+            disabled={integrationStatusQuery.isFetching || steamInstancesQuery.isFetching}
+            onClick={() => {
+              void Promise.all([integrationStatusQuery.refetch(), steamInstancesQuery.refetch()]);
+            }}
           >
             Обновить статус
           </button>
@@ -788,30 +936,90 @@ export function ProjectSteamPanel({ apiSession, projectId }: ProjectSteamPanelPr
               : "Не удалось загрузить состояние runtime."}
           </p>
         ) : null}
-        {steamRuntime ? (
+        {steamGrant ? (
           <>
             <div className="entity-pills">
-              <span className={`entity-pill ${toStatusBadgeClass(steamRuntime.status)}`}>grant: {steamRuntime.status}</span>
-              <span className={`entity-pill ${toStatusBadgeClass(steamRuntime.runtimeStatus ?? "")}`}>
-                runtime: {steamRuntime.runtimeStatus ?? "n/a"}
+              <span className={`entity-pill ${toStatusBadgeClass(steamGrant.status)}`}>grant: {steamGrant.status}</span>
+              <span className={`entity-pill ${toStatusBadgeClass(steamGrant.runtimeStatus ?? "")}`}>
+                runtime: {steamGrant.runtimeStatus ?? "n/a"}
               </span>
-              {steamRuntime.runtimeAccountId ? (
-                <span className="entity-pill">rk.{steamRuntime.runtimeAccountId.replaceAll("-", "")}</span>
+              {steamGrant.runtimeAccountId ? (
+                <span className="entity-pill">rk.{steamGrant.runtimeAccountId.replaceAll("-", "")}</span>
               ) : null}
-              <span className="entity-pill">scopes: {steamRuntime.scopes.join(", ") || "n/a"}</span>
+              <span className="entity-pill">scopes: {steamGrant.scopes.join(", ") || "n/a"}</span>
+              <span className="entity-pill">instances: {steamInstances.length}/{Math.max(1, steamGrant.maxInstances)}</span>
+              {selectedSteamInstance ? (
+                <span className="entity-pill is-pill-ok">
+                  selected: {selectedSteamInstance.displayName}
+                </span>
+              ) : (
+                <span className="entity-pill is-pill-warning">selected: not set</span>
+              )}
             </div>
+            <label className="field">
+              <span>Steam instance</span>
+              <select
+                className="input"
+                value={selectedSteamInstanceId}
+                onChange={(event) => {
+                  const nextInstanceId = event.target.value;
+                  router.replace(
+                    nextInstanceId
+                      ? `/projects/${projectId}/steam?instanceId=${encodeURIComponent(nextInstanceId)}`
+                      : `/projects/${projectId}/steam`,
+                  );
+                }}
+                disabled={steamInstancesQuery.isPending || steamInstances.length === 0}
+              >
+                {steamInstances.length === 0 ? (
+                  <option value="">Нет instances</option>
+                ) : (
+                  steamInstances.map((instance) => (
+                    <option key={instance.instanceId} value={instance.instanceId}>
+                      {instance.displayName}{instance.isDefault ? " (default)" : ""}
+                    </option>
+                  ))
+                )}
+              </select>
+            </label>
             <div className="inline-actions">
-              <button type="button" className="button button-ghost" disabled={runtimeMutation.isPending} onClick={() => runtimeMutation.mutate("provision")}>
+              <button
+                type="button"
+                className="button button-ghost"
+                disabled={runtimeMutation.isPending || !selectedSteamInstanceId}
+                onClick={() => runtimeMutation.mutate("provision")}
+              >
                 Provision
               </button>
-              <button type="button" className="button button-ghost" disabled={runtimeMutation.isPending} onClick={() => runtimeMutation.mutate("restart")}>
+              <button
+                type="button"
+                className="button button-ghost"
+                disabled={runtimeMutation.isPending || !selectedSteamInstanceId}
+                onClick={() => runtimeMutation.mutate("restart")}
+              >
                 Restart
               </button>
-              <button type="button" className="button button-ghost" disabled={runtimeMutation.isPending} onClick={() => runtimeMutation.mutate("deprovision")}>
+              <button
+                type="button"
+                className="button button-ghost"
+                disabled={runtimeMutation.isPending || !selectedSteamInstanceId}
+                onClick={() => runtimeMutation.mutate("deprovision")}
+              >
                 Deprovision
               </button>
             </div>
-            {steamRuntime.runtimeLastError ? <p className="route-error">{steamRuntime.runtimeLastError}</p> : null}
+            {steamGrant.runtimeLastError ? <p className="route-error">{steamGrant.runtimeLastError}</p> : null}
+            {selectedSteamInstance ? (
+              <p className="route-hint">
+                Instance: <strong>{selectedSteamInstance.displayName}</strong>
+                {" · "}
+                runtimeAccountId: <code>{selectedSteamInstance.runtimeAccountId}</code>
+              </p>
+            ) : (
+              <p className="route-hint">
+                Сначала создайте Steam instance в <Link href={`/projects/${projectId}/integrations`}>интеграциях</Link>.
+              </p>
+            )}
           </>
         ) : (
           <p className="route-hint">Steam интеграция пока не выдана проекту.</p>
@@ -827,6 +1035,7 @@ export function ProjectSteamPanel({ apiSession, projectId }: ProjectSteamPanelPr
                 Обновить
               </button>
             </div>
+            {!selectedSteamInstanceId ? <p className="route-hint">Сначала выберите Steam instance в верхнем блоке.</p> : null}
             <div className="inline-actions">
               <input className="input" value={queryText} onChange={(event) => setQueryText(event.target.value)} placeholder="Поиск по логину/email" />
               <select className="input" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
@@ -850,7 +1059,13 @@ export function ProjectSteamPanel({ apiSession, projectId }: ProjectSteamPanelPr
             </div>
             <div className="inline-actions">
               {quickJobPresets.map((preset) => (
-                <button key={preset.type} type="button" className="button button-primary" disabled={createJobMutation.isPending || selectedVisibleAccountIds.length === 0} onClick={() => runQuickJob(preset.type)}>
+                <button
+                  key={preset.type}
+                  type="button"
+                  className="button button-primary"
+                  disabled={createJobMutation.isPending || selectedVisibleAccountIds.length === 0 || !selectedSteamInstanceId}
+                  onClick={() => runQuickJob(preset.type)}
+                >
                   {preset.label}
                 </button>
               ))}
@@ -1213,7 +1428,12 @@ export function ProjectSteamPanel({ apiSession, projectId }: ProjectSteamPanelPr
               </div>
             ) : null}
             <div className="hero-actions">
-              <button type="button" className="button button-primary" disabled={saveAccountMutation.isPending} onClick={() => saveAccountMutation.mutate()}>
+              <button
+                type="button"
+                className="button button-primary"
+                disabled={saveAccountMutation.isPending || !selectedSteamInstanceId}
+                onClick={() => saveAccountMutation.mutate()}
+              >
                 {editingAccountId ? "Сохранить" : "Создать"}
               </button>
               {editingAccountId ? <button type="button" className="button button-ghost" onClick={resetEditor}>Отмена</button> : null}
@@ -1235,7 +1455,12 @@ export function ProjectSteamPanel({ apiSession, projectId }: ProjectSteamPanelPr
                   <span>Список аккаунтов (по одному на строку)</span>
                   <textarea className="input" rows={6} value={bulkAccountsText} onChange={(event) => setBulkAccountsText(event.target.value)} />
                 </label>
-                <button type="button" className="button button-primary" disabled={bulkCreateMutation.isPending || !bulkAccountsText.trim()} onClick={() => bulkCreateMutation.mutate()}>
+                <button
+                  type="button"
+                  className="button button-primary"
+                  disabled={bulkCreateMutation.isPending || !bulkAccountsText.trim() || !selectedSteamInstanceId}
+                  onClick={() => bulkCreateMutation.mutate()}
+                >
                   Импортировать
                 </button>
               </>
@@ -1281,7 +1506,16 @@ export function ProjectSteamPanel({ apiSession, projectId }: ProjectSteamPanelPr
                 <textarea className="input" rows={4} value={jobPayloadJson} onChange={(event) => setJobPayloadJson(event.target.value)} />
               </label>
             ) : null}
-            <button type="button" className="button button-primary" disabled={createJobMutation.isPending || selectedVisibleAccountIds.length === 0} onClick={runConfiguredJob}>
+            <button
+              type="button"
+              className="button button-primary"
+              disabled={
+                createJobMutation.isPending
+                || selectedVisibleAccountIds.length === 0
+                || !selectedSteamInstanceId
+              }
+              onClick={runConfiguredJob}
+            >
               Запустить jobs
             </button>
           </article>

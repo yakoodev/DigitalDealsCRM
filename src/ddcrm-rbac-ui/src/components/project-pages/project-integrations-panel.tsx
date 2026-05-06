@@ -3,17 +3,22 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import type { ApiSession, ProjectCustomHttpIntegration, ProjectIntegrationStatus } from "@/lib/api-client";
 import {
   createProjectCustomHttpIntegrationRequest,
+  createProjectIntegrationInstanceRequest,
   createTelegramLinkCodeRequest,
-  configureProjectIntegrationRuntimeRequest,
   deleteProjectCustomHttpIntegrationRequest,
+  deleteProjectIntegrationInstanceRequest,
   invokeProjectIntegrationActionRequest,
+  listProjectIntegrationInstancesRequest,
   listProjectCustomHttpIntegrationsRequest,
   listProjectIntegrationsStatusRequest,
+  triggerProjectIntegrationInstanceRuntimeRequest,
   testProjectCustomHttpIntegrationRequest,
   triggerProjectIntegrationRuntimeRequest,
+  updateProjectIntegrationInstanceRequest,
   updateProjectCustomHttpIntegrationRequest,
 } from "@/lib/api-client";
 import { hasPermission, projectPermissions, type ProjectRole } from "@/lib/rbac";
@@ -225,6 +230,7 @@ async function copyTextToClipboard(text: string) {
 
 export function ProjectIntegrationsPanel({ apiSession, projectId, currentRole }: ProjectIntegrationsPanelProps) {
   const queryClient = useQueryClient();
+  const router = useRouter();
   const canManageCustomHttp = hasPermission(currentRole, projectPermissions.customIntegrationsManage);
   const [selectedIntegrationKey, setSelectedIntegrationKey] = useState("");
   const [invokeScope, setInvokeScope] = useState<"read" | "jobs">("read");
@@ -268,6 +274,9 @@ export function ProjectIntegrationsPanel({ apiSession, projectId, currentRole }:
   const [steamRuntimeProxyPort, setSteamRuntimeProxyPort] = useState("8080");
   const [steamRuntimeProxyLogin, setSteamRuntimeProxyLogin] = useState("");
   const [steamRuntimeProxyPassword, setSteamRuntimeProxyPassword] = useState("");
+  const [steamInstanceDisplayName, setSteamInstanceDisplayName] = useState("");
+  const [steamInstanceAutoProvision, setSteamInstanceAutoProvision] = useState(true);
+  const [steamInstanceMakeDefault, setSteamInstanceMakeDefault] = useState(true);
 
   const statusQuery = useQuery({
     queryKey: ["project-integrations-status", apiSession.baseUrl, apiSession.token, projectId],
@@ -279,13 +288,24 @@ export function ProjectIntegrationsPanel({ apiSession, projectId, currentRole }:
     () => statusQuery.data?.items ?? [],
     [statusQuery.data?.items],
   );
-  const steamRuntimeItem = useMemo(
+  const steamGrantItem = useMemo(
     () =>
       integrationItems.find(
         (item) => item.integrationKey === "steam-accounts-manager",
       ) ?? null,
     [integrationItems],
   );
+  const steamInstancesQuery = useQuery({
+    queryKey: ["steam-instances", apiSession.baseUrl, apiSession.token, projectId],
+    queryFn: () => listProjectIntegrationInstancesRequest(apiSession, projectId, "steam-accounts-manager"),
+    enabled: steamGrantItem?.status === "active",
+    staleTime: 10_000,
+  });
+  const steamInstances = useMemo(
+    () => steamInstancesQuery.data?.items ?? [],
+    [steamInstancesQuery.data?.items],
+  );
+  const steamMaxInstances = steamInstancesQuery.data?.maxInstances ?? steamGrantItem?.maxInstances ?? 1;
   const customHttpGrantActive = useMemo(
     () => hasCustomHttpGrant(integrationItems),
     [integrationItems],
@@ -410,15 +430,16 @@ export function ProjectIntegrationsPanel({ apiSession, projectId, currentRole }:
     },
   });
 
-  const steamRuntimeConfigureMutation = useMutation({
+  const steamInstanceCreateMutation = useMutation({
     mutationFn: async () => {
       const proxyHost = steamRuntimeProxyHost.trim();
       const proxyLogin = steamRuntimeProxyLogin.trim();
       const proxyPassword = steamRuntimeProxyPassword.trim();
       const proxyPort = Number(steamRuntimeProxyPort);
+      const displayName = steamInstanceDisplayName.trim();
 
       if (!proxyHost) {
-        throw new Error("Для Steam runtime обязателен proxy host.");
+        throw new Error("Для Steam instance обязателен proxy host.");
       }
 
       if (!Number.isInteger(proxyPort) || proxyPort < 1 || proxyPort > 65535) {
@@ -426,14 +447,17 @@ export function ProjectIntegrationsPanel({ apiSession, projectId, currentRole }:
       }
 
       if (!proxyLogin) {
-        throw new Error("Для Steam runtime обязателен proxy login.");
+        throw new Error("Для Steam instance обязателен proxy login.");
       }
 
       if (!proxyPassword) {
-        throw new Error("Для Steam runtime обязателен proxy password.");
+        throw new Error("Для Steam instance обязателен proxy password.");
       }
 
-      return configureProjectIntegrationRuntimeRequest(apiSession, projectId, "steam-accounts-manager", {
+      return createProjectIntegrationInstanceRequest(apiSession, projectId, "steam-accounts-manager", {
+        displayName: displayName || undefined,
+        autoProvision: steamInstanceAutoProvision,
+        makeDefault: steamInstanceMakeDefault,
         proxyConfig: {
           host: proxyHost,
           port: proxyPort,
@@ -442,22 +466,91 @@ export function ProjectIntegrationsPanel({ apiSession, projectId, currentRole }:
         },
       });
     },
+    onSuccess: async (instance) => {
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: ["project-integrations-status", apiSession.baseUrl, apiSession.token, projectId],
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ["steam-instances", apiSession.baseUrl, apiSession.token, projectId],
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ["project-custom-http", apiSession.baseUrl, apiSession.token, projectId],
+        }),
+      ]);
+      setStatusMessage("Steam instance создан.");
+      router.push(`/projects/${projectId}/steam?instanceId=${instance.instanceId}`);
+    },
+    onError: (error) => {
+      setStatusMessage(error instanceof Error ? error.message : "Не удалось создать Steam instance.");
+    },
+  });
+
+  const steamInstanceRuntimeMutation = useMutation({
+    mutationFn: async (variables: {
+      instanceId: string;
+      operation: "provision" | "deprovision" | "restart";
+    }) =>
+      triggerProjectIntegrationInstanceRuntimeRequest(
+        apiSession,
+        projectId,
+        "steam-accounts-manager",
+        variables.instanceId,
+        variables.operation,
+      ),
+    onSuccess: async (_data, variables) => {
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: ["project-integrations-status", apiSession.baseUrl, apiSession.token, projectId],
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ["steam-instances", apiSession.baseUrl, apiSession.token, projectId],
+        }),
+      ]);
+      setStatusMessage(`Steam instance runtime \`${variables.operation}\` поставлен в очередь.`);
+    },
+    onError: (error) => {
+      setStatusMessage(error instanceof Error ? error.message : "Не удалось выполнить Steam instance runtime-операцию.");
+    },
+  });
+
+  const steamInstanceDefaultMutation = useMutation({
+    mutationFn: (instanceId: string) =>
+      updateProjectIntegrationInstanceRequest(apiSession, projectId, "steam-accounts-manager", instanceId, {
+        makeDefault: true,
+      }),
     onSuccess: async () => {
       await Promise.all([
         queryClient.invalidateQueries({
           queryKey: ["project-integrations-status", apiSession.baseUrl, apiSession.token, projectId],
         }),
         queryClient.invalidateQueries({
-          queryKey: ["project-layout-integrations", apiSession.baseUrl, apiSession.token, projectId],
-        }),
-        queryClient.invalidateQueries({
-          queryKey: ["project-custom-http", apiSession.baseUrl, apiSession.token, projectId],
+          queryKey: ["steam-instances", apiSession.baseUrl, apiSession.token, projectId],
         }),
       ]);
-      setStatusMessage("Steam runtime container сохранён и поставлен на provision.");
+      setStatusMessage("Steam instance назначен default.");
     },
     onError: (error) => {
-      setStatusMessage(error instanceof Error ? error.message : "Не удалось сохранить Steam runtime.");
+      setStatusMessage(error instanceof Error ? error.message : "Не удалось назначить default instance.");
+    },
+  });
+
+  const steamInstanceDeleteMutation = useMutation({
+    mutationFn: (instanceId: string) =>
+      deleteProjectIntegrationInstanceRequest(apiSession, projectId, "steam-accounts-manager", instanceId),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: ["project-integrations-status", apiSession.baseUrl, apiSession.token, projectId],
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ["steam-instances", apiSession.baseUrl, apiSession.token, projectId],
+        }),
+      ]);
+      setStatusMessage("Steam instance удалён.");
+    },
+    onError: (error) => {
+      setStatusMessage(error instanceof Error ? error.message : "Не удалось удалить Steam instance.");
     },
   });
 
@@ -683,28 +776,121 @@ export function ProjectIntegrationsPanel({ apiSession, projectId, currentRole }:
         <section className="module-main-column">
           <article className="glass-card page-stack">
             <div className="panel-title-row">
-              <h3>Steam runtime container</h3>
+              <h3>Steam instances</h3>
+              <button
+                type="button"
+                className="button button-ghost"
+                disabled={statusQuery.isFetching || steamInstancesQuery.isFetching}
+                onClick={() => {
+                  void Promise.all([statusQuery.refetch(), steamInstancesQuery.refetch()]);
+                }}
+              >
+                Обновить
+              </button>
             </div>
-            {steamRuntimeItem ? (
+            {steamGrantItem ? (
               <div className="entity-pills">
-                <span className="entity-pill">grant: {steamRuntimeItem.status}</span>
-                <span className="entity-pill">runtime: {steamRuntimeItem.runtimeStatus ?? "n/a"}</span>
-                <span className="entity-pill">scopes: {steamRuntimeItem.scopes.join(", ") || "n/a"}</span>
-                {steamRuntimeItem.runtimeAccountId ? (
-                  <span className="entity-pill">rk.{steamRuntimeItem.runtimeAccountId.replaceAll("-", "")}</span>
+                <span className="entity-pill">grant: {steamGrantItem.status}</span>
+                <span className="entity-pill">runtime: {steamGrantItem.runtimeStatus ?? "n/a"}</span>
+                <span className="entity-pill">scopes: {steamGrantItem.scopes.join(", ") || "n/a"}</span>
+                <span className="entity-pill">instances: {steamInstances.length}/{steamMaxInstances}</span>
+                {steamGrantItem.runtimeAccountId ? (
+                  <span className="entity-pill">rk.{steamGrantItem.runtimeAccountId.replaceAll("-", "")}</span>
                 ) : null}
               </div>
             ) : (
               <p className="route-hint">
-                Steam runtime ещё не создан. Заполните proxy, чтобы после save появилась отдельная вкладка Steam.
+                Steam grant ещё не выдан проекту. Сначала включите worker-интеграцию в админке.
               </p>
             )}
-            {steamRuntimeItem?.runtimeLastError ? <p className="route-error">{steamRuntimeItem.runtimeLastError}</p> : null}
             <p className="route-hint">
-              IMAP для авто-подтверждений теперь задаётся на уровне каждого Steam-аккаунта при создании/редактировании.
-              Настройки IMAP на уровне runtime будут использованы позже для сценариев авторега.
+              IMAP для авто-подтверждений задаётся на уровне Steam-аккаунта. Ниже создаётся только контейнер Steam instance.
             </p>
+            {steamInstancesQuery.error ? (
+              <p className="route-error">
+                {steamInstancesQuery.error instanceof Error
+                  ? steamInstancesQuery.error.message
+                  : "Не удалось загрузить Steam instances."}
+              </p>
+            ) : null}
+            {steamInstancesQuery.isPending ? <p className="route-hint">Загрузка Steam instances...</p> : null}
+            {steamInstances.length > 0 ? (
+              <ul className="entity-list">
+                {steamInstances.map((instance) => (
+                  <li key={instance.instanceId} className="entity-list-item">
+                    <div>
+                      <strong>{instance.displayName}</strong>
+                      <div className="entity-pills">
+                        <span className="entity-pill">{instance.isDefault ? "default" : "instance"}</span>
+                        <span className="entity-pill">runtime: {instance.runtimeStatus}</span>
+                        <span className="entity-pill">rk.{instance.runtimeAccountId.replaceAll("-", "")}</span>
+                        {instance.runtimeLastError ? <span className="entity-pill is-pill-danger">error</span> : null}
+                      </div>
+                      {instance.runtimeLastError ? <p className="route-error">{instance.runtimeLastError}</p> : null}
+                    </div>
+                    <div className="inline-actions">
+                      <a className="button button-ghost" href={`/projects/${projectId}/steam?instanceId=${instance.instanceId}`}>
+                        Открыть
+                      </a>
+                      {!instance.isDefault ? (
+                        <button
+                          type="button"
+                          className="button button-ghost"
+                          disabled={steamInstanceDefaultMutation.isPending}
+                          onClick={() => steamInstanceDefaultMutation.mutate(instance.instanceId)}
+                        >
+                          Сделать default
+                        </button>
+                      ) : null}
+                      <button
+                        type="button"
+                        className="button button-ghost"
+                        disabled={steamInstanceRuntimeMutation.isPending}
+                        onClick={() => steamInstanceRuntimeMutation.mutate({ instanceId: instance.instanceId, operation: "provision" })}
+                      >
+                        Provision
+                      </button>
+                      <button
+                        type="button"
+                        className="button button-ghost"
+                        disabled={steamInstanceRuntimeMutation.isPending}
+                        onClick={() => steamInstanceRuntimeMutation.mutate({ instanceId: instance.instanceId, operation: "restart" })}
+                      >
+                        Restart
+                      </button>
+                      <button
+                        type="button"
+                        className="button button-ghost"
+                        disabled={steamInstanceRuntimeMutation.isPending}
+                        onClick={() => steamInstanceRuntimeMutation.mutate({ instanceId: instance.instanceId, operation: "deprovision" })}
+                      >
+                        Deprovision
+                      </button>
+                      <button
+                        type="button"
+                        className="button button-ghost"
+                        disabled={steamInstanceDeleteMutation.isPending}
+                        onClick={() => steamInstanceDeleteMutation.mutate(instance.instanceId)}
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            ) : steamInstancesQuery.isPending ? null : (
+              <p className="route-hint">Steam instances пока нет. Создайте первый контейнер ниже.</p>
+            )}
             <div className="grid-2">
+              <label className="field">
+                <span>Display name</span>
+                <input
+                  className="input"
+                  value={steamInstanceDisplayName}
+                  onChange={(event) => setSteamInstanceDisplayName(event.target.value)}
+                  placeholder="steam-instance-1"
+                />
+              </label>
               <label className="field">
                 <span>Proxy host *</span>
                 <input className="input" value={steamRuntimeProxyHost} onChange={(event) => setSteamRuntimeProxyHost(event.target.value)} placeholder="127.0.0.1" />
@@ -722,14 +908,32 @@ export function ProjectIntegrationsPanel({ apiSession, projectId, currentRole }:
                 <input className="input" type="password" value={steamRuntimeProxyPassword} onChange={(event) => setSteamRuntimeProxyPassword(event.target.value)} />
               </label>
             </div>
+            <div className="grid-2">
+              <label className="field field-inline">
+                <span>Auto provision</span>
+                <input
+                  type="checkbox"
+                  checked={steamInstanceAutoProvision}
+                  onChange={(event) => setSteamInstanceAutoProvision(event.target.checked)}
+                />
+              </label>
+              <label className="field field-inline">
+                <span>Make default</span>
+                <input
+                  type="checkbox"
+                  checked={steamInstanceMakeDefault}
+                  onChange={(event) => setSteamInstanceMakeDefault(event.target.checked)}
+                />
+              </label>
+            </div>
             <div className="hero-actions">
               <button
                 type="button"
                 className="button button-primary"
-                disabled={steamRuntimeConfigureMutation.isPending}
-                onClick={() => steamRuntimeConfigureMutation.mutate()}
+                disabled={steamInstanceCreateMutation.isPending || steamGrantItem?.status !== "active"}
+                onClick={() => steamInstanceCreateMutation.mutate()}
               >
-                {steamRuntimeItem ? "Обновить Steam runtime" : "Создать Steam runtime"}
+                Создать Steam instance
               </button>
             </div>
           </article>

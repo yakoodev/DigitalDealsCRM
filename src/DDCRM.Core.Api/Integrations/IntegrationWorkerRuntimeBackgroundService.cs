@@ -58,6 +58,7 @@ public sealed class IntegrationWorkerRuntimeBackgroundService(
                     x => x.Id != item.Id
                          && x.ProjectId == item.ProjectId
                          && x.IntegrationKey == item.IntegrationKey
+                         && x.RuntimeAccountId == item.RuntimeAccountId
                          && x.Operation == item.Operation
                          && (x.Status == "pending" || x.Status == "retry")
                          && (x.CreatedAtUtc < item.CreatedAtUtc
@@ -73,7 +74,9 @@ public sealed class IntegrationWorkerRuntimeBackgroundService(
 
             var runtime = await dbContext.ProjectIntegrationWorkerRuntimes
                 .SingleOrDefaultAsync(
-                    x => x.ProjectId == item.ProjectId && x.IntegrationKey == item.IntegrationKey,
+                    x => x.ProjectId == item.ProjectId
+                         && x.IntegrationKey == item.IntegrationKey
+                         && x.RuntimeAccountId == item.RuntimeAccountId,
                     cancellationToken);
 
             if (runtime is null)

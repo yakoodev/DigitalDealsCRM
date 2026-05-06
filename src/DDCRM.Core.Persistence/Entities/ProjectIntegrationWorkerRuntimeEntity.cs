@@ -12,6 +12,11 @@ public sealed class ProjectIntegrationWorkerRuntimeEntity
     [MaxLength(80)]
     public required string IntegrationKey { get; set; }
 
+    [MaxLength(160)]
+    public required string InstanceDisplayName { get; set; }
+
+    public bool IsDefault { get; set; }
+
     public Guid RuntimeAccountId { get; set; }
 
     [MaxLength(32)]

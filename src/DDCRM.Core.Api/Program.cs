@@ -1061,17 +1061,24 @@ external.MapGet("/admin/integrations/projects/{projectId:guid}/grants", async (
     var runtimes = await dbContext.ProjectIntegrationWorkerRuntimes
         .AsNoTracking()
         .Where(x => x.ProjectId == projectId)
-        .ToDictionaryAsync(x => x.IntegrationKey, StringComparer.OrdinalIgnoreCase, cancellationToken);
+        .ToListAsync(cancellationToken);
+    var runtimeByIntegration = runtimes
+        .GroupBy(x => x.IntegrationKey, StringComparer.OrdinalIgnoreCase)
+        .ToDictionary(
+            x => x.Key,
+            x => x.OrderByDescending(item => item.IsDefault).ThenBy(item => item.CreatedAtUtc).First(),
+            StringComparer.OrdinalIgnoreCase);
 
     var items = grants.Select(grant =>
     {
         credentials.TryGetValue(grant.IntegrationKey, out var credential);
-        runtimes.TryGetValue(grant.IntegrationKey, out var runtime);
+        runtimeByIntegration.TryGetValue(grant.IntegrationKey, out var runtime);
         return new AdminIntegrationGrantDto(
             grant.IntegrationKey,
             IntegrationKeys.ResolveIntegrationType(grant.IntegrationKey),
             grant.Status,
             SplitScopes(grant.ScopesCsv),
+            Math.Max(1, grant.MaxInstances),
             grant.GrantedAtUtc,
             grant.RevokedAtUtc,
             credential?.Status,
@@ -1105,6 +1112,7 @@ external.MapPut("/admin/integrations/projects/{projectId:guid}/grants/{integrati
     }
 
     var scopes = NormalizeScopes(normalizedIntegrationKey, request.Scopes);
+    var maxInstances = NormalizeIntegrationMaxInstances(normalizedIntegrationKey, request.MaxInstances);
 
     return await idempotency.ExecuteAsync(
         dbContext,
@@ -1207,8 +1215,7 @@ external.MapPut("/admin/integrations/projects/{projectId:guid}/grants/{integrati
                     legacyCredential.UpdatedAtUtc = now;
                 }
 
-                runtime = await dbContext.ProjectIntegrationWorkerRuntimes
-                    .SingleOrDefaultAsync(x => x.ProjectId == projectId && x.IntegrationKey == normalizedIntegrationKey, ct);
+                runtime = await LoadDefaultWorkerRuntimeAsync(dbContext, projectId, normalizedIntegrationKey, ct, tracking: true);
                 runtime = EnsureWorkerRuntime(
                     dbContext,
                     runtime,
@@ -1246,6 +1253,7 @@ external.MapPut("/admin/integrations/projects/{projectId:guid}/grants/{integrati
                         IntegrationKeys.ResolveIntegrationType(normalizedIntegrationKey),
                         grant.Status,
                         scopes,
+                        Math.Max(1, grant.MaxInstances),
                         grant.GrantedAtUtc,
                         grant.RevokedAtUtc,
                         credential?.Status,
@@ -1319,13 +1327,13 @@ external.MapDelete("/admin/integrations/projects/{projectId:guid}/grants/{integr
                     dbContext,
                     projectId,
                     normalizedIntegrationKey,
+                    runtimeAccountId: null,
                     operation: "provision",
                     now,
                     note: "Suppressed by integration revoke.",
                     ct);
 
-                var runtime = await dbContext.ProjectIntegrationWorkerRuntimes
-                    .SingleOrDefaultAsync(x => x.ProjectId == projectId && x.IntegrationKey == normalizedIntegrationKey, ct);
+                var runtime = await LoadDefaultWorkerRuntimeAsync(dbContext, projectId, normalizedIntegrationKey, ct, tracking: true);
 
                 if (runtime is not null)
                 {
@@ -1400,8 +1408,7 @@ external.MapPost("/admin/integrations/projects/{projectId:guid}/grants/{integrat
             }
 
             var now = DateTimeOffset.UtcNow;
-            var runtime = await dbContext.ProjectIntegrationWorkerRuntimes
-                .SingleOrDefaultAsync(x => x.ProjectId == projectId && x.IntegrationKey == normalizedIntegrationKey, ct);
+            var runtime = await LoadDefaultWorkerRuntimeAsync(dbContext, projectId, normalizedIntegrationKey, ct, tracking: true);
             runtime = EnsureWorkerRuntime(
                 dbContext,
                 runtime,
@@ -1452,8 +1459,7 @@ external.MapPost("/admin/integrations/projects/{projectId:guid}/grants/{integrat
         idempotencyKey,
         async ct =>
         {
-            var runtime = await dbContext.ProjectIntegrationWorkerRuntimes
-                .SingleOrDefaultAsync(x => x.ProjectId == projectId && x.IntegrationKey == normalizedIntegrationKey, ct);
+            var runtime = await LoadDefaultWorkerRuntimeAsync(dbContext, projectId, normalizedIntegrationKey, ct, tracking: true);
 
             if (runtime is null)
             {
@@ -1467,6 +1473,7 @@ external.MapPost("/admin/integrations/projects/{projectId:guid}/grants/{integrat
                 dbContext,
                 projectId,
                 normalizedIntegrationKey,
+                runtime.RuntimeAccountId,
                 operation: "provision",
                 now,
                 note: "Suppressed by manual deprovision.",
@@ -1524,8 +1531,7 @@ external.MapPost("/admin/integrations/projects/{projectId:guid}/grants/{integrat
             }
 
             var now = DateTimeOffset.UtcNow;
-            var runtime = await dbContext.ProjectIntegrationWorkerRuntimes
-                .SingleOrDefaultAsync(x => x.ProjectId == projectId && x.IntegrationKey == normalizedIntegrationKey, ct);
+            var runtime = await LoadDefaultWorkerRuntimeAsync(dbContext, projectId, normalizedIntegrationKey, ct, tracking: true);
             var hadActiveRuntime = runtime?.ProvisionedAtUtc is not null || string.Equals(runtime?.Status, "active", StringComparison.OrdinalIgnoreCase);
             runtime = EnsureWorkerRuntime(
                 dbContext,
@@ -1932,7 +1938,13 @@ external.MapGet("/projects/{projectId:guid}/integrations/status", async (
     var runtimes = await dbContext.ProjectIntegrationWorkerRuntimes
         .AsNoTracking()
         .Where(x => x.ProjectId == projectId)
-        .ToDictionaryAsync(x => x.IntegrationKey, StringComparer.OrdinalIgnoreCase, cancellationToken);
+        .ToListAsync(cancellationToken);
+    var runtimeByIntegration = runtimes
+        .GroupBy(x => x.IntegrationKey, StringComparer.OrdinalIgnoreCase)
+        .ToDictionary(
+            x => x.Key,
+            x => x.OrderByDescending(item => item.IsDefault).ThenBy(item => item.CreatedAtUtc).First(),
+            StringComparer.OrdinalIgnoreCase);
 
     var groupChats = await dbContext.TelegramChatBindings
         .AsNoTracking()
@@ -1944,12 +1956,13 @@ external.MapGet("/projects/{projectId:guid}/integrations/status", async (
     var items = grants.Select(grant =>
     {
         credentials.TryGetValue(grant.IntegrationKey, out var credential);
-        runtimes.TryGetValue(grant.IntegrationKey, out var runtime);
+        runtimeByIntegration.TryGetValue(grant.IntegrationKey, out var runtime);
         return new ProjectIntegrationStatusDto(
             grant.IntegrationKey,
             IntegrationKeys.ResolveIntegrationType(grant.IntegrationKey),
             grant.Status,
             SplitScopes(grant.ScopesCsv),
+            Math.Max(1, grant.MaxInstances),
             credential?.Status,
             credential?.SecretMasked,
             runtime?.Status,
@@ -1961,6 +1974,613 @@ external.MapGet("/projects/{projectId:guid}/integrations/status", async (
         httpContext.GetOrCreateRequestId(),
         items,
         new TelegramBindingsSummaryDto(groupChats, userChats)));
+});
+
+external.MapGet("/projects/{projectId:guid}/integrations/{integrationKey}/instances", async (
+    HttpContext httpContext,
+    Guid projectId,
+    string integrationKey,
+    CoreDbContext dbContext,
+    CancellationToken cancellationToken) =>
+{
+    var actorId = GetCurrentUserId(httpContext);
+    await EnsurePermissionAsync(dbContext, projectId, actorId, ProjectPermissions.ProjectIntegrationsUse, cancellationToken);
+
+    var normalizedIntegrationKey = NormalizeIntegrationKey(integrationKey);
+    if (!IntegrationKeys.WorkerIntegrations.Contains(normalizedIntegrationKey))
+    {
+        throw new ApiErrorException(StatusCodes.Status400BadRequest, ApiErrorCodes.ValidationError, "Instances поддержаны только для worker-интеграций.");
+    }
+
+    var grant = await dbContext.ProjectIntegrationGrants
+        .AsNoTracking()
+        .SingleOrDefaultAsync(
+            x => x.ProjectId == projectId
+                 && x.IntegrationKey == normalizedIntegrationKey
+                 && x.Status == "active",
+            cancellationToken);
+    if (grant is null)
+    {
+        throw new ApiErrorException(StatusCodes.Status403Forbidden, ApiErrorCodes.Forbidden, "Интеграция не выдана проекту.");
+    }
+
+    var items = await dbContext.ProjectIntegrationWorkerRuntimes
+        .AsNoTracking()
+        .Where(x => x.ProjectId == projectId && x.IntegrationKey == normalizedIntegrationKey)
+        .OrderByDescending(x => x.IsDefault)
+        .ThenBy(x => x.CreatedAtUtc)
+        .ToListAsync(cancellationToken);
+
+    return Results.Ok(new ProjectIntegrationInstanceListResponse(
+        httpContext.GetOrCreateRequestId(),
+        normalizedIntegrationKey,
+        Math.Max(1, grant.MaxInstances),
+        items.Select(ToProjectIntegrationInstanceDto).ToList()));
+});
+
+external.MapPost("/projects/{projectId:guid}/integrations/{integrationKey}/instances", async (
+    HttpContext httpContext,
+    Guid projectId,
+    string integrationKey,
+    Dictionary<string, JsonElement>? request,
+    CoreDbContext dbContext,
+    ProjectSecretCrypto crypto,
+    IdempotencyExecutor idempotency,
+    CancellationToken cancellationToken) =>
+{
+    var actorId = GetCurrentUserId(httpContext);
+    var idempotencyKey = httpContext.RequireIdempotencyKey();
+    await EnsurePermissionAsync(dbContext, projectId, actorId, ProjectPermissions.ProjectIntegrationsUse, cancellationToken);
+
+    var normalizedIntegrationKey = NormalizeIntegrationKey(integrationKey);
+    if (!IntegrationKeys.WorkerIntegrations.Contains(normalizedIntegrationKey))
+    {
+        throw new ApiErrorException(StatusCodes.Status400BadRequest, ApiErrorCodes.ValidationError, "Instances поддержаны только для worker-интеграций.");
+    }
+
+    var payload = request ?? new Dictionary<string, JsonElement>(StringComparer.Ordinal);
+    var requestedDisplayName = TryReadString(payload, "displayName");
+    var autoProvision = payload.TryGetValue("autoProvision", out var autoProvisionValue)
+        ? ReadBoolValue(autoProvisionValue, "autoProvision")
+        : true;
+    var makeDefault = payload.TryGetValue("makeDefault", out var makeDefaultValue)
+        ? ReadBoolValue(makeDefaultValue, "makeDefault")
+        : false;
+    var proxyConfig = ReadProxyConfig(payload, "proxyConfig", required: false);
+    var mailConfigRequested = payload.ContainsKey("mailConfig");
+    var mailConfig = mailConfigRequested ? ReadMailConfig(payload, "mailConfig") : null;
+
+    return await idempotency.ExecuteAsync(
+        dbContext,
+        $"core:integrationInstancesCreate:{projectId}:{normalizedIntegrationKey}",
+        idempotencyKey,
+        async ct =>
+        {
+            var grant = await dbContext.ProjectIntegrationGrants
+                .SingleOrDefaultAsync(
+                    x => x.ProjectId == projectId
+                         && x.IntegrationKey == normalizedIntegrationKey
+                         && x.Status == "active",
+                    ct);
+            if (grant is null)
+            {
+                throw new ApiErrorException(StatusCodes.Status403Forbidden, ApiErrorCodes.Forbidden, "Интеграция не выдана проекту.");
+            }
+
+            var existingInstances = await dbContext.ProjectIntegrationWorkerRuntimes
+                .Where(x => x.ProjectId == projectId && x.IntegrationKey == normalizedIntegrationKey)
+                .OrderBy(x => x.CreatedAtUtc)
+                .ToListAsync(ct);
+            var maxInstances = Math.Max(1, grant.MaxInstances);
+            if (existingInstances.Count >= maxInstances)
+            {
+                throw new ApiErrorException(
+                    StatusCodes.Status409Conflict,
+                    ApiErrorCodes.Conflict,
+                    $"Достигнут лимит integration instances ({maxInstances}).");
+            }
+
+            var now = DateTimeOffset.UtcNow;
+            var displayName = string.IsNullOrWhiteSpace(requestedDisplayName)
+                ? $"{normalizedIntegrationKey}-instance-{existingInstances.Count + 1}"
+                : requestedDisplayName;
+
+            if ((mailConfigRequested || mailConfig is not null) && proxyConfig is null)
+            {
+                throw new ApiErrorException(
+                    StatusCodes.Status400BadRequest,
+                    ApiErrorCodes.ValidationError,
+                    "При указании mailConfig обязателен proxyConfig.");
+            }
+
+            if (makeDefault || existingInstances.Count == 0)
+            {
+                foreach (var item in existingInstances)
+                {
+                    item.IsDefault = false;
+                }
+            }
+
+            var runtime = new ProjectIntegrationWorkerRuntimeEntity
+            {
+                Id = Guid.NewGuid(),
+                ProjectId = projectId,
+                IntegrationKey = normalizedIntegrationKey,
+                InstanceDisplayName = displayName,
+                IsDefault = makeDefault || existingInstances.Count == 0,
+                RuntimeAccountId = Guid.NewGuid(),
+                Status = autoProvision ? "pending_provision" : "draft",
+                LastError = null,
+                CreatedAtUtc = now,
+                UpdatedAtUtc = now,
+            };
+
+            if (proxyConfig is not null)
+            {
+                runtime.ConfigurationCiphertext = crypto.Encrypt(
+                    JsonSerializer.Serialize(
+                        new IntegrationWorkerRuntimeConfiguration(
+                            proxyConfig,
+                            mailConfig is null ? null : ToAccountsManagerMailConfig(mailConfig)),
+                        RuntimeJson.Defaults));
+                runtime.ConfigurationUpdatedAtUtc = now;
+            }
+
+            dbContext.ProjectIntegrationWorkerRuntimes.Add(runtime);
+
+            if (autoProvision)
+            {
+                await QueueWorkerRuntimeOutboxOperationAsync(
+                    dbContext,
+                    projectId,
+                    normalizedIntegrationKey,
+                    runtime.RuntimeAccountId,
+                    operation: "provision",
+                    nextAttemptAtUtc: now,
+                    suppressProvisionOperations: false,
+                    suppressDeprovisionOperations: true,
+                    ct);
+            }
+
+            await dbContext.SaveChangesAsync(ct);
+            return new IdempotentExecutionResult(
+                StatusCodes.Status201Created,
+                new ProjectIntegrationInstanceResponse(
+                    httpContext.GetOrCreateRequestId(),
+                    ToProjectIntegrationInstanceDto(runtime)));
+        },
+        cancellationToken);
+});
+
+external.MapPatch("/projects/{projectId:guid}/integrations/{integrationKey}/instances/{instanceId:guid}", async (
+    HttpContext httpContext,
+    Guid projectId,
+    string integrationKey,
+    Guid instanceId,
+    Dictionary<string, JsonElement>? request,
+    CoreDbContext dbContext,
+    ProjectSecretCrypto crypto,
+    IdempotencyExecutor idempotency,
+    CancellationToken cancellationToken) =>
+{
+    var actorId = GetCurrentUserId(httpContext);
+    var idempotencyKey = httpContext.RequireIdempotencyKey();
+    await EnsurePermissionAsync(dbContext, projectId, actorId, ProjectPermissions.ProjectIntegrationsUse, cancellationToken);
+
+    var normalizedIntegrationKey = NormalizeIntegrationKey(integrationKey);
+    if (!IntegrationKeys.WorkerIntegrations.Contains(normalizedIntegrationKey))
+    {
+        throw new ApiErrorException(StatusCodes.Status400BadRequest, ApiErrorCodes.ValidationError, "Instances поддержаны только для worker-интеграций.");
+    }
+
+    var payload = request ?? new Dictionary<string, JsonElement>(StringComparer.Ordinal);
+    var requestedDisplayName = TryReadString(payload, "displayName");
+    var makeDefault = payload.TryGetValue("makeDefault", out var makeDefaultValue)
+        ? ReadBoolValue(makeDefaultValue, "makeDefault")
+        : false;
+    var proxyConfig = ReadProxyConfig(payload, "proxyConfig", required: false);
+    var mailConfigRequested = payload.ContainsKey("mailConfig");
+    var mailConfig = mailConfigRequested ? ReadMailConfig(payload, "mailConfig") : null;
+
+    return await idempotency.ExecuteAsync(
+        dbContext,
+        $"core:integrationInstancesUpdate:{projectId}:{normalizedIntegrationKey}:{instanceId}",
+        idempotencyKey,
+        async ct =>
+        {
+            var runtime = await dbContext.ProjectIntegrationWorkerRuntimes
+                .SingleOrDefaultAsync(
+                    x => x.ProjectId == projectId
+                         && x.IntegrationKey == normalizedIntegrationKey
+                         && x.Id == instanceId,
+                    ct);
+            if (runtime is null)
+            {
+                throw new ApiErrorException(StatusCodes.Status404NotFound, ApiErrorCodes.NotFound, "Integration instance не найден.");
+            }
+
+            if (!string.IsNullOrWhiteSpace(requestedDisplayName))
+            {
+                runtime.InstanceDisplayName = requestedDisplayName;
+            }
+
+            if (makeDefault && !runtime.IsDefault)
+            {
+                var siblings = await dbContext.ProjectIntegrationWorkerRuntimes
+                    .Where(x => x.ProjectId == projectId && x.IntegrationKey == normalizedIntegrationKey && x.Id != instanceId)
+                    .ToListAsync(ct);
+                foreach (var sibling in siblings)
+                {
+                    sibling.IsDefault = false;
+                }
+
+                runtime.IsDefault = true;
+            }
+
+            if (proxyConfig is not null || mailConfigRequested)
+            {
+                var existing = ReadWorkerRuntimeConfiguration(runtime, crypto);
+                var effectiveProxy = proxyConfig ?? existing?.ProxyConfig;
+                if (effectiveProxy is null)
+                {
+                    throw new ApiErrorException(
+                        StatusCodes.Status400BadRequest,
+                        ApiErrorCodes.ValidationError,
+                        "Для обновления mailConfig требуется существующий proxyConfig или proxyConfig в payload.");
+                }
+
+                var effectiveMail = mailConfigRequested
+                    ? (mailConfig is null ? null : ToAccountsManagerMailConfig(mailConfig))
+                    : existing?.MailConfig;
+
+                runtime.ConfigurationCiphertext = crypto.Encrypt(
+                    JsonSerializer.Serialize(
+                        new IntegrationWorkerRuntimeConfiguration(effectiveProxy, effectiveMail),
+                        RuntimeJson.Defaults));
+                runtime.ConfigurationUpdatedAtUtc = DateTimeOffset.UtcNow;
+            }
+
+            runtime.UpdatedAtUtc = DateTimeOffset.UtcNow;
+            await dbContext.SaveChangesAsync(ct);
+
+            return new IdempotentExecutionResult(
+                StatusCodes.Status200OK,
+                new ProjectIntegrationInstanceResponse(
+                    httpContext.GetOrCreateRequestId(),
+                    ToProjectIntegrationInstanceDto(runtime)));
+        },
+        cancellationToken);
+});
+
+external.MapDelete("/projects/{projectId:guid}/integrations/{integrationKey}/instances/{instanceId:guid}", async (
+    HttpContext httpContext,
+    Guid projectId,
+    string integrationKey,
+    Guid instanceId,
+    CoreDbContext dbContext,
+    IdempotencyExecutor idempotency,
+    CancellationToken cancellationToken) =>
+{
+    var actorId = GetCurrentUserId(httpContext);
+    var idempotencyKey = httpContext.RequireIdempotencyKey();
+    await EnsurePermissionAsync(dbContext, projectId, actorId, ProjectPermissions.ProjectIntegrationsUse, cancellationToken);
+
+    var normalizedIntegrationKey = NormalizeIntegrationKey(integrationKey);
+    if (!IntegrationKeys.WorkerIntegrations.Contains(normalizedIntegrationKey))
+    {
+        throw new ApiErrorException(StatusCodes.Status400BadRequest, ApiErrorCodes.ValidationError, "Instances поддержаны только для worker-интеграций.");
+    }
+
+    return await idempotency.ExecuteAsync(
+        dbContext,
+        $"core:integrationInstancesDelete:{projectId}:{normalizedIntegrationKey}:{instanceId}",
+        idempotencyKey,
+        async ct =>
+        {
+            var runtime = await dbContext.ProjectIntegrationWorkerRuntimes
+                .SingleOrDefaultAsync(
+                    x => x.ProjectId == projectId
+                         && x.IntegrationKey == normalizedIntegrationKey
+                         && x.Id == instanceId,
+                    ct);
+            if (runtime is null)
+            {
+                return new IdempotentExecutionResult(
+                    StatusCodes.Status200OK,
+                    new AckResponse(httpContext.GetOrCreateRequestId(), "completed"));
+            }
+
+            var now = DateTimeOffset.UtcNow;
+            await SupersedeWorkerRuntimeOutboxOperationsAsync(
+                dbContext,
+                projectId,
+                normalizedIntegrationKey,
+                runtime.RuntimeAccountId,
+                operation: "provision",
+                now,
+                note: "Suppressed by instance delete.",
+                ct);
+
+            runtime.Status = "revoking";
+            runtime.LastError = null;
+            runtime.UpdatedAtUtc = now;
+            await QueueWorkerRuntimeOutboxOperationAsync(
+                dbContext,
+                projectId,
+                normalizedIntegrationKey,
+                runtime.RuntimeAccountId,
+                operation: "deprovision",
+                nextAttemptAtUtc: now,
+                suppressProvisionOperations: true,
+                suppressDeprovisionOperations: false,
+                ct);
+
+            if (runtime.IsDefault)
+            {
+                var nextDefault = await dbContext.ProjectIntegrationWorkerRuntimes
+                    .Where(x => x.ProjectId == projectId
+                                && x.IntegrationKey == normalizedIntegrationKey
+                                && x.Id != runtime.Id)
+                    .OrderBy(x => x.CreatedAtUtc)
+                    .FirstOrDefaultAsync(ct);
+                if (nextDefault is not null)
+                {
+                    runtime.IsDefault = false;
+                    nextDefault.IsDefault = true;
+                }
+            }
+
+            await dbContext.SaveChangesAsync(ct);
+            return new IdempotentExecutionResult(
+                StatusCodes.Status200OK,
+                new AckResponse(httpContext.GetOrCreateRequestId(), "queued"));
+        },
+        cancellationToken);
+});
+
+external.MapPost("/projects/{projectId:guid}/integrations/{integrationKey}/instances/{instanceId:guid}/runtime/{operation}", async (
+    HttpContext httpContext,
+    Guid projectId,
+    string integrationKey,
+    Guid instanceId,
+    string operation,
+    CoreDbContext dbContext,
+    IdempotencyExecutor idempotency,
+    CancellationToken cancellationToken) =>
+{
+    var actorId = GetCurrentUserId(httpContext);
+    var idempotencyKey = httpContext.RequireIdempotencyKey();
+    await EnsurePermissionAsync(dbContext, projectId, actorId, ProjectPermissions.ProjectIntegrationsUse, cancellationToken);
+
+    var normalizedIntegrationKey = NormalizeIntegrationKey(integrationKey);
+    if (!IntegrationKeys.WorkerIntegrations.Contains(normalizedIntegrationKey))
+    {
+        throw new ApiErrorException(StatusCodes.Status400BadRequest, ApiErrorCodes.ValidationError, "Runtime операции поддержаны только для worker-интеграций.");
+    }
+
+    var normalizedOperation = operation.Trim().ToLowerInvariant();
+    if (normalizedOperation is not ("provision" or "deprovision" or "restart"))
+    {
+        throw new ApiErrorException(StatusCodes.Status400BadRequest, ApiErrorCodes.ValidationError, "operation должен быть provision, deprovision или restart.");
+    }
+
+    return await idempotency.ExecuteAsync(
+        dbContext,
+        $"core:integrationInstanceRuntime:{projectId}:{normalizedIntegrationKey}:{instanceId}:{normalizedOperation}",
+        idempotencyKey,
+        async ct =>
+        {
+            var runtime = await dbContext.ProjectIntegrationWorkerRuntimes
+                .SingleOrDefaultAsync(
+                    x => x.ProjectId == projectId
+                         && x.IntegrationKey == normalizedIntegrationKey
+                         && x.Id == instanceId,
+                    ct);
+            if (runtime is null)
+            {
+                throw new ApiErrorException(StatusCodes.Status404NotFound, ApiErrorCodes.NotFound, "Integration instance не найден.");
+            }
+
+            var now = DateTimeOffset.UtcNow;
+            if (normalizedOperation == "deprovision")
+            {
+                await SupersedeWorkerRuntimeOutboxOperationsAsync(
+                    dbContext,
+                    projectId,
+                    normalizedIntegrationKey,
+                    runtime.RuntimeAccountId,
+                    operation: "provision",
+                    now,
+                    note: "Suppressed by instance runtime deprovision.",
+                    ct);
+                runtime.Status = "revoking";
+                runtime.LastError = null;
+                runtime.UpdatedAtUtc = now;
+                await QueueWorkerRuntimeOutboxOperationAsync(
+                    dbContext,
+                    projectId,
+                    normalizedIntegrationKey,
+                    runtime.RuntimeAccountId,
+                    operation: "deprovision",
+                    nextAttemptAtUtc: now,
+                    suppressProvisionOperations: true,
+                    suppressDeprovisionOperations: false,
+                    ct);
+            }
+            else
+            {
+                var grant = await dbContext.ProjectIntegrationGrants
+                    .AsNoTracking()
+                    .SingleOrDefaultAsync(
+                        x => x.ProjectId == projectId
+                             && x.IntegrationKey == normalizedIntegrationKey
+                             && x.Status == "active",
+                        ct);
+                if (grant is null)
+                {
+                    throw new ApiErrorException(StatusCodes.Status409Conflict, ApiErrorCodes.Conflict, "Для runtime операции требуется активный grant.");
+                }
+
+                runtime.Status = "pending_provision";
+                runtime.LastError = null;
+                runtime.UpdatedAtUtc = now;
+                runtime.DeprovisionedAtUtc = null;
+
+                if (normalizedOperation == "restart" &&
+                    (runtime.ProvisionedAtUtc is not null || string.Equals(runtime.Status, "active", StringComparison.OrdinalIgnoreCase)))
+                {
+                    await QueueWorkerRuntimeOutboxOperationAsync(
+                        dbContext,
+                        projectId,
+                        normalizedIntegrationKey,
+                        runtime.RuntimeAccountId,
+                        operation: "deprovision",
+                        nextAttemptAtUtc: now,
+                        suppressProvisionOperations: true,
+                        suppressDeprovisionOperations: false,
+                        ct);
+                }
+
+                await QueueWorkerRuntimeOutboxOperationAsync(
+                    dbContext,
+                    projectId,
+                    normalizedIntegrationKey,
+                    runtime.RuntimeAccountId,
+                    operation: "provision",
+                    nextAttemptAtUtc: normalizedOperation == "restart" ? now.AddSeconds(1) : now,
+                    suppressProvisionOperations: false,
+                    suppressDeprovisionOperations: false,
+                    ct);
+            }
+
+            await dbContext.SaveChangesAsync(ct);
+            return new IdempotentExecutionResult(
+                StatusCodes.Status200OK,
+                new AckResponse(httpContext.GetOrCreateRequestId(), "queued"));
+        },
+        cancellationToken);
+});
+
+external.MapPost("/projects/{projectId:guid}/integrations/{integrationKey}/instances/{instanceId:guid}/actions/{scope}", async (
+    HttpContext httpContext,
+    Guid projectId,
+    string integrationKey,
+    Guid instanceId,
+    string scope,
+    Dictionary<string, JsonElement>? request,
+    CoreDbContext dbContext,
+    ProjectServiceIntegrationRegistry integrationRegistry,
+    IGatewayProxyClient gatewayProxyClient,
+    ProjectSecretCrypto crypto,
+    IEntitlementCheckClient entitlementCheckClient,
+    IdempotencyExecutor idempotency,
+    CancellationToken cancellationToken) =>
+{
+    var actorId = GetCurrentUserId(httpContext);
+    var idempotencyKey = httpContext.RequireIdempotencyKey();
+    await EnsurePermissionAsync(dbContext, projectId, actorId, ProjectPermissions.ProjectIntegrationsUse, cancellationToken);
+
+    var normalizedIntegrationKey = NormalizeIntegrationKey(integrationKey);
+    var normalizedScope = NormalizeScope(scope);
+    if (!IntegrationKeys.WorkerIntegrations.Contains(normalizedIntegrationKey))
+    {
+        throw new ApiErrorException(StatusCodes.Status400BadRequest, ApiErrorCodes.ValidationError, "Instance actions поддержаны только для worker-интеграций.");
+    }
+
+    return await idempotency.ExecuteAsync(
+        dbContext,
+        $"core:integrationInstanceInvoke:{projectId}:{normalizedIntegrationKey}:{instanceId}:{normalizedScope}",
+        idempotencyKey,
+        async _ =>
+        {
+            var runtime = await dbContext.ProjectIntegrationWorkerRuntimes
+                .AsNoTracking()
+                .SingleOrDefaultAsync(
+                    x => x.ProjectId == projectId
+                         && x.IntegrationKey == normalizedIntegrationKey
+                         && x.Id == instanceId,
+                    cancellationToken);
+            if (runtime is null)
+            {
+                throw new ApiErrorException(StatusCodes.Status404NotFound, ApiErrorCodes.NotFound, "Integration instance не найден.");
+            }
+
+            var action = $"ext.integration.{ResolveIntegrationActionNamespace(normalizedIntegrationKey)}.{normalizedScope}";
+            var payload = request is null
+                ? new Dictionary<string, JsonElement>(StringComparer.Ordinal)
+                : request.ToDictionary(x => x.Key, x => x.Value.Clone(), StringComparer.Ordinal);
+            payload["runtimeAccountId"] = JsonSerializer.SerializeToElement(runtime.RuntimeAccountId);
+
+            var authorizationHeader = httpContext.Request.Headers.Authorization.ToString();
+            var resultElement = await InvokeProjectIntegrationActionAsync(
+                dbContext,
+                integrationRegistry,
+                gatewayProxyClient,
+                entitlementCheckClient,
+                crypto,
+                projectId,
+                actorId,
+                normalizedIntegrationKey,
+                normalizedScope,
+                payload,
+                action,
+                authorizationHeader,
+                idempotencyKey,
+                cancellationToken);
+
+            return new IdempotentExecutionResult(
+                StatusCodes.Status200OK,
+                new ProxyResponse(httpContext.GetOrCreateRequestId(), resultElement));
+        },
+        cancellationToken);
+});
+
+external.MapPost("/projects/{projectId:guid}/integrations/{integrationKey}/instances/{instanceId:guid}/ui/session", async (
+    HttpContext httpContext,
+    Guid projectId,
+    string integrationKey,
+    Guid instanceId,
+    CoreDbContext dbContext,
+    CancellationToken cancellationToken) =>
+{
+    var actorId = GetCurrentUserId(httpContext);
+    await EnsurePermissionAsync(dbContext, projectId, actorId, ProjectPermissions.ProjectIntegrationsUse, cancellationToken);
+
+    var normalizedIntegrationKey = NormalizeIntegrationKey(integrationKey);
+    if (!IntegrationKeys.WorkerIntegrations.Contains(normalizedIntegrationKey))
+    {
+        throw new ApiErrorException(StatusCodes.Status400BadRequest, ApiErrorCodes.ValidationError, "Remote UI поддержан только для worker-интеграций.");
+    }
+
+    var runtime = await dbContext.ProjectIntegrationWorkerRuntimes
+        .AsNoTracking()
+        .SingleOrDefaultAsync(
+            x => x.ProjectId == projectId
+                 && x.IntegrationKey == normalizedIntegrationKey
+                 && x.Id == instanceId,
+            cancellationToken);
+    if (runtime is null)
+    {
+        throw new ApiErrorException(StatusCodes.Status404NotFound, ApiErrorCodes.NotFound, "Integration instance не найден.");
+    }
+
+    var expiresAtUtc = DateTimeOffset.UtcNow.AddMinutes(15);
+    var tokenPayload = new Dictionary<string, object?>
+    {
+        ["projectId"] = projectId,
+        ["integrationKey"] = normalizedIntegrationKey,
+        ["instanceId"] = instanceId,
+        ["runtimeAccountId"] = runtime.RuntimeAccountId,
+        ["exp"] = expiresAtUtc.ToUnixTimeSeconds(),
+    };
+    var token = Convert.ToBase64String(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(tokenPayload)));
+    var iframeUrl = $"/projects/{projectId}/integrations/{normalizedIntegrationKey}/{instanceId}?uiToken={Uri.EscapeDataString(token)}";
+
+    return Results.Ok(new ProjectIntegrationUiSessionResponse(
+        httpContext.GetOrCreateRequestId(),
+        token,
+        expiresAtUtc,
+        iframeUrl));
 });
 
 external.MapPost("/projects/{projectId:guid}/integrations/{integrationKey}/runtime/provision", async (
@@ -1995,8 +2615,7 @@ external.MapPost("/projects/{projectId:guid}/integrations/{integrationKey}/runti
             }
 
             var now = DateTimeOffset.UtcNow;
-            var runtime = await dbContext.ProjectIntegrationWorkerRuntimes
-                .SingleOrDefaultAsync(x => x.ProjectId == projectId && x.IntegrationKey == normalizedIntegrationKey, ct);
+            var runtime = await LoadDefaultWorkerRuntimeAsync(dbContext, projectId, normalizedIntegrationKey, ct, tracking: true);
             runtime = EnsureWorkerRuntime(
                 dbContext,
                 runtime,
@@ -2049,8 +2668,7 @@ external.MapPost("/projects/{projectId:guid}/integrations/{integrationKey}/runti
         idempotencyKey,
         async ct =>
         {
-            var runtime = await dbContext.ProjectIntegrationWorkerRuntimes
-                .SingleOrDefaultAsync(x => x.ProjectId == projectId && x.IntegrationKey == normalizedIntegrationKey, ct);
+            var runtime = await LoadDefaultWorkerRuntimeAsync(dbContext, projectId, normalizedIntegrationKey, ct, tracking: true);
 
             if (runtime is null)
             {
@@ -2064,6 +2682,7 @@ external.MapPost("/projects/{projectId:guid}/integrations/{integrationKey}/runti
                 dbContext,
                 projectId,
                 normalizedIntegrationKey,
+                runtime.RuntimeAccountId,
                 operation: "provision",
                 now,
                 note: "Suppressed by project deprovision.",
@@ -2122,8 +2741,7 @@ external.MapPost("/projects/{projectId:guid}/integrations/{integrationKey}/runti
             }
 
             var now = DateTimeOffset.UtcNow;
-            var runtime = await dbContext.ProjectIntegrationWorkerRuntimes
-                .SingleOrDefaultAsync(x => x.ProjectId == projectId && x.IntegrationKey == normalizedIntegrationKey, ct);
+            var runtime = await LoadDefaultWorkerRuntimeAsync(dbContext, projectId, normalizedIntegrationKey, ct, tracking: true);
             var hadActiveRuntime = runtime?.ProvisionedAtUtc is not null || string.Equals(runtime?.Status, "active", StringComparison.OrdinalIgnoreCase);
             runtime = EnsureWorkerRuntime(
                 dbContext,
@@ -2208,6 +2826,7 @@ external.MapPost("/projects/{projectId:guid}/integrations/{integrationKey}/runti
                     IntegrationKey = normalizedIntegrationKey,
                     Status = "active",
                     ScopesCsv = string.Join(',', scopes),
+                    MaxInstances = 1,
                     GrantedByUserId = actorId,
                     GrantedAtUtc = now,
                 };
@@ -2217,6 +2836,7 @@ external.MapPost("/projects/{projectId:guid}/integrations/{integrationKey}/runti
             {
                 grant.Status = "active";
                 grant.ScopesCsv = string.Join(',', scopes);
+                grant.MaxInstances = Math.Max(1, grant.MaxInstances);
                 grant.GrantedByUserId = actorId;
                 grant.GrantedAtUtc = now;
                 grant.RevokedByUserId = null;
@@ -2232,8 +2852,7 @@ external.MapPost("/projects/{projectId:guid}/integrations/{integrationKey}/runti
                 legacyCredential.UpdatedAtUtc = now;
             }
 
-            var runtime = await dbContext.ProjectIntegrationWorkerRuntimes
-                .SingleOrDefaultAsync(x => x.ProjectId == projectId && x.IntegrationKey == normalizedIntegrationKey, ct);
+            var runtime = await LoadDefaultWorkerRuntimeAsync(dbContext, projectId, normalizedIntegrationKey, ct, tracking: true);
             var existingRuntimeConfig = ReadWorkerRuntimeConfiguration(runtime, crypto);
             runtime = EnsureWorkerRuntime(
                 dbContext,
@@ -5055,6 +5674,23 @@ static AdminWorkerServerDto ToAdminWorkerServerDto(AccountsManagerWorkerServerDe
         server.Metadata);
 }
 
+static ProjectIntegrationInstanceDto ToProjectIntegrationInstanceDto(ProjectIntegrationWorkerRuntimeEntity runtime)
+{
+    return new ProjectIntegrationInstanceDto(
+        runtime.Id,
+        runtime.IntegrationKey,
+        runtime.InstanceDisplayName,
+        runtime.IsDefault,
+        runtime.RuntimeAccountId,
+        runtime.Status,
+        runtime.LastError,
+        runtime.ConfigurationUpdatedAtUtc,
+        runtime.ProvisionedAtUtc,
+        runtime.DeprovisionedAtUtc,
+        runtime.CreatedAtUtc,
+        runtime.UpdatedAtUtc);
+}
+
 static Guid CreateDeterministicGuid(string input)
 {
     var hash = MD5.HashData(Encoding.UTF8.GetBytes(input));
@@ -5209,6 +5845,8 @@ static ProjectIntegrationWorkerRuntimeEntity EnsureWorkerRuntime(
             Id = Guid.NewGuid(),
             ProjectId = projectId,
             IntegrationKey = integrationKey,
+            InstanceDisplayName = BuildDefaultIntegrationInstanceDisplayName(integrationKey),
+            IsDefault = true,
             RuntimeAccountId = CreateDeterministicGuid($"core:integrationRuntime:{projectId}:{integrationKey}"),
             Status = status,
             CreatedAtUtc = now,
@@ -5220,6 +5858,11 @@ static ProjectIntegrationWorkerRuntimeEntity EnsureWorkerRuntime(
 
     runtime.Status = status;
     runtime.LastError = null;
+    runtime.IsDefault = true;
+    if (string.IsNullOrWhiteSpace(runtime.InstanceDisplayName))
+    {
+        runtime.InstanceDisplayName = BuildDefaultIntegrationInstanceDisplayName(integrationKey);
+    }
     runtime.UpdatedAtUtc = now;
     if (clearDeprovisionedAt)
     {
@@ -5227,6 +5870,52 @@ static ProjectIntegrationWorkerRuntimeEntity EnsureWorkerRuntime(
     }
 
     return runtime;
+}
+
+static int NormalizeIntegrationMaxInstances(string integrationKey, int? requestedMaxInstances)
+{
+    if (!IntegrationKeys.WorkerIntegrations.Contains(integrationKey))
+    {
+        return 1;
+    }
+
+    var value = requestedMaxInstances ?? 1;
+    if (value < 1)
+    {
+        throw new ApiErrorException(
+            StatusCodes.Status400BadRequest,
+            ApiErrorCodes.ValidationError,
+            "maxInstances должен быть больше 0.");
+    }
+
+    return Math.Clamp(value, 1, 200);
+}
+
+static async Task<ProjectIntegrationWorkerRuntimeEntity?> LoadDefaultWorkerRuntimeAsync(
+    CoreDbContext dbContext,
+    Guid projectId,
+    string integrationKey,
+    CancellationToken cancellationToken,
+    bool tracking)
+{
+    var query = tracking
+        ? dbContext.ProjectIntegrationWorkerRuntimes
+        : dbContext.ProjectIntegrationWorkerRuntimes.AsNoTracking();
+
+    return await query
+        .Where(x => x.ProjectId == projectId && x.IntegrationKey == integrationKey)
+        .OrderByDescending(x => x.IsDefault)
+        .ThenBy(x => x.CreatedAtUtc)
+        .FirstOrDefaultAsync(cancellationToken);
+}
+
+static string BuildDefaultIntegrationInstanceDisplayName(string integrationKey)
+{
+    return integrationKey switch
+    {
+        IntegrationKeys.SteamAccountsManager => "Steam runtime (default)",
+        _ => $"{integrationKey} runtime (default)",
+    };
 }
 
 static IntegrationWorkerRuntimeConfiguration? ReadWorkerRuntimeConfiguration(
@@ -5266,6 +5955,7 @@ static async Task QueueWorkerRuntimeOutboxOperationAsync(
             dbContext,
             projectId,
             integrationKey,
+            runtimeAccountId,
             operation: "provision",
             nextAttemptAtUtc,
             note: $"Suppressed by {operation}.",
@@ -5278,6 +5968,7 @@ static async Task QueueWorkerRuntimeOutboxOperationAsync(
             dbContext,
             projectId,
             integrationKey,
+            runtimeAccountId,
             operation: "deprovision",
             nextAttemptAtUtc,
             note: $"Suppressed by {operation}.",
@@ -5288,6 +5979,7 @@ static async Task QueueWorkerRuntimeOutboxOperationAsync(
         .SingleOrDefaultAsync(
             x => x.ProjectId == projectId
                  && x.IntegrationKey == integrationKey
+                 && x.RuntimeAccountId == runtimeAccountId
                  && x.Operation == operation
                  && (x.Status == "pending" || x.Status == "retry"),
             cancellationToken);
@@ -5318,6 +6010,7 @@ static async Task SupersedeWorkerRuntimeOutboxOperationsAsync(
     CoreDbContext dbContext,
     Guid projectId,
     string integrationKey,
+    Guid? runtimeAccountId,
     string operation,
     DateTimeOffset now,
     string note,
@@ -5326,6 +6019,7 @@ static async Task SupersedeWorkerRuntimeOutboxOperationsAsync(
     var pendingItems = await dbContext.IntegrationWorkerRuntimeOutbox
         .Where(x => x.ProjectId == projectId
                     && x.IntegrationKey == integrationKey
+                    && (!runtimeAccountId.HasValue || x.RuntimeAccountId == runtimeAccountId.Value)
                     && x.Operation == operation
                     && (x.Status == "pending" || x.Status == "retry"))
         .ToListAsync(cancellationToken);
@@ -5845,11 +6539,42 @@ static async Task<JsonElement> InvokeProjectIntegrationActionAsync(
         return await integrationClient.InvokeAsync(projectId, normalizedScope, payload, idempotencyKey, cancellationToken);
     }
 
-    var runtime = await dbContext.ProjectIntegrationWorkerRuntimes
-        .AsNoTracking()
-        .SingleOrDefaultAsync(
-            x => x.ProjectId == projectId && x.IntegrationKey == normalizedIntegrationKey,
-            cancellationToken);
+    Guid? runtimeAccountIdOverride = null;
+    if (request is not null &&
+        request.TryGetValue("runtimeAccountId", out var runtimeAccountIdElement))
+    {
+        if (runtimeAccountIdElement.ValueKind != JsonValueKind.String ||
+            !Guid.TryParse(runtimeAccountIdElement.GetString(), out var parsedRuntimeAccountId))
+        {
+            throw new ApiErrorException(
+                StatusCodes.Status400BadRequest,
+                ApiErrorCodes.ValidationError,
+                "Поле runtimeAccountId должно быть GUID-строкой.");
+        }
+
+        runtimeAccountIdOverride = parsedRuntimeAccountId;
+    }
+
+    ProjectIntegrationWorkerRuntimeEntity? runtime;
+    if (runtimeAccountIdOverride.HasValue)
+    {
+        runtime = await dbContext.ProjectIntegrationWorkerRuntimes
+            .AsNoTracking()
+            .SingleOrDefaultAsync(
+                x => x.ProjectId == projectId
+                     && x.IntegrationKey == normalizedIntegrationKey
+                     && x.RuntimeAccountId == runtimeAccountIdOverride.Value,
+                cancellationToken);
+    }
+    else
+    {
+        runtime = await LoadDefaultWorkerRuntimeAsync(
+            dbContext,
+            projectId,
+            normalizedIntegrationKey,
+            cancellationToken,
+            tracking: false);
+    }
 
     if (runtime is null || runtime.Status != "active")
     {
@@ -5864,6 +6589,7 @@ static async Task<JsonElement> InvokeProjectIntegrationActionAsync(
     var workerPayload = request is null
         ? new Dictionary<string, JsonElement>(StringComparer.Ordinal)
         : request.ToDictionary(x => x.Key, x => x.Value.Clone(), StringComparer.Ordinal);
+    workerPayload.Remove("runtimeAccountId");
     workerPayload["projectId"] = JsonSerializer.SerializeToElement(projectId);
 
     return await gatewayProxyClient.InvokeAccountApiActionAsync(
@@ -6314,13 +7040,16 @@ public sealed record AdminWorkerServerRegistryUpsertRequest(
     string? Token,
     bool? ClearToken);
 
-public sealed record AdminIntegrationGrantUpsertRequest(IReadOnlyCollection<string>? Scopes);
+public sealed record AdminIntegrationGrantUpsertRequest(
+    IReadOnlyCollection<string>? Scopes,
+    int? MaxInstances);
 
 public sealed record AdminIntegrationGrantDto(
     string IntegrationKey,
     string IntegrationType,
     string Status,
     IReadOnlyCollection<string> Scopes,
+    int MaxInstances,
     DateTimeOffset GrantedAtUtc,
     DateTimeOffset? RevokedAtUtc,
     string? CredentialStatus,
@@ -6395,6 +7124,7 @@ public sealed record ProjectIntegrationStatusDto(
     string IntegrationType,
     string Status,
     IReadOnlyCollection<string> Scopes,
+    int MaxInstances,
     string? CredentialStatus,
     string? CredentialMasked,
     string? RuntimeStatus,
@@ -6409,6 +7139,36 @@ public sealed record ProjectIntegrationStatusResponse(
     string RequestId,
     IReadOnlyCollection<ProjectIntegrationStatusDto> Items,
     TelegramBindingsSummaryDto Telegram);
+
+public sealed record ProjectIntegrationInstanceDto(
+    Guid InstanceId,
+    string IntegrationKey,
+    string DisplayName,
+    bool IsDefault,
+    Guid RuntimeAccountId,
+    string RuntimeStatus,
+    string? RuntimeLastError,
+    DateTimeOffset? ConfigurationUpdatedAtUtc,
+    DateTimeOffset? ProvisionedAtUtc,
+    DateTimeOffset? DeprovisionedAtUtc,
+    DateTimeOffset CreatedAtUtc,
+    DateTimeOffset UpdatedAtUtc);
+
+public sealed record ProjectIntegrationInstanceListResponse(
+    string RequestId,
+    string IntegrationKey,
+    int MaxInstances,
+    IReadOnlyCollection<ProjectIntegrationInstanceDto> Items);
+
+public sealed record ProjectIntegrationInstanceResponse(
+    string RequestId,
+    ProjectIntegrationInstanceDto Instance);
+
+public sealed record ProjectIntegrationUiSessionResponse(
+    string RequestId,
+    string Token,
+    DateTimeOffset ExpiresAtUtc,
+    string IframeUrl);
 
 public sealed record AdminCustomHttpAllowlistUpsertRequest(
     string HostPattern,
@@ -6756,3 +7516,4 @@ internal static class MailConfigImapSecurityModes
 }
 
 public partial class Program;
+

@@ -18,6 +18,8 @@ public sealed class ProjectIntegrationGrantEntity
     [MaxLength(120)]
     public required string ScopesCsv { get; set; }
 
+    public int MaxInstances { get; set; } = 1;
+
     public Guid GrantedByUserId { get; set; }
 
     public DateTimeOffset GrantedAtUtc { get; set; }

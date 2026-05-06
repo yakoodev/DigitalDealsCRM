@@ -109,6 +109,7 @@ export interface AdminIntegrationGrant {
   integrationType: "service" | "worker" | "notification" | "custom" | "platform" | "unknown";
   status: "active" | "revoked";
   scopes: string[];
+  maxInstances: number;
   grantedAtUtc: string;
   revokedAtUtc?: string | null;
   credentialStatus?: "pending_sync" | "active" | "revoking" | "revoked" | null;
@@ -120,6 +121,7 @@ export interface AdminIntegrationGrant {
 
 export interface AdminIntegrationGrantUpsertPayload {
   scopes?: string[];
+  maxInstances?: number;
 }
 
 export interface AdminTelegramProxyProfile {
@@ -169,6 +171,7 @@ export interface ProjectIntegrationStatus {
   integrationType: "service" | "worker" | "notification" | "custom" | "platform" | "unknown";
   status: string;
   scopes: string[];
+  maxInstances: number;
   credentialStatus?: "pending_sync" | "active" | "revoking" | "revoked" | null;
   credentialMasked?: string | null;
   runtimeStatus?: "pending_provision" | "active" | "revoking" | "revoked" | null;
@@ -184,6 +187,46 @@ export interface ProjectTelegramBindingsSummary {
 export interface ProjectIntegrationsStatusEnvelopeData {
   items: ProjectIntegrationStatus[];
   telegram: ProjectTelegramBindingsSummary;
+}
+
+export interface ProjectIntegrationInstance {
+  instanceId: string;
+  integrationKey: string;
+  displayName: string;
+  isDefault: boolean;
+  runtimeAccountId: string;
+  runtimeStatus: string;
+  runtimeLastError?: string | null;
+  configurationUpdatedAtUtc?: string | null;
+  provisionedAtUtc?: string | null;
+  deprovisionedAtUtc?: string | null;
+  createdAtUtc: string;
+  updatedAtUtc: string;
+}
+
+export interface ProjectIntegrationInstanceListData {
+  integrationKey: string;
+  maxInstances: number;
+  items: ProjectIntegrationInstance[];
+}
+
+export interface ProjectIntegrationInstanceUpsertPayload {
+  displayName?: string;
+  makeDefault?: boolean;
+  autoProvision?: boolean;
+  proxyConfig?: {
+    host: string;
+    port: number;
+    login: string;
+    password: string;
+  };
+  mailConfig?: MailConfig;
+}
+
+export interface ProjectIntegrationUiSession {
+  token: string;
+  expiresAtUtc: string;
+  iframeUrl: string;
 }
 
 export interface SteamIntegrationAccount {
@@ -559,6 +602,25 @@ interface ProjectIntegrationsStatusEnvelope {
   requestId: string;
   items: ProjectIntegrationStatus[];
   telegram: ProjectTelegramBindingsSummary;
+}
+
+interface ProjectIntegrationInstanceListEnvelope {
+  requestId: string;
+  integrationKey: string;
+  maxInstances: number;
+  items: ProjectIntegrationInstance[];
+}
+
+interface ProjectIntegrationInstanceEnvelope {
+  requestId: string;
+  instance: ProjectIntegrationInstance;
+}
+
+interface ProjectIntegrationUiSessionEnvelope {
+  requestId: string;
+  token: string;
+  expiresAtUtc: string;
+  iframeUrl: string;
 }
 
 interface OfferEnvelope {
@@ -1090,6 +1152,333 @@ export async function listProjectIntegrationsStatusRequest(
     items: response.items ?? [],
     telegram: response.telegram ?? { groupChats: 0, userDmChats: 0 },
   };
+}
+
+export async function listProjectIntegrationInstancesRequest(
+  session: ApiSession,
+  projectId: string,
+  integrationKey: string,
+): Promise<ProjectIntegrationInstanceListData> {
+  const response = await requestAuthedEnvelope<ProjectIntegrationInstanceListEnvelope>(
+    session,
+    `/v1/projects/${encodeURIComponent(projectId)}/integrations/${encodeURIComponent(integrationKey)}/instances`,
+    {
+      method: "GET",
+    },
+  );
+
+  return {
+    integrationKey: response.integrationKey ?? integrationKey,
+    maxInstances: response.maxInstances ?? 1,
+    items: response.items ?? [],
+  };
+}
+
+export async function createProjectIntegrationInstanceRequest(
+  session: ApiSession,
+  projectId: string,
+  integrationKey: string,
+  payload: ProjectIntegrationInstanceUpsertPayload,
+) {
+  const response = await requestAuthedEnvelope<ProjectIntegrationInstanceEnvelope>(
+    session,
+    `/v1/projects/${encodeURIComponent(projectId)}/integrations/${encodeURIComponent(integrationKey)}/instances`,
+    {
+      method: "POST",
+      body: payload,
+      idempotent: true,
+    },
+  );
+
+  return response.instance;
+}
+
+export async function updateProjectIntegrationInstanceRequest(
+  session: ApiSession,
+  projectId: string,
+  integrationKey: string,
+  instanceId: string,
+  payload: ProjectIntegrationInstanceUpsertPayload,
+) {
+  const response = await requestAuthedEnvelope<ProjectIntegrationInstanceEnvelope>(
+    session,
+    `/v1/projects/${encodeURIComponent(projectId)}/integrations/${encodeURIComponent(integrationKey)}/instances/${encodeURIComponent(instanceId)}`,
+    {
+      method: "PATCH",
+      body: payload,
+      idempotent: true,
+    },
+  );
+
+  return response.instance;
+}
+
+export async function deleteProjectIntegrationInstanceRequest(
+  session: ApiSession,
+  projectId: string,
+  integrationKey: string,
+  instanceId: string,
+) {
+  return requestAuthedEnvelope<{ requestId: string; status: string }>(
+    session,
+    `/v1/projects/${encodeURIComponent(projectId)}/integrations/${encodeURIComponent(integrationKey)}/instances/${encodeURIComponent(instanceId)}`,
+    {
+      method: "DELETE",
+      idempotent: true,
+    },
+  );
+}
+
+export async function triggerProjectIntegrationInstanceRuntimeRequest(
+  session: ApiSession,
+  projectId: string,
+  integrationKey: string,
+  instanceId: string,
+  operation: "provision" | "deprovision" | "restart",
+) {
+  return requestAuthedEnvelope<{ requestId: string; status: string }>(
+    session,
+    `/v1/projects/${encodeURIComponent(projectId)}/integrations/${encodeURIComponent(integrationKey)}/instances/${encodeURIComponent(instanceId)}/runtime/${operation}`,
+    {
+      method: "POST",
+      idempotent: true,
+    },
+  );
+}
+
+export async function invokeProjectIntegrationInstanceActionRequest(
+  session: ApiSession,
+  projectId: string,
+  integrationKey: string,
+  instanceId: string,
+  scope: "read" | "jobs",
+  payload?: Record<string, unknown>,
+) {
+  const response = await requestAuthedEnvelope<{ requestId: string; result: Record<string, unknown> }>(
+    session,
+    `/v1/projects/${encodeURIComponent(projectId)}/integrations/${encodeURIComponent(integrationKey)}/instances/${encodeURIComponent(instanceId)}/actions/${scope}`,
+    {
+      method: "POST",
+      body: payload,
+      idempotent: true,
+    },
+  );
+
+  return response.result ?? {};
+}
+
+export async function createProjectIntegrationInstanceUiSessionRequest(
+  session: ApiSession,
+  projectId: string,
+  integrationKey: string,
+  instanceId: string,
+): Promise<ProjectIntegrationUiSession> {
+  const response = await requestAuthedEnvelope<ProjectIntegrationUiSessionEnvelope>(
+    session,
+    `/v1/projects/${encodeURIComponent(projectId)}/integrations/${encodeURIComponent(integrationKey)}/instances/${encodeURIComponent(instanceId)}/ui/session`,
+    {
+      method: "POST",
+      idempotent: true,
+    },
+  );
+
+  return {
+    token: response.token,
+    expiresAtUtc: response.expiresAtUtc,
+    iframeUrl: response.iframeUrl,
+  };
+}
+
+async function invokeSteamActionByInstance(
+  session: ApiSession,
+  projectId: string,
+  integrationKey: string,
+  instanceId: string,
+  scope: "read" | "jobs",
+  payload: Record<string, unknown>,
+) {
+  return invokeProjectIntegrationInstanceActionRequest(
+    session,
+    projectId,
+    integrationKey,
+    instanceId,
+    scope,
+    payload,
+  );
+}
+
+export async function listSteamIntegrationAccountsByInstanceRequest(
+  session: ApiSession,
+  projectId: string,
+  integrationKey: string,
+  instanceId: string,
+  params?: {
+    query?: string;
+    status?: string;
+    page?: number;
+    pageSize?: number;
+  },
+) {
+  const payload: Record<string, unknown> = {
+    operation: "accounts.list",
+    page: typeof params?.page === "number" ? params.page : 1,
+    pageSize: typeof params?.pageSize === "number" ? params.pageSize : 50,
+  };
+  if (params?.query?.trim()) {
+    payload.query = params.query.trim();
+  }
+  if (params?.status?.trim()) {
+    payload.status = params.status.trim();
+  }
+
+  const result = await invokeSteamActionByInstance(
+    session,
+    projectId,
+    integrationKey,
+    instanceId,
+    "read",
+    payload,
+  );
+
+  return {
+    items: Array.isArray(result.items) ? (result.items as SteamIntegrationAccount[]) : [],
+    totalCount:
+      typeof result.totalCount === "number"
+        ? result.totalCount
+        : Array.isArray(result.items)
+          ? result.items.length
+          : 0,
+  };
+}
+
+export async function createSteamIntegrationAccountByInstanceRequest(
+  session: ApiSession,
+  projectId: string,
+  integrationKey: string,
+  instanceId: string,
+  payload: SteamIntegrationAccountUpsertPayload,
+) {
+  const result = await invokeSteamActionByInstance(
+    session,
+    projectId,
+    integrationKey,
+    instanceId,
+    "jobs",
+    {
+      operation: "accounts.create",
+      account: payload,
+    },
+  );
+
+  return result.account as SteamIntegrationAccount;
+}
+
+export async function updateSteamIntegrationAccountByInstanceRequest(
+  session: ApiSession,
+  projectId: string,
+  integrationKey: string,
+  instanceId: string,
+  accountId: string,
+  payload: SteamIntegrationAccountUpsertPayload,
+) {
+  const result = await invokeSteamActionByInstance(
+    session,
+    projectId,
+    integrationKey,
+    instanceId,
+    "jobs",
+    {
+      operation: "accounts.update",
+      accountId,
+      account: payload,
+    },
+  );
+
+  return result.account as SteamIntegrationAccount;
+}
+
+export async function archiveSteamIntegrationAccountByInstanceRequest(
+  session: ApiSession,
+  projectId: string,
+  integrationKey: string,
+  instanceId: string,
+  accountId: string,
+) {
+  return invokeSteamActionByInstance(
+    session,
+    projectId,
+    integrationKey,
+    instanceId,
+    "jobs",
+    {
+      operation: "accounts.archive",
+      accountId,
+    },
+  );
+}
+
+export async function listSteamIntegrationJobsByInstanceRequest(
+  session: ApiSession,
+  projectId: string,
+  integrationKey: string,
+  instanceId: string,
+  take = 30,
+) {
+  const result = await invokeSteamActionByInstance(
+    session,
+    projectId,
+    integrationKey,
+    instanceId,
+    "read",
+    {
+      operation: "jobs.list",
+      take,
+    },
+  );
+
+  return Array.isArray(result.jobs) ? (result.jobs as SteamIntegrationJob[]) : [];
+}
+
+export async function createSteamIntegrationJobByInstanceRequest(
+  session: ApiSession,
+  projectId: string,
+  integrationKey: string,
+  instanceId: string,
+  payload: SteamIntegrationJobCreatePayload,
+) {
+  const result = await invokeSteamActionByInstance(
+    session,
+    projectId,
+    integrationKey,
+    instanceId,
+    "jobs",
+    {
+      operation: "jobs.create",
+      job: payload,
+    },
+  );
+
+  return result.job as SteamIntegrationJob;
+}
+
+export async function cancelSteamIntegrationJobByInstanceRequest(
+  session: ApiSession,
+  projectId: string,
+  integrationKey: string,
+  instanceId: string,
+  jobId: string,
+) {
+  return invokeSteamActionByInstance(
+    session,
+    projectId,
+    integrationKey,
+    instanceId,
+    "jobs",
+    {
+      operation: "jobs.cancel",
+      jobId,
+    },
+  );
 }
 
 export async function listSteamIntegrationAccountsRequest(
