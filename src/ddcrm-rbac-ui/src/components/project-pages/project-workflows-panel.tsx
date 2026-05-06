@@ -1600,8 +1600,14 @@ const WorkflowCanvasNode = memo(function WorkflowCanvasNode({ data, selected }: 
                     position={Position.Left}
                   />
                 ) : null}
+                <span className="workflow-node-port-text" title={inputPort ? readPortTitle(inputPort) : undefined}>
+                  {inputPort?.label ?? ""}
+                </span>
               </span>
               <span className="workflow-node-port-label is-right">
+                <span className="workflow-node-port-text" title={outputPort ? readPortTitle(outputPort) : undefined}>
+                  {outputPort?.label ?? ""}
+                </span>
                 {outputPort ? (
                   <Handle
                     id={outputPort.id}
