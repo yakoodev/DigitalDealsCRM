@@ -16,11 +16,13 @@ import {
   cancelSteamIntegrationJobByInstanceRequest,
   createSteamIntegrationAccountByInstanceRequest,
   createSteamIntegrationJobByInstanceRequest,
+  enqueueSteamWorkflowBlockByInstanceRequest,
   invokeProjectIntegrationInstanceActionRequest,
   listProjectIntegrationInstancesRequest,
   listProjectIntegrationsStatusRequest,
   listSteamIntegrationAccountsByInstanceRequest,
   listSteamIntegrationJobsByInstanceRequest,
+  listSteamWorkflowBlocksCatalogByInstanceRequest,
   triggerProjectIntegrationInstanceRuntimeRequest,
   updateSteamIntegrationAccountByInstanceRequest,
 } from "@/lib/api-client";
@@ -250,15 +252,32 @@ function buildJobPayload(params: {
   parallelism: string;
   retryCount: string;
   payloadJson?: string;
+  payloadObject?: Record<string, unknown>;
 }) {
-  let payloadObject: Record<string, string> | undefined;
-  if (params.payloadJson && params.payloadJson.trim() && params.payloadJson.trim() !== "{}") {
+  let payloadObject = params.payloadObject;
+  if (!payloadObject && params.payloadJson && params.payloadJson.trim() && params.payloadJson.trim() !== "{}") {
     const parsed = JSON.parse(params.payloadJson) as Record<string, unknown>;
-    payloadObject = Object.entries(parsed).reduce<Record<string, string>>((acc, [key, value]) => {
-      acc[key] = String(value);
+    payloadObject = Object.entries(parsed).reduce<Record<string, unknown>>((acc, [key, value]) => {
+      acc[key] = value;
       return acc;
     }, {});
   }
+
+  const normalizedPayload = payloadObject
+    ? Object.entries(payloadObject).reduce<Record<string, string>>((acc, [key, value]) => {
+      if (value === null || typeof value === "undefined") {
+        return acc;
+      }
+
+      if (typeof value === "object") {
+        acc[key] = JSON.stringify(value);
+        return acc;
+      }
+
+      acc[key] = String(value);
+      return acc;
+    }, {})
+    : undefined;
 
   return {
     type: params.type,
@@ -266,7 +285,7 @@ function buildJobPayload(params: {
     dryRun: params.dryRun,
     parallelism: Number(params.parallelism) || 5,
     retryCount: Number(params.retryCount) || 2,
-    payload: payloadObject,
+    payload: normalizedPayload,
   } satisfies SteamIntegrationJobCreatePayload;
 }
 
@@ -384,6 +403,101 @@ function buildAccountMailConfig(form: AccountFormState) {
   };
 }
 
+function triggerDownload(filename: string, text: string, mimeType: string) {
+  const blob = new Blob([text], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
+}
+
+function escapeCsvCell(value: unknown) {
+  const text = typeof value === "string"
+    ? value
+    : value === null || typeof value === "undefined"
+      ? ""
+      : Array.isArray(value) || typeof value === "object"
+        ? JSON.stringify(value)
+        : String(value);
+
+  return `"${text.replaceAll("\"", "\"\"")}"`;
+}
+
+function buildAccountsExportCsv(accounts: SteamIntegrationAccount[]) {
+  const headers = [
+    "id",
+    "loginName",
+    "displayName",
+    "steamId64",
+    "email",
+    "phoneMasked",
+    "proxy",
+    "folderName",
+    "status",
+    "tags",
+    "note",
+    "createdAt",
+    "updatedAt",
+  ];
+
+  const rows = accounts.map((account) => [
+    account.id,
+    account.loginName,
+    account.displayName ?? "",
+    account.steamId64 ?? "",
+    account.email ?? "",
+    account.phoneMasked ?? "",
+    account.proxy ?? "",
+    account.folderName ?? "",
+    account.status ?? "",
+    (account.tags ?? []).join("|"),
+    account.note ?? "",
+    account.createdAt,
+    account.updatedAt,
+  ]);
+
+  return [headers, ...rows]
+    .map((row) => row.map((value) => escapeCsvCell(value)).join(","))
+    .join("\n");
+}
+
+function parseBooleanSelection(value: string) {
+  if (value === "true") {
+    return true;
+  }
+
+  if (value === "false") {
+    return false;
+  }
+
+  return undefined;
+}
+
+function parseNonNegativeIntegerSelection(value: string, fallback: number) {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return fallback;
+  }
+
+  const parsed = Number(trimmed);
+  if (!Number.isInteger(parsed) || parsed < 0) {
+    throw new Error(`Значение \`${value}\` должно быть целым числом 0 или больше.`);
+  }
+
+  return parsed;
+}
+
+function parseGuidListText(text: string) {
+  return text
+    .split(/[\r\n,;]+/g)
+    .map((item) => item.trim())
+    .filter((item) => item.length > 0);
+}
+
 export function ProjectSteamPanel({
   apiSession,
   projectId,
@@ -405,6 +519,27 @@ export function ProjectSteamPanel({
   const [jobRetryCount, setJobRetryCount] = useState("2");
   const [showAdvancedJobPayload, setShowAdvancedJobPayload] = useState(false);
   const [jobPayloadJson, setJobPayloadJson] = useState("{}");
+  const [jobProfileDisplayName, setJobProfileDisplayName] = useState("");
+  const [jobProfileSummary, setJobProfileSummary] = useState("");
+  const [jobProfileRealName, setJobProfileRealName] = useState("");
+  const [jobProfileCountry, setJobProfileCountry] = useState("");
+  const [jobProfileState, setJobProfileState] = useState("");
+  const [jobProfileCity, setJobProfileCity] = useState("");
+  const [jobProfileCustomUrl, setJobProfileCustomUrl] = useState("");
+  const [jobAvatarBase64, setJobAvatarBase64] = useState("");
+  const [jobPrivacyProfilePrivate, setJobPrivacyProfilePrivate] = useState("");
+  const [jobPrivacyFriendsPrivate, setJobPrivacyFriendsPrivate] = useState("");
+  const [jobPrivacyInventoryPrivate, setJobPrivacyInventoryPrivate] = useState("");
+  const [jobNewPassword, setJobNewPassword] = useState("");
+  const [jobGenerateLength, setJobGenerateLength] = useState("16");
+  const [jobDeauthorizeAfterChange, setJobDeauthorizeAfterChange] = useState(true);
+  const [blockLaunchKey, setBlockLaunchKey] = useState("steam.session.validate");
+  const [blockLaunchAccountIdsText, setBlockLaunchAccountIdsText] = useState("");
+  const [blockLaunchDryRun, setBlockLaunchDryRun] = useState(false);
+  const [blockLaunchParallelism, setBlockLaunchParallelism] = useState("5");
+  const [blockLaunchRetryCount, setBlockLaunchRetryCount] = useState("2");
+  const [blockLaunchUseAdvancedPayload, setBlockLaunchUseAdvancedPayload] = useState(false);
+  const [blockLaunchPayloadJson, setBlockLaunchPayloadJson] = useState("{}");
   const [jobsTake, setJobsTake] = useState("40");
   const [jobsTypeFilter, setJobsTypeFilter] = useState("");
   const [bulkAccountsText, setBulkAccountsText] = useState("");
@@ -509,8 +644,29 @@ export function ProjectSteamPanel({
     staleTime: 5_000,
   });
 
+  const workflowBlocksQuery = useQuery({
+    queryKey: [
+      "steam-workflow-blocks",
+      apiSession.baseUrl,
+      apiSession.token,
+      projectId,
+      integrationKey,
+      selectedSteamInstanceId,
+    ],
+    queryFn: () =>
+      listSteamWorkflowBlocksCatalogByInstanceRequest(
+        apiSession,
+        projectId,
+        integrationKey,
+        selectedSteamInstanceId,
+      ),
+    enabled: steamGrant?.status === "active" && Boolean(selectedSteamInstanceId),
+    staleTime: 10_000,
+  });
+
   const accounts = useMemo(() => accountsQuery.data?.items ?? [], [accountsQuery.data?.items]);
   const jobs = useMemo(() => jobsQuery.data ?? [], [jobsQuery.data]);
+  const workflowBlocks = useMemo(() => workflowBlocksQuery.data ?? [], [workflowBlocksQuery.data]);
   const visibleAccountIds = useMemo(() => new Set(accounts.map((account) => account.id)), [accounts]);
   const selectedVisibleAccountIds = useMemo(
     () => selectedAccountIds.filter((id) => visibleAccountIds.has(id)),
@@ -548,12 +704,47 @@ export function ProjectSteamPanel({
         queryKey: ["steam-jobs", apiSession.baseUrl, apiSession.token, projectId, integrationKey],
       }),
       queryClient.invalidateQueries({
+        queryKey: ["steam-workflow-blocks", apiSession.baseUrl, apiSession.token, projectId, integrationKey],
+      }),
+      queryClient.invalidateQueries({
         queryKey: ["steam-instances", apiSession.baseUrl, apiSession.token, projectId, integrationKey],
       }),
       queryClient.invalidateQueries({
         queryKey: ["project-integrations-status", apiSession.baseUrl, apiSession.token, projectId],
       }),
     ]);
+  };
+
+  const exportAccountsJson = () => {
+    triggerDownload(
+      `steam-accounts-${selectedSteamInstanceId || "all"}.json`,
+      JSON.stringify(accounts, null, 2),
+      "application/json",
+    );
+  };
+
+  const exportAccountsCsv = () => {
+    triggerDownload(
+      `steam-accounts-${selectedSteamInstanceId || "all"}.csv`,
+      buildAccountsExportCsv(accounts),
+      "text/csv;charset=utf-8",
+    );
+  };
+
+  const exportJobsJson = () => {
+    triggerDownload(
+      `steam-jobs-${selectedSteamInstanceId || "all"}.json`,
+      JSON.stringify(filteredJobs, null, 2),
+      "application/json",
+    );
+  };
+
+  const exportWorkflowBlocksJson = () => {
+    triggerDownload(
+      `steam-workflow-blocks-${selectedSteamInstanceId || "all"}.json`,
+      JSON.stringify(workflowBlocks, null, 2),
+      "application/json",
+    );
   };
 
   const runtimeMutation = useMutation({
@@ -739,6 +930,37 @@ export function ProjectSteamPanel({
     },
   });
 
+  const enqueueBlockMutation = useMutation({
+    mutationFn: async (payload: {
+      blockKey: string;
+      accountIds: string[];
+      dryRun: boolean;
+      parallelism: number;
+      retryCount: number;
+      jobPayload?: Record<string, unknown>;
+    }) => {
+      if (!selectedSteamInstanceId) {
+        throw new Error("Сначала выберите или создайте Steam instance.");
+      }
+
+      return enqueueSteamWorkflowBlockByInstanceRequest(
+        apiSession,
+        projectId,
+        integrationKey,
+        selectedSteamInstanceId,
+        payload,
+      );
+    },
+    onSuccess: async (result) => {
+      await refreshAll();
+      const mode = result.execution.fallback.used ? result.execution.fallback.mode : result.execution.executionMode;
+      setStatusMessage(`Block-flow запущен: ${result.execution.blockKey} (${mode}).`);
+    },
+    onError: (error) => {
+      setStatusMessage(error instanceof Error ? error.message : "Не удалось запустить block-flow.");
+    },
+  });
+
   const cancelJobMutation = useMutation({
     mutationFn: (jobId: string) => {
       if (!selectedSteamInstanceId) {
@@ -783,6 +1005,102 @@ export function ProjectSteamPanel({
 
   const clearSelection = () => {
     setSelectedAccountIds([]);
+  };
+
+  const buildSteamJobSpecificPayload = (): Record<string, unknown> | undefined => {
+    if (showAdvancedJobPayload) {
+      return undefined;
+    }
+
+    if (jobType === "ProfileUpdate") {
+      const payload: Record<string, unknown> = {};
+      if (jobProfileDisplayName.trim()) {
+        payload.displayName = jobProfileDisplayName.trim();
+      }
+      if (jobProfileSummary.trim()) {
+        payload.summary = jobProfileSummary.trim();
+      }
+      if (jobProfileRealName.trim()) {
+        payload.realName = jobProfileRealName.trim();
+      }
+      if (jobProfileCountry.trim()) {
+        payload.country = jobProfileCountry.trim();
+      }
+      if (jobProfileState.trim()) {
+        payload.state = jobProfileState.trim();
+      }
+      if (jobProfileCity.trim()) {
+        payload.city = jobProfileCity.trim();
+      }
+      if (jobProfileCustomUrl.trim()) {
+        payload.customUrl = jobProfileCustomUrl.trim();
+      }
+
+      if (Object.keys(payload).length === 0) {
+        throw new Error("Для ProfileUpdate заполните хотя бы одно поле.");
+      }
+
+      return payload;
+    }
+
+    if (jobType === "NicknameUpdate") {
+      const displayName = jobProfileDisplayName.trim();
+      if (!displayName) {
+        throw new Error("Для NicknameUpdate заполните displayName.");
+      }
+
+      return { displayName };
+    }
+
+    if (jobType === "AvatarUpdate") {
+      const avatarBase64 = jobAvatarBase64.trim();
+      if (!avatarBase64) {
+        throw new Error("Для AvatarUpdate заполните avatarBase64.");
+      }
+
+      return { avatarBase64 };
+    }
+
+    if (jobType === "PrivacyUpdate") {
+      const payload: Record<string, unknown> = {};
+      const profilePrivate = parseBooleanSelection(jobPrivacyProfilePrivate.trim());
+      const friendsPrivate = parseBooleanSelection(jobPrivacyFriendsPrivate.trim());
+      const inventoryPrivate = parseBooleanSelection(jobPrivacyInventoryPrivate.trim());
+
+      if (typeof profilePrivate === "boolean") {
+        payload.profilePrivate = profilePrivate;
+      }
+      if (typeof friendsPrivate === "boolean") {
+        payload.friendsPrivate = friendsPrivate;
+      }
+      if (typeof inventoryPrivate === "boolean") {
+        payload.inventoryPrivate = inventoryPrivate;
+      }
+
+      if (Object.keys(payload).length === 0) {
+        throw new Error("Для PrivacyUpdate выберите хотя бы один privacy-флаг.");
+      }
+
+      return payload;
+    }
+
+    if (jobType === "PasswordChange") {
+      const payload: Record<string, unknown> = {};
+      const newPassword = jobNewPassword.trim();
+      if (newPassword) {
+        payload.newPassword = newPassword;
+      } else {
+        payload.generateLength = parseNonNegativeIntegerSelection(jobGenerateLength, 16);
+      }
+
+      if (jobDeauthorizeAfterChange) {
+        payload.deauthorizeAfterChange = true;
+      }
+
+      return payload;
+    }
+
+    return undefined;
   };
 
   const beginEdit = (account: SteamIntegrationAccount) => {
@@ -891,6 +1209,7 @@ export function ProjectSteamPanel({
     }
 
     try {
+      const payloadObject = buildSteamJobSpecificPayload();
       createJobMutation.mutate(buildJobPayload({
         type: jobType,
         accountIds: selectedVisibleAccountIds,
@@ -898,9 +1217,50 @@ export function ProjectSteamPanel({
         parallelism: jobParallelism,
         retryCount: jobRetryCount,
         payloadJson: showAdvancedJobPayload ? jobPayloadJson : "{}",
+        payloadObject,
       }));
     } catch (error) {
       setStatusMessage(error instanceof Error ? error.message : "Некорректный payload для jobs.");
+    }
+  };
+
+  const runWorkflowBlockLaunch = () => {
+    if (!selectedSteamInstanceId) {
+      setStatusMessage("Сначала выберите Steam instance.");
+      return;
+    }
+
+    const accountIds = parseGuidListText(blockLaunchAccountIdsText);
+    if (accountIds.length === 0) {
+      if (selectedVisibleAccountIds.length === 0) {
+        setStatusMessage("Добавьте accountIds вручную или выделите хотя бы один аккаунт в таблице.");
+        return;
+      }
+
+      accountIds.push(...selectedVisibleAccountIds);
+    }
+
+    const blockKey = blockLaunchKey.trim();
+    if (!blockKey) {
+      setStatusMessage("Укажите blockKey.");
+      return;
+    }
+
+    try {
+      const jobPayload = blockLaunchUseAdvancedPayload
+        ? JSON.parse(blockLaunchPayloadJson) as Record<string, unknown>
+        : undefined;
+
+      enqueueBlockMutation.mutate({
+        blockKey,
+        accountIds,
+        dryRun: blockLaunchDryRun,
+        parallelism: parseNonNegativeIntegerSelection(blockLaunchParallelism, 5),
+        retryCount: parseNonNegativeIntegerSelection(blockLaunchRetryCount, 2),
+        jobPayload,
+      });
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? error.message : "Некорректный payload для block-flow.");
     }
   };
 
@@ -989,7 +1349,7 @@ export function ProjectSteamPanel({
                 disabled={runtimeMutation.isPending || !selectedSteamInstanceId}
                 onClick={() => runtimeMutation.mutate("provision")}
               >
-                Provision
+                Развернуть
               </button>
               <button
                 type="button"
@@ -997,7 +1357,7 @@ export function ProjectSteamPanel({
                 disabled={runtimeMutation.isPending || !selectedSteamInstanceId}
                 onClick={() => runtimeMutation.mutate("restart")}
               >
-                Restart
+                Перезапустить
               </button>
               <button
                 type="button"
@@ -1005,7 +1365,7 @@ export function ProjectSteamPanel({
                 disabled={runtimeMutation.isPending || !selectedSteamInstanceId}
                 onClick={() => runtimeMutation.mutate("deprovision")}
               >
-                Deprovision
+                Снять
               </button>
             </div>
             {steamGrant.runtimeLastError ? <p className="route-error">{steamGrant.runtimeLastError}</p> : null}
@@ -1033,6 +1393,14 @@ export function ProjectSteamPanel({
               <h3>Аккаунты Steam</h3>
               <button type="button" className="button button-ghost" disabled={accountsQuery.isFetching} onClick={() => accountsQuery.refetch()}>
                 Обновить
+              </button>
+            </div>
+            <div className="inline-actions">
+              <button type="button" className="button button-ghost" disabled={accounts.length === 0} onClick={exportAccountsJson}>
+                Экспорт JSON
+              </button>
+              <button type="button" className="button button-ghost" disabled={accounts.length === 0} onClick={exportAccountsCsv}>
+                Экспорт CSV
               </button>
             </div>
             {!selectedSteamInstanceId ? <p className="route-hint">Сначала выберите Steam instance в верхнем блоке.</p> : null}
@@ -1140,6 +1508,11 @@ export function ProjectSteamPanel({
                 <button type="button" className="button button-ghost" disabled={jobsQuery.isFetching} onClick={() => jobsQuery.refetch()}>Обновить jobs</button>
               </div>
             </div>
+            <div className="inline-actions">
+              <button type="button" className="button button-ghost" disabled={jobs.length === 0} onClick={exportJobsJson}>
+                Экспорт JSON
+              </button>
+            </div>
             {jobsQuery.isPending ? <p className="route-hint">Загрузка jobs...</p> : null}
             {jobsQuery.error ? (
               <p className="route-error">
@@ -1187,6 +1560,145 @@ export function ProjectSteamPanel({
                   </tbody>
                 </table>
               </div>
+            ) : null}
+          </article>
+
+          <article className="glass-card page-stack">
+            <div className="panel-title-row">
+              <h3>Запуск block-flow</h3>
+              <button
+                type="button"
+                className="button button-ghost"
+                disabled={workflowBlocksQuery.isFetching}
+                onClick={() => workflowBlocksQuery.refetch()}
+              >
+                Обновить каталог
+              </button>
+            </div>
+            <p className="route-hint">
+              Если список accountIds пуст, будут использованы выбранные аккаунты из таблицы.
+            </p>
+            <label className="field">
+              <span>blockKey</span>
+              <select className="input" value={blockLaunchKey} onChange={(event) => setBlockLaunchKey(event.target.value)}>
+                {workflowBlocks.length > 0 ? (
+                  workflowBlocks.map((block) => (
+                    <option key={block.key} value={block.key}>
+                      {block.title} ({block.key})
+                    </option>
+                  ))
+                ) : (
+                  <option value="steam.session.validate">steam.session.validate</option>
+                )}
+              </select>
+            </label>
+            <label className="field">
+              <span>accountIds (по одному на строку)</span>
+              <textarea
+                className="input"
+                rows={4}
+                value={blockLaunchAccountIdsText}
+                onChange={(event) => setBlockLaunchAccountIdsText(event.target.value)}
+                placeholder={selectedVisibleAccountIds.join("\n")}
+              />
+            </label>
+            <div className="grid-2">
+              <label className="field">
+                <span>Parallelism</span>
+                <input className="input" value={blockLaunchParallelism} onChange={(event) => setBlockLaunchParallelism(event.target.value)} />
+              </label>
+              <label className="field">
+                <span>Retry count</span>
+                <input className="input" value={blockLaunchRetryCount} onChange={(event) => setBlockLaunchRetryCount(event.target.value)} />
+              </label>
+            </div>
+            <label className="field field-inline">
+              <span>Dry run</span>
+              <input type="checkbox" checked={blockLaunchDryRun} onChange={(event) => setBlockLaunchDryRun(event.target.checked)} />
+            </label>
+            <label className="field field-inline">
+              <span>Расширенный payload</span>
+              <input
+                type="checkbox"
+                checked={blockLaunchUseAdvancedPayload}
+                onChange={(event) => setBlockLaunchUseAdvancedPayload(event.target.checked)}
+              />
+            </label>
+            {blockLaunchUseAdvancedPayload ? (
+              <label className="field">
+                <span>jobPayload (JSON)</span>
+                <textarea className="input" rows={4} value={blockLaunchPayloadJson} onChange={(event) => setBlockLaunchPayloadJson(event.target.value)} />
+              </label>
+            ) : null}
+            <div className="inline-actions">
+              <button
+                type="button"
+                className="button button-ghost"
+                onClick={() => setBlockLaunchAccountIdsText(selectedVisibleAccountIds.join("\n"))}
+              >
+                Взять выбранные аккаунты
+              </button>
+              <button
+                type="button"
+                className="button button-primary"
+                disabled={enqueueBlockMutation.isPending || !selectedSteamInstanceId}
+                onClick={runWorkflowBlockLaunch}
+              >
+                Запустить block-flow
+              </button>
+            </div>
+          </article>
+
+          <article className="glass-card page-stack">
+            <div className="panel-title-row">
+              <h3>Каталог workflow blocks</h3>
+              <button
+                type="button"
+                className="button button-ghost"
+                disabled={workflowBlocksQuery.isFetching}
+                onClick={() => workflowBlocksQuery.refetch()}
+              >
+                Обновить
+              </button>
+            </div>
+            <div className="inline-actions">
+              <button
+                type="button"
+                className="button button-ghost"
+                disabled={workflowBlocks.length === 0}
+                onClick={exportWorkflowBlocksJson}
+              >
+                Экспорт JSON
+              </button>
+            </div>
+            {workflowBlocksQuery.isPending ? <p className="route-hint">Загрузка каталога blocks...</p> : null}
+            {workflowBlocksQuery.error ? (
+              <p className="route-error">
+                {workflowBlocksQuery.error instanceof Error
+                  ? workflowBlocksQuery.error.message
+                  : "Не удалось загрузить каталог blocks."}
+              </p>
+            ) : null}
+            {!workflowBlocksQuery.isPending && !workflowBlocksQuery.error && workflowBlocks.length === 0 ? (
+              <p className="route-hint">Каталог blocks пока пуст.</p>
+            ) : null}
+            {!workflowBlocksQuery.isPending && !workflowBlocksQuery.error && workflowBlocks.length > 0 ? (
+              <ul className="entity-list">
+                {workflowBlocks.map((block) => (
+                  <li key={block.key} className="entity-list-item">
+                    <div className="page-stack">
+                      <strong>{block.title}</strong>
+                      <small>{block.key}</small>
+                      <div className="entity-pills">
+                        <span className="entity-pill">{block.executionMode}</span>
+                        {block.legacyJobType ? <span className="entity-pill">legacy: {block.legacyJobType}</span> : null}
+                        <span className="entity-pill">fields: {block.requiredFields.join(", ") || "n/a"}</span>
+                      </div>
+                      <pre className="json-preview">{JSON.stringify(block.payloadSchemaHints, null, 2)}</pre>
+                    </div>
+                  </li>
+                ))}
+              </ul>
             ) : null}
           </article>
         </section>
@@ -1472,16 +1984,106 @@ export function ProjectSteamPanel({
             <label className="field">
               <span>Тип jobs</span>
               <select className="input" value={jobType} onChange={(event) => setJobType(event.target.value)}>
-                <option value="SessionValidate">SessionValidate</option>
-                <option value="SessionRefresh">SessionRefresh</option>
-                <option value="ProfileUpdate">ProfileUpdate</option>
-                <option value="NicknameUpdate">NicknameUpdate</option>
-                <option value="PrivacyUpdate">PrivacyUpdate</option>
-                <option value="AvatarUpdate">AvatarUpdate</option>
-                <option value="PasswordChange">PasswordChange</option>
-                <option value="SessionsDeauthorize">SessionsDeauthorize</option>
+                <option value="SessionValidate">Проверить сессии</option>
+                <option value="SessionRefresh">Обновить сессии</option>
+                <option value="ProfileUpdate">Обновить профиль</option>
+                <option value="NicknameUpdate">Сменить ник</option>
+                <option value="PrivacyUpdate">Обновить приватность</option>
+                <option value="AvatarUpdate">Сменить аватар</option>
+                <option value="PasswordChange">Сменить пароль</option>
+                <option value="SessionsDeauthorize">Деавторизовать сессии</option>
               </select>
             </label>
+            {jobType === "ProfileUpdate" ? (
+              <div className="page-stack">
+                <div className="grid-2">
+                  <label className="field">
+                    <span>displayName</span>
+                    <input className="input" value={jobProfileDisplayName} onChange={(event) => setJobProfileDisplayName(event.target.value)} placeholder="SteamNick" />
+                  </label>
+                  <label className="field">
+                    <span>realName</span>
+                    <input className="input" value={jobProfileRealName} onChange={(event) => setJobProfileRealName(event.target.value)} placeholder="Ivan Petrov" />
+                  </label>
+                  <label className="field">
+                    <span>country</span>
+                    <input className="input" value={jobProfileCountry} onChange={(event) => setJobProfileCountry(event.target.value)} placeholder="RU" />
+                  </label>
+                  <label className="field">
+                    <span>state</span>
+                    <input className="input" value={jobProfileState} onChange={(event) => setJobProfileState(event.target.value)} placeholder="Moscow" />
+                  </label>
+                  <label className="field">
+                    <span>city</span>
+                    <input className="input" value={jobProfileCity} onChange={(event) => setJobProfileCity(event.target.value)} placeholder="Moscow" />
+                  </label>
+                  <label className="field">
+                    <span>customUrl</span>
+                    <input className="input" value={jobProfileCustomUrl} onChange={(event) => setJobProfileCustomUrl(event.target.value)} placeholder="my-steam" />
+                  </label>
+                </div>
+                <label className="field">
+                  <span>summary</span>
+                  <textarea className="input" rows={4} value={jobProfileSummary} onChange={(event) => setJobProfileSummary(event.target.value)} placeholder="Описание профиля" />
+                </label>
+              </div>
+            ) : null}
+            {jobType === "NicknameUpdate" ? (
+              <label className="field">
+                <span>displayName</span>
+                <input className="input" value={jobProfileDisplayName} onChange={(event) => setJobProfileDisplayName(event.target.value)} placeholder="SteamNick" />
+              </label>
+            ) : null}
+            {jobType === "AvatarUpdate" ? (
+              <label className="field">
+                <span>avatarBase64</span>
+                <textarea className="input" rows={5} value={jobAvatarBase64} onChange={(event) => setJobAvatarBase64(event.target.value)} placeholder="data:image/png;base64,..." />
+              </label>
+            ) : null}
+            {jobType === "PrivacyUpdate" ? (
+              <div className="grid-2">
+                <label className="field">
+                  <span>profilePrivate</span>
+                  <select className="input" value={jobPrivacyProfilePrivate} onChange={(event) => setJobPrivacyProfilePrivate(event.target.value)}>
+                    <option value="">Не задано</option>
+                    <option value="true">true</option>
+                    <option value="false">false</option>
+                  </select>
+                </label>
+                <label className="field">
+                  <span>friendsPrivate</span>
+                  <select className="input" value={jobPrivacyFriendsPrivate} onChange={(event) => setJobPrivacyFriendsPrivate(event.target.value)}>
+                    <option value="">Не задано</option>
+                    <option value="true">true</option>
+                    <option value="false">false</option>
+                  </select>
+                </label>
+                <label className="field">
+                  <span>inventoryPrivate</span>
+                  <select className="input" value={jobPrivacyInventoryPrivate} onChange={(event) => setJobPrivacyInventoryPrivate(event.target.value)}>
+                    <option value="">Не задано</option>
+                    <option value="true">true</option>
+                    <option value="false">false</option>
+                  </select>
+                </label>
+              </div>
+            ) : null}
+            {jobType === "PasswordChange" ? (
+              <div className="grid-2">
+                <label className="field">
+                  <span>newPassword</span>
+                  <input className="input" type="password" value={jobNewPassword} onChange={(event) => setJobNewPassword(event.target.value)} placeholder="Оставьте пустым для генерации" />
+                </label>
+                <label className="field">
+                  <span>generateLength</span>
+                  <input className="input" value={jobGenerateLength} onChange={(event) => setJobGenerateLength(event.target.value)} placeholder="16" />
+                </label>
+                <label className="field field-inline">
+                  <span>deauthorizeAfterChange</span>
+                  <input type="checkbox" checked={jobDeauthorizeAfterChange} onChange={(event) => setJobDeauthorizeAfterChange(event.target.checked)} />
+                </label>
+              </div>
+            ) : null}
             <div className="grid-2">
               <label className="field">
                 <span>Parallelism</span>

@@ -321,6 +321,29 @@ export interface SteamIntegrationJob {
   items?: SteamIntegrationJobItem[] | null;
 }
 
+export interface SteamWorkflowBlockCatalogItem {
+  key: string;
+  title: string;
+  executionMode: "legacy_job" | "workflow_queue";
+  legacyJobType?: string | null;
+  requiredFields: string[];
+  payloadSchemaHints: Record<string, unknown>;
+}
+
+export interface SteamWorkflowBlockExecution {
+  id: string;
+  projectId: string;
+  blockKey: string;
+  status: string;
+  executionMode: string;
+  legacyJobId?: string | null;
+  enqueuedAtUtc: string;
+  fallback: {
+    used: boolean;
+    mode: "legacy_job" | "workflow_queue";
+  };
+}
+
 export interface OfferVariant {
   id: string;
   accountId: string;
@@ -694,6 +717,17 @@ interface SteamIntegrationAccountEnvelope {
 interface SteamIntegrationJobsEnvelope {
   requestId: string;
   items: SteamIntegrationJob[];
+}
+
+interface SteamWorkflowBlocksCatalogEnvelope {
+  requestId: string;
+  blocks: SteamWorkflowBlockCatalogItem[];
+}
+
+interface SteamWorkflowBlockEnqueueEnvelope {
+  requestId: string;
+  execution: SteamWorkflowBlockExecution;
+  job?: SteamIntegrationJob | null;
 }
 
 interface SteamIntegrationJobEnvelope {
@@ -1437,6 +1471,58 @@ export async function listSteamIntegrationJobsByInstanceRequest(
   );
 
   return Array.isArray(result.jobs) ? (result.jobs as SteamIntegrationJob[]) : [];
+}
+
+export async function listSteamWorkflowBlocksCatalogByInstanceRequest(
+  session: ApiSession,
+  projectId: string,
+  integrationKey: string,
+  instanceId: string,
+) {
+  const result = await invokeSteamActionByInstance(
+    session,
+    projectId,
+    integrationKey,
+    instanceId,
+    "read",
+    {
+      operation: "workflow.blocks.catalog",
+    },
+  );
+
+  return Array.isArray(result.blocks) ? (result.blocks as SteamWorkflowBlockCatalogItem[]) : [];
+}
+
+export async function enqueueSteamWorkflowBlockByInstanceRequest(
+  session: ApiSession,
+  projectId: string,
+  integrationKey: string,
+  instanceId: string,
+  payload: {
+    blockKey: string;
+    accountIds?: string[];
+    dryRun?: boolean;
+    parallelism?: number;
+    retryCount?: number;
+    jobPayload?: Record<string, unknown>;
+  },
+) {
+  const result = await invokeSteamActionByInstance(
+    session,
+    projectId,
+    integrationKey,
+    instanceId,
+    "jobs",
+    {
+      operation: "workflow.blocks.enqueue",
+      ...payload,
+    },
+  );
+
+  return {
+    execution: result.execution as SteamWorkflowBlockExecution,
+    job: (result.job as SteamIntegrationJob | null | undefined) ?? null,
+  };
 }
 
 export async function createSteamIntegrationJobByInstanceRequest(

@@ -6,6 +6,7 @@ import {
   getOfferWorkflowDraftRequest,
   listOfferWorkflowExecutionsRequest,
   listOffersRequest,
+  listProjectIntegrationsStatusRequest,
   publishOfferWorkflowRequest,
   saveOfferWorkflowDraftRequest,
 } from "@/lib/api-client";
@@ -17,6 +18,7 @@ vi.mock("@/lib/api-client", async () => {
     getOfferWorkflowDraftRequest: vi.fn(),
     listOfferWorkflowExecutionsRequest: vi.fn(),
     listOffersRequest: vi.fn(),
+    listProjectIntegrationsStatusRequest: vi.fn(),
     publishOfferWorkflowRequest: vi.fn(),
     saveOfferWorkflowDraftRequest: vi.fn(),
   };
@@ -62,6 +64,7 @@ describe("ProjectWorkflowsPanel", () => {
     vi.mocked(listOffersRequest).mockReset();
     vi.mocked(getOfferWorkflowDraftRequest).mockReset();
     vi.mocked(listOfferWorkflowExecutionsRequest).mockReset();
+    vi.mocked(listProjectIntegrationsStatusRequest).mockReset();
     vi.mocked(saveOfferWorkflowDraftRequest).mockReset();
     vi.mocked(publishOfferWorkflowRequest).mockReset();
 
@@ -127,6 +130,24 @@ describe("ProjectWorkflowsPanel", () => {
               },
             },
           },
+          {
+            id: "steam-1",
+            type: "SteamAction",
+            name: "Steam profile",
+            config: {
+              action: "accounts.profile.update",
+              payload: {
+                displayName: "OldNick",
+                summary: "Old summary",
+              },
+            },
+            ui: {
+              position: {
+                x: 680,
+                y: 80,
+              },
+            },
+          },
         ],
         edges: [
           {
@@ -181,6 +202,24 @@ describe("ProjectWorkflowsPanel", () => {
         ],
       },
     ]);
+
+    vi.mocked(listProjectIntegrationsStatusRequest).mockResolvedValue({
+      items: [
+        {
+          integrationKey: "steam-accounts-manager",
+          integrationType: "worker",
+          status: "active",
+          scopes: ["read", "jobs"],
+          maxInstances: 1,
+          credentialStatus: "active",
+          credentialMasked: "***",
+          runtimeStatus: "active",
+          runtimeAccountId: "11111111-1111-1111-1111-111111111111",
+          runtimeLastError: null,
+        },
+      ],
+      telegram: { groupChats: 0, userDmChats: 0 },
+    });
 
     vi.mocked(saveOfferWorkflowDraftRequest).mockResolvedValue({
       draft: {
@@ -257,6 +296,36 @@ describe("ProjectWorkflowsPanel", () => {
       zoom: 1.1,
     });
     expect(payload?.ui?.entryNodeId).toBe("purchase-start");
+  });
+
+  it("SteamAction preset собирает typed payload без raw JSON", async () => {
+    renderPanel("owner");
+
+    await waitFor(() => {
+      expect(screen.getByText("Steam profile")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByText("Steam profile"));
+    fireEvent.click(screen.getByRole("button", { name: "Ник" }));
+
+    const displayNameInput = screen.getByLabelText("displayName");
+    fireEvent.change(displayNameInput, { target: { value: "NewNick" } });
+
+    fireEvent.click(screen.getByRole("button", { name: "Применить поля" }));
+    fireEvent.click(screen.getByRole("button", { name: /Сохранить draft/ }));
+
+    await waitFor(() => {
+      expect(saveOfferWorkflowDraftRequest).toHaveBeenCalledTimes(1);
+    });
+
+    const payload = vi.mocked(saveOfferWorkflowDraftRequest).mock.calls[0]?.[3];
+    const steamNode = payload?.nodes?.find((node) => node.id === "steam-1");
+    expect(steamNode?.config).toMatchObject({
+      action: "accounts.nickname.update",
+      payload: {
+        displayName: "NewNick",
+      },
+    });
   });
 
   it("drawer истории запусков открывается и рендерит шаги execution", async () => {

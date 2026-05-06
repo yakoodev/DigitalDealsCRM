@@ -93,6 +93,7 @@ export interface MailConfig {
      * @maximum 65535
      */
   imapPort: number;
+  /** ssl | tls | implicit_tls | starttls | starttls_when_available | none | auto */
   imapSecurity: string;
   imapUsername: string;
   imapPassword: string;

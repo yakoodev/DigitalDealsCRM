@@ -75,6 +75,23 @@ interface WorkflowTypedEditorState {
   steamAction: string;
   steamAccountId: string;
   steamDelaySeconds: string;
+  steamProfileDisplayName: string;
+  steamProfileSummary: string;
+  steamProfileRealName: string;
+  steamProfileCountry: string;
+  steamProfileState: string;
+  steamProfileCity: string;
+  steamProfileCustomUrl: string;
+  steamAvatarBase64: string;
+  steamPrivacyProfilePrivate: string;
+  steamPrivacyFriendsPrivate: string;
+  steamPrivacyInventoryPrivate: string;
+  steamBlockKey: string;
+  steamBlockAccountIds: string;
+  steamBlockDryRun: boolean;
+  steamBlockParallelism: string;
+  steamBlockRetryCount: string;
+  steamBlockPayloadText: string;
   steamPayloadText: string;
   taskType: string;
   taskTitle: string;
@@ -119,20 +136,20 @@ const workflowNodeGuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][
 const workflowHttpMethods = ["GET", "POST", "PUT", "PATCH", "DELETE"] as const;
 
 const workflowNodeCatalog: readonly WorkflowNodeCatalogItem[] = [
-  { type: "PurchaseStart", label: "Purchase", description: "Входящее событие покупки.", tone: "start", group: "start" },
-  { type: "MessageStart", label: "Message", description: "Входящее событие сообщения покупателя.", tone: "start", group: "start" },
-  { type: "ReviewStart", label: "Review", description: "Входящее событие отзыва/оценки.", tone: "start", group: "start" },
-  { type: "Condition", label: "Condition", description: "Ветвление по переменным.", tone: "branch", group: "base" },
-  { type: "SetVariables", label: "Set Variables", description: "Устанавливает/переопределяет runtime-переменные.", tone: "data", group: "base" },
-  { type: "LoadOffer", label: "Load Offer", description: "Загружает Offer и variants.", tone: "input", group: "base" },
-  { type: "SelectAccountPriorityFallback", label: "Select Account", description: "Приоритет + fallback.", tone: "routing", group: "base" },
-  { type: "InvokeWorkerAction", label: "Invoke Worker", description: "Вызывает действие воркера.", tone: "worker", group: "base" },
-  { type: "InvokeCustomHttp", label: "Invoke HTTP", description: "Вызывает custom HTTP integration.", tone: "http", group: "integration", integrationKey: "custom-http" },
-  { type: "SteamAction", label: "Steam Action", description: "Интеграционная node Steam (typed jobs/actions + JSON fallback).", tone: "integration", group: "integration", integrationKey: "steam-accounts-manager" },
-  { type: "Task", label: "Task", description: "Планирует отложенную задачу (например через 3 часа).", tone: "task", group: "base" },
-  { type: "SendBuyerResponse", label: "Buyer Response", description: "Формирует ответ покупателю.", tone: "response", group: "base" },
-  { type: "Notify", label: "Notify", description: "Служебное уведомление.", tone: "notify", group: "base" },
-  { type: "End", label: "End", description: "Завершает workflow.", tone: "end", group: "base" },
+  { type: "PurchaseStart", label: "Покупка", description: "Входящее событие покупки.", tone: "start", group: "start" },
+  { type: "MessageStart", label: "Сообщение", description: "Входящее событие сообщения покупателя.", tone: "start", group: "start" },
+  { type: "ReviewStart", label: "Отзыв", description: "Входящее событие отзыва/оценки.", tone: "start", group: "start" },
+  { type: "Condition", label: "Условие", description: "Ветвление по переменным.", tone: "branch", group: "base" },
+  { type: "SetVariables", label: "Переменные", description: "Устанавливает или переопределяет runtime-переменные.", tone: "data", group: "base" },
+  { type: "LoadOffer", label: "Загрузить offer", description: "Загружает Offer и variants.", tone: "input", group: "base" },
+  { type: "SelectAccountPriorityFallback", label: "Выбрать аккаунт", description: "Приоритет + fallback.", tone: "routing", group: "base" },
+  { type: "InvokeWorkerAction", label: "Вызов worker", description: "Вызывает действие worker-интеграции.", tone: "worker", group: "base" },
+  { type: "InvokeCustomHttp", label: "HTTP-вызов", description: "Вызывает custom HTTP-интеграцию.", tone: "http", group: "integration", integrationKey: "custom-http" },
+  { type: "SteamAction", label: "Steam", description: "Конкретные Steam-операции с typed-полями и JSON-fallback.", tone: "integration", group: "integration", integrationKey: "steam-accounts-manager" },
+  { type: "Task", label: "Задача", description: "Планирует отложенную задачу (например через 3 часа).", tone: "task", group: "base" },
+  { type: "SendBuyerResponse", label: "Ответ покупателю", description: "Формирует ответ покупателю.", tone: "response", group: "base" },
+  { type: "Notify", label: "Уведомление", description: "Служебное уведомление.", tone: "notify", group: "base" },
+  { type: "End", label: "Конец", description: "Завершает workflow.", tone: "end", group: "base" },
 ] as const;
 
 const workflowNodeTypes: readonly WorkflowNode["type"][] = workflowNodeCatalog.map((item) => item.type);
@@ -409,7 +426,7 @@ const nodeFieldDescriptors: Record<WorkflowNode["type"], readonly WorkflowFieldD
     {
       key: "action",
       label: "action",
-      description: "Тип steam-задачи, например: accounts.profile.update, accounts.nickname.update, accounts.avatar.update, accounts.privacy.update, accounts.sessions.deauthorize.",
+      description: "Тип Steam-операции. Common варианты: accounts.profile.update, accounts.nickname.update, accounts.avatar.update, accounts.privacy.update, accounts.sessions.deauthorize, workflow.blocks.enqueue.",
       required: true,
       type: "string",
       placeholder: "accounts.nickname.update",
@@ -433,7 +450,7 @@ const nodeFieldDescriptors: Record<WorkflowNode["type"], readonly WorkflowFieldD
     {
       key: "payload",
       label: "payload",
-      description: "Дополнительные параметры Steam action в JSON-объекте.",
+      description: "Дополнительные параметры Steam action. Для common-операций используйте structured-поля ниже, raw JSON оставлен как fallback.",
       required: false,
       type: "json-object",
     },
@@ -945,14 +962,14 @@ function readFieldTypeTitle(type: WorkflowFieldDescriptor["type"]) {
   }
 
   if (type === "json-object") {
-    return "JSON object";
+    return "JSON-объект";
   }
 
   if (type === "int") {
-    return "integer";
+    return "целое число";
   }
 
-  return "string";
+  return "строка";
 }
 
 function readFieldHintText(nodeType: WorkflowNode["type"], fieldKey: string) {
@@ -980,6 +997,23 @@ function buildEmptyTypedEditorState(): WorkflowTypedEditorState {
     steamAction: "accounts.profile.update",
     steamAccountId: "",
     steamDelaySeconds: "",
+    steamProfileDisplayName: "",
+    steamProfileSummary: "",
+    steamProfileRealName: "",
+    steamProfileCountry: "",
+    steamProfileState: "",
+    steamProfileCity: "",
+    steamProfileCustomUrl: "",
+    steamAvatarBase64: "",
+    steamPrivacyProfilePrivate: "",
+    steamPrivacyFriendsPrivate: "",
+    steamPrivacyInventoryPrivate: "",
+    steamBlockKey: "steam.session.validate",
+    steamBlockAccountIds: "",
+    steamBlockDryRun: false,
+    steamBlockParallelism: "5",
+    steamBlockRetryCount: "2",
+    steamBlockPayloadText: "{}",
     steamPayloadText: "{}",
     taskType: "",
     taskTitle: "",
@@ -1414,6 +1448,49 @@ function stringifyConfigObject(value: unknown) {
   return JSON.stringify(value, null, 2);
 }
 
+function readConfigBoolean(config: Record<string, unknown>, key: string) {
+  const value = config[key];
+  if (typeof value === "boolean") {
+    return value;
+  }
+
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (normalized === "true") {
+      return true;
+    }
+
+    if (normalized === "false") {
+      return false;
+    }
+  }
+
+  return undefined;
+}
+
+function readConfigStringList(value: unknown) {
+  if (Array.isArray(value)) {
+    return value
+      .filter((item): item is string => typeof item === "string")
+      .map((item) => item.trim())
+      .filter((item) => item.length > 0)
+      .join("\n");
+  }
+
+  if (typeof value === "string") {
+    return value;
+  }
+
+  return "";
+}
+
+function parseGuidListText(text: string) {
+  return text
+    .split(/[\r\n,;]+/g)
+    .map((item) => item.trim())
+    .filter((item) => item.length > 0);
+}
+
 function readNodeDisplayName(node: Node<WorkflowEditorNodeData>) {
   const trimmedName = node.data.name.trim();
   return trimmedName.length > 0 ? `${node.data.nodeType} (${trimmedName})` : `${node.data.nodeType} (${node.id})`;
@@ -1485,6 +1562,63 @@ function validateNodeConfig(node: Node<WorkflowEditorNodeData>) {
       const normalizedMethod = methodRaw.trim().toUpperCase();
       if (!workflowHttpMethods.some((method) => method === normalizedMethod)) {
         throw new Error(`Node ${readNodeDisplayName(node)}: method должен быть одним из ${workflowHttpMethods.join("/")}.`);
+      }
+    }
+  }
+
+  if (node.data.nodeType === "SteamAction") {
+    const action = readString(config, "action").trim();
+    if (!action) {
+      throw new Error(`Node ${readNodeDisplayName(node)}: поле \`action\` обязательно.`);
+    }
+
+    const payload = isRecord(config.payload) ? config.payload : {};
+    if (action === "accounts.profile.update") {
+      const hasProfileField = [
+        "displayName",
+        "summary",
+        "realName",
+        "country",
+        "state",
+        "city",
+        "customUrl",
+      ].some((key) => readString(payload, key).trim().length > 0);
+      if (!hasProfileField) {
+        throw new Error(`Node ${readNodeDisplayName(node)}: заполните хотя бы одно поле профиля.`);
+      }
+    } else if (action === "accounts.nickname.update") {
+      if (!readString(payload, "displayName").trim()) {
+        throw new Error(`Node ${readNodeDisplayName(node)}: payload.displayName обязателен для смены ника.`);
+      }
+    } else if (action === "accounts.avatar.update") {
+      if (!readString(payload, "avatarBase64").trim()) {
+        throw new Error(`Node ${readNodeDisplayName(node)}: payload.avatarBase64 обязателен для смены аватара.`);
+      }
+    } else if (action === "accounts.privacy.update") {
+      const hasPrivacyField = ["profilePrivate", "friendsPrivate", "inventoryPrivate"].some((key) => {
+        const value = payload[key];
+        return value === true || value === false || (typeof value === "string" && value.trim().length > 0);
+      });
+      if (!hasPrivacyField) {
+        throw new Error(`Node ${readNodeDisplayName(node)}: выберите хотя бы один privacy-флаг.`);
+      }
+    } else if (action === "workflow.blocks.enqueue") {
+      const blockKey = readString(payload, "blockKey").trim();
+      if (!blockKey) {
+        throw new Error(`Node ${readNodeDisplayName(node)}: payload.blockKey обязателен.`);
+      }
+
+      if (blockKey !== "steam.workflow.custom") {
+        const accountIds = payload.accountIds;
+        if (!Array.isArray(accountIds) || accountIds.length === 0) {
+          throw new Error(`Node ${readNodeDisplayName(node)}: payload.accountIds обязателен для block-flow.`);
+        }
+
+        for (const accountId of accountIds) {
+          if (typeof accountId !== "string" || !workflowNodeGuidRegex.test(accountId.trim())) {
+            throw new Error(`Node ${readNodeDisplayName(node)}: payload.accountIds содержит невалидный GUID.`);
+          }
+        }
       }
     }
   }
@@ -1968,10 +2102,39 @@ export function ProjectWorkflowsPanel({ apiSession, projectId, currentRole }: Pr
       nextTypedEditor.customHeadersText = stringifyConfigObject(config.headers);
       nextTypedEditor.customPayloadText = stringifyConfigObject(config.payload);
     } else if (selectedNode.data.nodeType === "SteamAction") {
+      const payload = isRecord(config.payload) ? config.payload : {};
+      const blockPayload = isRecord(payload.jobPayload) ? payload.jobPayload : (isRecord(payload.payload) ? payload.payload : {});
+      const privacyProfilePrivate = readConfigBoolean(payload, "profilePrivate");
+      const privacyFriendsPrivate = readConfigBoolean(payload, "friendsPrivate");
+      const privacyInventoryPrivate = readConfigBoolean(payload, "inventoryPrivate");
+
       nextTypedEditor.steamAction = readString(config, "action") || "accounts.profile.update";
       nextTypedEditor.steamAccountId = readString(config, "accountId");
-      nextTypedEditor.steamDelaySeconds = typeof config.delaySeconds === "number" ? String(config.delaySeconds) : readString(config, "delaySeconds");
-      nextTypedEditor.steamPayloadText = stringifyConfigObject(config.payload);
+      nextTypedEditor.steamDelaySeconds = typeof config.delaySeconds === "number"
+        ? String(config.delaySeconds)
+        : readString(config, "delaySeconds");
+      nextTypedEditor.steamProfileDisplayName = readString(payload, "displayName");
+      nextTypedEditor.steamProfileSummary = readString(payload, "summary");
+      nextTypedEditor.steamProfileRealName = readString(payload, "realName");
+      nextTypedEditor.steamProfileCountry = readString(payload, "country");
+      nextTypedEditor.steamProfileState = readString(payload, "state");
+      nextTypedEditor.steamProfileCity = readString(payload, "city");
+      nextTypedEditor.steamProfileCustomUrl = readString(payload, "customUrl");
+      nextTypedEditor.steamAvatarBase64 = readString(payload, "avatarBase64");
+      nextTypedEditor.steamPrivacyProfilePrivate = typeof privacyProfilePrivate === "boolean" ? String(privacyProfilePrivate) : "";
+      nextTypedEditor.steamPrivacyFriendsPrivate = typeof privacyFriendsPrivate === "boolean" ? String(privacyFriendsPrivate) : "";
+      nextTypedEditor.steamPrivacyInventoryPrivate = typeof privacyInventoryPrivate === "boolean" ? String(privacyInventoryPrivate) : "";
+      nextTypedEditor.steamBlockKey = readString(payload, "blockKey") || "steam.session.validate";
+      nextTypedEditor.steamBlockAccountIds = readConfigStringList(payload.accountIds);
+      nextTypedEditor.steamBlockDryRun = readConfigBoolean(payload, "dryRun") ?? false;
+      nextTypedEditor.steamBlockParallelism = typeof payload.parallelism === "number"
+        ? String(payload.parallelism)
+        : readString(payload, "parallelism") || "5";
+      nextTypedEditor.steamBlockRetryCount = typeof payload.retryCount === "number"
+        ? String(payload.retryCount)
+        : readString(payload, "retryCount") || "2";
+      nextTypedEditor.steamBlockPayloadText = stringifyConfigObject(blockPayload);
+      nextTypedEditor.steamPayloadText = stringifyConfigObject(payload);
     } else if (selectedNode.data.nodeType === "Task") {
       nextTypedEditor.taskType = readString(config, "taskType");
       nextTypedEditor.taskTitle = readString(config, "title");
@@ -2251,19 +2414,161 @@ export function ProjectWorkflowsPanel({ apiSession, projectId, currentRole }: Pr
     }
 
     if (nodeType === "SteamAction") {
-      const payload = typedEditor.steamPayloadText.trim().length > 0 ? JSON.parse(typedEditor.steamPayloadText) : undefined;
-      if (payload !== undefined && !isRecord(payload)) {
-        throw new Error("payload должен быть JSON-объектом.");
-      }
-
+      const action = typedEditor.steamAction.trim() || "accounts.profile.update";
       const delaySecondsRaw = typedEditor.steamDelaySeconds.trim();
       const delaySeconds = delaySecondsRaw.length > 0 ? Number(delaySecondsRaw) : undefined;
       if (delaySeconds !== undefined && (!Number.isFinite(delaySeconds) || delaySeconds < 0)) {
         throw new Error("delaySeconds должен быть неотрицательным числом.");
       }
 
+      const buildSteamPayload = (): Record<string, unknown> | undefined => {
+        if (action === "accounts.profile.update") {
+          const payload: Record<string, unknown> = {};
+          if (typedEditor.steamProfileDisplayName.trim()) {
+            payload.displayName = typedEditor.steamProfileDisplayName.trim();
+          }
+          if (typedEditor.steamProfileSummary.trim()) {
+            payload.summary = typedEditor.steamProfileSummary.trim();
+          }
+          if (typedEditor.steamProfileRealName.trim()) {
+            payload.realName = typedEditor.steamProfileRealName.trim();
+          }
+          if (typedEditor.steamProfileCountry.trim()) {
+            payload.country = typedEditor.steamProfileCountry.trim();
+          }
+          if (typedEditor.steamProfileState.trim()) {
+            payload.state = typedEditor.steamProfileState.trim();
+          }
+          if (typedEditor.steamProfileCity.trim()) {
+            payload.city = typedEditor.steamProfileCity.trim();
+          }
+          if (typedEditor.steamProfileCustomUrl.trim()) {
+            payload.customUrl = typedEditor.steamProfileCustomUrl.trim();
+          }
+
+          if (Object.keys(payload).length === 0) {
+            throw new Error("Заполните хотя бы одно поле профиля.");
+          }
+
+          return payload;
+        }
+
+        if (action === "accounts.nickname.update") {
+          const displayName = typedEditor.steamProfileDisplayName.trim();
+          if (!displayName) {
+            throw new Error("Для смены ника заполните displayName.");
+          }
+
+          return { displayName };
+        }
+
+        if (action === "accounts.avatar.update") {
+          const avatarBase64 = typedEditor.steamAvatarBase64.trim();
+          if (!avatarBase64) {
+            throw new Error("Для смены аватара заполните avatarBase64.");
+          }
+
+          return { avatarBase64 };
+        }
+
+        if (action === "accounts.privacy.update") {
+          const payload: Record<string, unknown> = {};
+          if (typedEditor.steamPrivacyProfilePrivate.trim()) {
+            payload.profilePrivate = typedEditor.steamPrivacyProfilePrivate.trim() === "true";
+          }
+          if (typedEditor.steamPrivacyFriendsPrivate.trim()) {
+            payload.friendsPrivate = typedEditor.steamPrivacyFriendsPrivate.trim() === "true";
+          }
+          if (typedEditor.steamPrivacyInventoryPrivate.trim()) {
+            payload.inventoryPrivate = typedEditor.steamPrivacyInventoryPrivate.trim() === "true";
+          }
+
+          if (Object.keys(payload).length === 0) {
+            throw new Error("Выберите хотя бы один privacy-флаг.");
+          }
+
+          return payload;
+        }
+
+        if (action === "accounts.sessions.deauthorize") {
+          return undefined;
+        }
+
+        if (action === "workflow.blocks.enqueue") {
+          const blockKey = typedEditor.steamBlockKey.trim();
+          if (!blockKey) {
+            throw new Error("Для workflow.blocks.enqueue нужен blockKey.");
+          }
+
+          const accountIds = parseGuidListText(typedEditor.steamBlockAccountIds);
+          if (accountIds.length === 0 && blockKey !== "steam.workflow.custom") {
+            throw new Error("Для workflow.blocks.enqueue укажите хотя бы один accountId.");
+          }
+
+          for (const accountId of accountIds) {
+            if (!workflowNodeGuidRegex.test(accountId)) {
+              throw new Error(`accountId \`${accountId}\` должен быть валидным GUID.`);
+            }
+          }
+
+          const payload: Record<string, unknown> = { blockKey };
+          if (accountIds.length > 0) {
+            payload.accountIds = accountIds;
+          }
+          if (typedEditor.steamBlockDryRun) {
+            payload.dryRun = true;
+          }
+
+          const parallelismRaw = typedEditor.steamBlockParallelism.trim();
+          if (parallelismRaw.length > 0) {
+            const parallelism = Number(parallelismRaw);
+            if (!Number.isInteger(parallelism) || parallelism < 1) {
+              throw new Error("parallelism должен быть целым числом больше 0.");
+            }
+
+            payload.parallelism = parallelism;
+          }
+
+          const retryCountRaw = typedEditor.steamBlockRetryCount.trim();
+          if (retryCountRaw.length > 0) {
+            const retryCount = Number(retryCountRaw);
+            if (!Number.isInteger(retryCount) || retryCount < 0) {
+              throw new Error("retryCount должен быть целым числом 0 или больше.");
+            }
+
+            payload.retryCount = retryCount;
+          }
+
+          const payloadText = typedEditor.steamBlockPayloadText.trim();
+          if (payloadText.length > 0 && payloadText !== "{}") {
+            const parsed = JSON.parse(payloadText);
+            if (!isRecord(parsed)) {
+              throw new Error("block payload должен быть JSON-объектом.");
+            }
+
+            payload.jobPayload = parsed;
+          }
+
+          return payload;
+        }
+
+        const payloadText = typedEditor.steamPayloadText.trim();
+        if (payloadText.length === 0 || payloadText === "{}") {
+          return undefined;
+        }
+
+        const parsed = JSON.parse(payloadText);
+        if (!isRecord(parsed)) {
+          throw new Error("payload должен быть JSON-объектом.");
+        }
+
+        return parsed;
+      };
+
+      const payload = buildSteamPayload();
+
       return applyConfigPatch(baseConfig, {
-        action: typedEditor.steamAction.trim() || undefined,
+        action,
         accountId: typedEditor.steamAccountId.trim() || undefined,
         delaySeconds: delaySeconds !== undefined ? Math.floor(delaySeconds) : undefined,
         payload,
@@ -2548,6 +2853,8 @@ export function ProjectWorkflowsPanel({ apiSession, projectId, currentRole }: Pr
       setTypedEditorError(error instanceof Error ? error.message : "Не удалось применить typed-настройки.");
     }
   };
+
+  const steamActionValue = typedEditor.steamAction.trim() || "accounts.profile.update";
 
   const applyAdvancedJson = () => {
     if (!selectedNode) {
@@ -3036,6 +3343,14 @@ export function ProjectWorkflowsPanel({ apiSession, projectId, currentRole }: Pr
                       <input className="input" value={typedEditor.steamAction} onChange={(event) => setTypedEditor((prev) => ({ ...prev, steamAction: event.target.value }))} placeholder="accounts.nickname.update" />
                       <small className="workflow-field-hint">{readFieldHintText("SteamAction", "action")}</small>
                     </label>
+                    <div className="inline-actions">
+                      <button type="button" className="button button-ghost" onClick={() => setTypedEditor((prev) => ({ ...prev, steamAction: "accounts.profile.update" }))}>Профиль</button>
+                      <button type="button" className="button button-ghost" onClick={() => setTypedEditor((prev) => ({ ...prev, steamAction: "accounts.nickname.update" }))}>Ник</button>
+                      <button type="button" className="button button-ghost" onClick={() => setTypedEditor((prev) => ({ ...prev, steamAction: "accounts.avatar.update" }))}>Аватар</button>
+                      <button type="button" className="button button-ghost" onClick={() => setTypedEditor((prev) => ({ ...prev, steamAction: "accounts.privacy.update" }))}>Приватность</button>
+                      <button type="button" className="button button-ghost" onClick={() => setTypedEditor((prev) => ({ ...prev, steamAction: "accounts.sessions.deauthorize" }))}>Сессии</button>
+                      <button type="button" className="button button-ghost" onClick={() => setTypedEditor((prev) => ({ ...prev, steamAction: "workflow.blocks.enqueue" }))}>Block-flow</button>
+                    </div>
                     <label className="field">
                       <span>accountId</span>
                       <input className="input" value={typedEditor.steamAccountId} onChange={(event) => setTypedEditor((prev) => ({ ...prev, steamAccountId: event.target.value }))} placeholder="GUID" />
@@ -3046,11 +3361,120 @@ export function ProjectWorkflowsPanel({ apiSession, projectId, currentRole }: Pr
                       <input className="input" value={typedEditor.steamDelaySeconds} onChange={(event) => setTypedEditor((prev) => ({ ...prev, steamDelaySeconds: event.target.value }))} placeholder="10800" />
                       <small className="workflow-field-hint">{readFieldHintText("SteamAction", "delaySeconds")}</small>
                     </label>
-                    <label className="field">
-                      <span>payload (JSON object)</span>
-                      <textarea className="input" rows={6} value={typedEditor.steamPayloadText} onChange={(event) => setTypedEditor((prev) => ({ ...prev, steamPayloadText: event.target.value }))} />
-                      <small className="workflow-field-hint">{readFieldHintText("SteamAction", "payload")}</small>
-                    </label>
+                    {steamActionValue === "accounts.profile.update" ? (
+                      <div className="page-stack">
+                        <div className="grid-2">
+                          <label className="field">
+                            <span>displayName</span>
+                            <input className="input" value={typedEditor.steamProfileDisplayName} onChange={(event) => setTypedEditor((prev) => ({ ...prev, steamProfileDisplayName: event.target.value }))} placeholder="SteamNick" />
+                          </label>
+                          <label className="field">
+                            <span>realName</span>
+                            <input className="input" value={typedEditor.steamProfileRealName} onChange={(event) => setTypedEditor((prev) => ({ ...prev, steamProfileRealName: event.target.value }))} placeholder="Ivan Petrov" />
+                          </label>
+                          <label className="field">
+                            <span>country</span>
+                            <input className="input" value={typedEditor.steamProfileCountry} onChange={(event) => setTypedEditor((prev) => ({ ...prev, steamProfileCountry: event.target.value }))} placeholder="RU" />
+                          </label>
+                          <label className="field">
+                            <span>state</span>
+                            <input className="input" value={typedEditor.steamProfileState} onChange={(event) => setTypedEditor((prev) => ({ ...prev, steamProfileState: event.target.value }))} placeholder="Moscow" />
+                          </label>
+                          <label className="field">
+                            <span>city</span>
+                            <input className="input" value={typedEditor.steamProfileCity} onChange={(event) => setTypedEditor((prev) => ({ ...prev, steamProfileCity: event.target.value }))} placeholder="Moscow" />
+                          </label>
+                          <label className="field">
+                            <span>customUrl</span>
+                            <input className="input" value={typedEditor.steamProfileCustomUrl} onChange={(event) => setTypedEditor((prev) => ({ ...prev, steamProfileCustomUrl: event.target.value }))} placeholder="my-steam" />
+                          </label>
+                        </div>
+                        <label className="field">
+                          <span>summary</span>
+                          <textarea className="input" rows={4} value={typedEditor.steamProfileSummary} onChange={(event) => setTypedEditor((prev) => ({ ...prev, steamProfileSummary: event.target.value }))} placeholder="Описание профиля" />
+                        </label>
+                      </div>
+                    ) : null}
+                    {steamActionValue === "accounts.nickname.update" ? (
+                      <label className="field">
+                        <span>displayName</span>
+                        <input className="input" value={typedEditor.steamProfileDisplayName} onChange={(event) => setTypedEditor((prev) => ({ ...prev, steamProfileDisplayName: event.target.value }))} placeholder="SteamNick" />
+                      </label>
+                    ) : null}
+                    {steamActionValue === "accounts.avatar.update" ? (
+                      <label className="field">
+                        <span>avatarBase64</span>
+                        <textarea className="input" rows={5} value={typedEditor.steamAvatarBase64} onChange={(event) => setTypedEditor((prev) => ({ ...prev, steamAvatarBase64: event.target.value }))} placeholder="data:image/png;base64,..." />
+                      </label>
+                    ) : null}
+                    {steamActionValue === "accounts.privacy.update" ? (
+                      <div className="grid-2">
+                        <label className="field">
+                          <span>profilePrivate</span>
+                          <select className="input" value={typedEditor.steamPrivacyProfilePrivate} onChange={(event) => setTypedEditor((prev) => ({ ...prev, steamPrivacyProfilePrivate: event.target.value }))}>
+                            <option value="">Не задано</option>
+                            <option value="true">true</option>
+                            <option value="false">false</option>
+                          </select>
+                        </label>
+                        <label className="field">
+                          <span>friendsPrivate</span>
+                          <select className="input" value={typedEditor.steamPrivacyFriendsPrivate} onChange={(event) => setTypedEditor((prev) => ({ ...prev, steamPrivacyFriendsPrivate: event.target.value }))}>
+                            <option value="">Не задано</option>
+                            <option value="true">true</option>
+                            <option value="false">false</option>
+                          </select>
+                        </label>
+                        <label className="field">
+                          <span>inventoryPrivate</span>
+                          <select className="input" value={typedEditor.steamPrivacyInventoryPrivate} onChange={(event) => setTypedEditor((prev) => ({ ...prev, steamPrivacyInventoryPrivate: event.target.value }))}>
+                            <option value="">Не задано</option>
+                            <option value="true">true</option>
+                            <option value="false">false</option>
+                          </select>
+                        </label>
+                      </div>
+                    ) : null}
+                    {steamActionValue === "workflow.blocks.enqueue" ? (
+                      <div className="page-stack">
+                        <div className="grid-2">
+                          <label className="field">
+                            <span>blockKey</span>
+                            <input className="input" value={typedEditor.steamBlockKey} onChange={(event) => setTypedEditor((prev) => ({ ...prev, steamBlockKey: event.target.value }))} placeholder="steam.password.change" />
+                            <small className="workflow-field-hint">Например: steam.session.validate, steam.password.change, steam.profile.update.</small>
+                          </label>
+                          <label className="field field-inline">
+                            <span>dryRun</span>
+                            <input type="checkbox" checked={typedEditor.steamBlockDryRun} onChange={(event) => setTypedEditor((prev) => ({ ...prev, steamBlockDryRun: event.target.checked }))} />
+                          </label>
+                          <label className="field">
+                            <span>parallelism</span>
+                            <input className="input" value={typedEditor.steamBlockParallelism} onChange={(event) => setTypedEditor((prev) => ({ ...prev, steamBlockParallelism: event.target.value }))} placeholder="5" />
+                          </label>
+                          <label className="field">
+                            <span>retryCount</span>
+                            <input className="input" value={typedEditor.steamBlockRetryCount} onChange={(event) => setTypedEditor((prev) => ({ ...prev, steamBlockRetryCount: event.target.value }))} placeholder="2" />
+                          </label>
+                        </div>
+                        <label className="field">
+                          <span>accountIds</span>
+                          <textarea className="input" rows={4} value={typedEditor.steamBlockAccountIds} onChange={(event) => setTypedEditor((prev) => ({ ...prev, steamBlockAccountIds: event.target.value }))} placeholder="GUID на строку или через запятую" />
+                        </label>
+                        <label className="field">
+                          <span>jobPayload (JSON object)</span>
+                          <textarea className="input" rows={6} value={typedEditor.steamBlockPayloadText} onChange={(event) => setTypedEditor((prev) => ({ ...prev, steamBlockPayloadText: event.target.value }))} placeholder="{&quot;newPassword&quot;:&quot;...&quot;}" />
+                          <small className="workflow-field-hint">Используется как payload для block-flow задачи.</small>
+                        </label>
+                      </div>
+                    ) : null}
+                    <details className="details-block">
+                      <summary>Advanced payload fallback</summary>
+                      <label className="field">
+                        <span>payload (JSON object)</span>
+                        <textarea className="input" rows={6} value={typedEditor.steamPayloadText} onChange={(event) => setTypedEditor((prev) => ({ ...prev, steamPayloadText: event.target.value }))} />
+                        <small className="workflow-field-hint">{readFieldHintText("SteamAction", "payload")}</small>
+                      </label>
+                    </details>
                   </>
                 ) : null}
 
