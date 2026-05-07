@@ -19,6 +19,13 @@ export const metadata: Metadata = {
   title: "DigitalDeals CRM",
   description:
     "Dark CRM interface for projects, accounts, products, messages, workflows and admin control plane.",
+  icons: {
+    icon: [
+      { url: "/brand/logoicon.svg", type: "image/svg+xml" },
+      { url: "/brand/logoicon.png", type: "image/png" },
+    ],
+    apple: [{ url: "/brand/logoicon.png", type: "image/png" }],
+  },
 };
 
 export default function RootLayout({

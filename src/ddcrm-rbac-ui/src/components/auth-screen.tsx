@@ -144,12 +144,16 @@ export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
       <section className="auth-form-card">
         <div className="auth-form-head">
           <div className="auth-brand-block">
-            <div className="auth-logo-slot" aria-hidden="true">
-              <span>LOGO</span>
+            <div className="auth-logo-slot">
+              <img
+                src="/brand/logoicon.svg"
+                alt="DigitalDeals CRM"
+                className="auth-logo-image"
+              />
             </div>
             <div className="auth-brand-copy">
               <span className="auth-brand-name">DigitalDeals CRM</span>
-              <span className="auth-brand-caption">место под логотип</span>
+              <span className="auth-brand-caption">операционная панель</span>
             </div>
           </div>
           <h1>Вход в рабочее пространство</h1>

@@ -57,7 +57,13 @@ interface HeaderEmailProps {
 export function HeaderBrand({ label, href }: HeaderBrandProps) {
   return (
     <Link href={href} className="app-header__brand">
-      {label}
+      <img
+        src="/brand/logoicon.svg"
+        alt=""
+        aria-hidden="true"
+        className="app-header__brand-logo"
+      />
+      <span className="app-header__brand-label">{label}</span>
     </Link>
   );
 }
