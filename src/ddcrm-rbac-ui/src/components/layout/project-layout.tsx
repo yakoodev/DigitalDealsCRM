@@ -113,7 +113,7 @@ export function ProjectLayout({
   ).length;
   const pausedAccountsCount = projectAccounts.length - activeAccountsCount;
   const visibleTabs = useMemo(
-    () => (Object.keys(tabMeta) as ProjectTab[]).filter((tab) => tab !== "steam"),
+    () => Object.keys(tabMeta) as ProjectTab[],
     [],
   );
 
