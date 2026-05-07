@@ -85,6 +85,74 @@ function resolveConversationPreview(row: Record<string, unknown>): string {
   return "";
 }
 
+function resolveConversationTitle(row: Record<string, unknown>): string {
+  const direct = readFirstString(row, [
+    "title",
+    "subject",
+    "counterparty",
+    "peer",
+    "peerName",
+    "nickname",
+    "displayName",
+    "username",
+    "userName",
+  ]);
+  if (direct) {
+    return direct;
+  }
+
+  const nestedPeer = isRecord(row.peer) ? readTextFromObject(row.peer, [
+    "name",
+    "nickname",
+    "displayName",
+    "username",
+    "title",
+  ]) : "";
+  if (nestedPeer) {
+    return nestedPeer;
+  }
+
+  const conversationId = readFirstString(row, ["conversationId", "id"]);
+  if (conversationId) {
+    return `Диалог ${conversationId}`;
+  }
+
+  return "Диалог";
+}
+
+function resolveConversationAvatarUrl(row: Record<string, unknown>): string {
+  const direct = readFirstString(row, [
+    "avatarUrl",
+    "avatar",
+    "avatar_url",
+    "photoUrl",
+    "imageUrl",
+    "peerAvatarUrl",
+    "peerAvatar",
+  ]);
+  if (direct) {
+    return direct;
+  }
+
+  if (isRecord(row.peer)) {
+    return readTextFromObject(row.peer, [
+      "avatarUrl",
+      "avatar",
+      "avatar_url",
+      "photoUrl",
+      "imageUrl",
+    ]);
+  }
+
+  return "";
+}
+
+function resolveAvatarFallback(title: string, conversationId: string): string {
+  const source = title.trim() || conversationId.trim() || "?";
+  const first = Array.from(source)[0] ?? "?";
+  return first.toUpperCase();
+}
+
 export function ProjectMessagesPanel({ apiSession, projectId }: ProjectMessagesPanelProps) {
   const [accountFilterId, setAccountFilterId] = useState("all");
   const [conversationSearch, setConversationSearch] = useState("");
@@ -170,7 +238,7 @@ export function ProjectMessagesPanel({ apiSession, projectId }: ProjectMessagesP
     }
 
     return conversations.filter(({ accountId, row }) => {
-      const title = readFirstString(row, ["title", "subject", "counterparty", "peer"]).toLowerCase();
+      const title = resolveConversationTitle(row).toLowerCase();
       const id = readFirstString(row, ["conversationId", "id"]).toLowerCase();
       const preview = resolveConversationPreview(row).toLowerCase();
       const accountName = (accountNameById.get(accountId) ?? "").toLowerCase();
@@ -198,7 +266,7 @@ export function ProjectMessagesPanel({ apiSession, projectId }: ProjectMessagesP
     ? readFirstString(selectedConversation.row, ["conversationId", "id"])
     : "";
   const selectedConversationTitle = selectedConversation
-    ? readFirstString(selectedConversation.row, ["title", "subject", "counterparty", "peer"])
+    ? resolveConversationTitle(selectedConversation.row)
     : "";
   const selectedConversationPreview = selectedConversation
     ? resolveConversationPreview(selectedConversation.row)
@@ -301,11 +369,13 @@ export function ProjectMessagesPanel({ apiSession, projectId }: ProjectMessagesP
               <ul className="dialogs-list">
                 {filteredConversations.map(({ accountId, row }, index) => {
                   const conversationId = readFirstString(row, ["conversationId", "id"]);
-                  const title = readFirstString(row, ["title", "subject", "counterparty", "peer"]);
+                  const title = resolveConversationTitle(row);
+                  const avatarUrl = resolveConversationAvatarUrl(row);
                   const preview = toReadableValue(resolveConversationPreview(row));
                   const unreadCount = readUnreadCount(row);
                   const accountName = accountNameById.get(accountId) ?? accountId;
                   const itemKey = `${accountId}:${conversationId || index}`;
+                  const avatarFallback = resolveAvatarFallback(title, conversationId || "");
 
                   return (
                     <li
@@ -317,13 +387,30 @@ export function ProjectMessagesPanel({ apiSession, projectId }: ProjectMessagesP
                         className="entity-hitbox"
                         onClick={() => setSelectedConversationKey(itemKey)}
                       >
-                        <strong>{title || "Без названия"}</strong>
-                        <div className="dialog-tags">
-                          <span className="chip">{accountName}</span>
-                          <span className="chip">{conversationId || "id: n/a"}</span>
-                          {unreadCount > 0 ? <span className="unread-badge">{unreadCount}</span> : null}
+                        <div className="dialog-main">
+                          <span className="dialog-avatar" aria-hidden="true">
+                            {avatarUrl ? (
+                              <img
+                                src={avatarUrl}
+                                alt=""
+                                className="dialog-avatar-image"
+                                loading="lazy"
+                                referrerPolicy="no-referrer"
+                              />
+                            ) : (
+                              <span className="dialog-avatar-fallback">{avatarFallback}</span>
+                            )}
+                          </span>
+                          <div className="dialog-content">
+                            <strong>{title}</strong>
+                            <div className="dialog-tags">
+                              <span className="chip">{accountName}</span>
+                              <span className="chip">{conversationId || "id: n/a"}</span>
+                              {unreadCount > 0 ? <span className="unread-badge">{unreadCount}</span> : null}
+                            </div>
+                            <p className="dialog-preview">{preview || "Нет превью"}</p>
+                          </div>
                         </div>
-                        <p className="dialog-preview">{preview || "Нет превью"}</p>
                       </button>
                       {conversationId ? (
                         <button

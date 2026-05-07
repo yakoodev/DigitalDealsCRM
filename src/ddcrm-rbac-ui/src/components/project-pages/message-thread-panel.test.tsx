@@ -137,4 +137,36 @@ describe("ProjectMessageThreadPanel", () => {
     expect(screen.getByText("Не указан `accountId` или `conversationId`.")).toBeInTheDocument();
     expect(runAccountActionRequest).not.toHaveBeenCalled();
   });
+
+  it("при одинаковых timestamp рендерит новые сообщения снизу по messageId", async () => {
+    vi.mocked(runAccountActionRequest).mockImplementation(
+      async (_session, _accountId, action) => {
+        if (action === "conversations.messages.list") {
+          return {
+            items: [
+              { messageId: "200", createdAt: "2026-05-07T19:48:54.577782Z", direction: "in", text: "новое сообщение" },
+              { messageId: "100", createdAt: "2026-05-07T19:48:54.577782Z", direction: "in", text: "старое сообщение" },
+            ],
+          };
+        }
+
+        if (action === "conversations.messages.send") {
+          return { status: "ok" };
+        }
+
+        return {};
+      },
+    );
+
+    renderPanel();
+    await screen.findByText("старое сообщение");
+
+    const messageRows = Array.from(document.querySelectorAll(".chat-list .chat-item p"))
+      .map((node) => node.textContent?.trim());
+
+    expect(messageRows).toEqual([
+      "старое сообщение",
+      "новое сообщение",
+    ]);
+  });
 });

@@ -5391,6 +5391,95 @@ html[data-theme="light"] .state-card {
   }
 }
 
+.message-compose-inline {
+  border: 0;
+  margin: 0;
+  padding: 0;
+}
+
+.message-compose-row {
+  align-items: center;
+  background: transparent;
+  display: flex;
+  gap: 0.38rem;
+  margin: 0;
+  padding: 0;
+}
+
+.message-compose-input {
+  flex: 1 1 auto;
+  min-height: 34px;
+  min-width: 0;
+}
+
+.message-template-popover {
+  position: relative;
+}
+
+.message-template-trigger {
+  white-space: nowrap;
+}
+
+.message-template-menu {
+  background: var(--surface-strong);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: var(--shadow-panel);
+  display: grid;
+  gap: 0.28rem;
+  left: 0;
+  min-width: 230px;
+  opacity: 0;
+  padding: 0.38rem;
+  pointer-events: none;
+  position: absolute;
+  bottom: calc(100% + 6px);
+  transform: translateY(4px);
+  transition: opacity 120ms ease, transform 120ms ease;
+  visibility: hidden;
+  z-index: 50;
+}
+
+.message-template-popover:hover .message-template-menu,
+.message-template-popover:focus-within .message-template-menu {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
+  visibility: visible;
+}
+
+.message-template-item {
+  align-items: center;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--text);
+  cursor: pointer;
+  display: inline-flex;
+  justify-content: flex-start;
+  min-height: 30px;
+  padding: 0 0.56rem;
+  text-align: left;
+}
+
+.message-template-item:hover {
+  border-color: var(--border-strong);
+}
+
+.message-send-button {
+  align-items: center;
+  display: inline-flex;
+  font-size: 0.92rem;
+  justify-content: center;
+  min-width: 34px;
+  padding: 0;
+  width: 34px;
+}
+
+.thread-embedded-stack {
+  gap: 0.38rem;
+}
+
 .app-header__brand {
   align-items: center;
   display: inline-flex;
@@ -5426,4 +5515,49 @@ html[data-theme="light"] .state-card {
     height: 20px;
     width: 20px;
   }
+}
+
+.dialog-main {
+  align-items: flex-start;
+  display: grid;
+  gap: 0.55rem;
+  grid-template-columns: 34px minmax(0, 1fr);
+}
+
+.dialog-content {
+  display: grid;
+  gap: 0.26rem;
+  min-width: 0;
+}
+
+.dialog-content strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dialog-avatar {
+  align-items: center;
+  background: var(--surface-muted);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  display: inline-flex;
+  height: 34px;
+  justify-content: center;
+  overflow: hidden;
+  width: 34px;
+}
+
+.dialog-avatar-image {
+  display: block;
+  height: 100%;
+  object-fit: cover;
+  width: 100%;
+}
+
+.dialog-avatar-fallback {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  font-weight: 700;
+  line-height: 1;
 }

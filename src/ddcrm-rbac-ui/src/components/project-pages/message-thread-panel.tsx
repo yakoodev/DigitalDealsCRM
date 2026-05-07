@@ -2,7 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { AccountSelector } from "@/components/account-selector";
 import { useProjectAccounts } from "@/hooks/use-project-accounts";
 import type { ApiSession } from "@/lib/api-client";
@@ -70,6 +70,49 @@ function resolveMessageTimestamp(row: Record<string, unknown>): string {
   return "";
 }
 
+function parseMessageTimestampMs(timestamp: string): number | null {
+  const normalized = timestamp.trim();
+  if (!normalized) {
+    return null;
+  }
+
+  if (/^\d+$/.test(normalized)) {
+    const parsedNumber = Number(normalized);
+    if (!Number.isFinite(parsedNumber)) {
+      return null;
+    }
+
+    return parsedNumber > 1_000_000_000_000 ? parsedNumber : parsedNumber * 1000;
+  }
+
+  const parsedDate = Date.parse(normalized);
+  return Number.isFinite(parsedDate) ? parsedDate : null;
+}
+
+function parseMessageSequence(row: Record<string, unknown>): number | null {
+  const candidates = [
+    row.messageId,
+    row.id,
+    row.sequence,
+    row.seq,
+  ];
+
+  for (const candidate of candidates) {
+    if (typeof candidate === "number" && Number.isFinite(candidate)) {
+      return candidate;
+    }
+
+    if (typeof candidate === "string" && /^\d+$/.test(candidate.trim())) {
+      const parsed = Number(candidate);
+      if (Number.isFinite(parsed)) {
+        return parsed;
+      }
+    }
+  }
+
+  return null;
+}
+
 export function ProjectMessageThreadPanel({
   apiSession,
   projectId,
@@ -79,6 +122,7 @@ export function ProjectMessageThreadPanel({
   onCancel,
 }: ProjectMessageThreadPanelProps) {
   const queryClient = useQueryClient();
+  const chatListRef = useRef<HTMLUListElement | null>(null);
   const [outgoingMessage, setOutgoingMessage] = useState("");
   const [status, setStatus] = useState("Введите сообщение и отправьте его в выбранную переписку.");
 
@@ -160,6 +204,41 @@ export function ProjectMessageThreadPanel({
   });
 
   const messages = extractObjectRows(messagesQuery.data ?? null, ["items", "messages"]);
+  const orderedMessages = useMemo(() => {
+    return messages
+      .map((row, index) => {
+        const timestamp = resolveMessageTimestamp(row);
+        return {
+          row,
+          index,
+          timestampMs: parseMessageTimestampMs(timestamp),
+          sequence: parseMessageSequence(row),
+        };
+      })
+      .sort((left, right) => {
+        if (left.timestampMs !== null && right.timestampMs !== null && left.timestampMs !== right.timestampMs) {
+          return left.timestampMs - right.timestampMs;
+        }
+
+        if (left.sequence !== null && right.sequence !== null && left.sequence !== right.sequence) {
+          return left.sequence - right.sequence;
+        }
+
+        // Keep worker order if no reliable time/sequence fields are available.
+        return left.index - right.index;
+      })
+      .map((entry) => entry.row);
+  }, [messages]);
+
+  useEffect(() => {
+    const node = chatListRef.current;
+    if (!node) {
+      return;
+    }
+
+    node.scrollTop = node.scrollHeight;
+  }, [orderedMessages.length, messagesQuery.dataUpdatedAt]);
+
   const activeAccount =
     accounts.find((account) => account.id === accountId)
     ?? (accountId
@@ -277,11 +356,11 @@ export function ProjectMessageThreadPanel({
             </p>
           ) : null}
           {!messagesQuery.isPending && !messagesQuery.error ? (
-            messages.length === 0 ? (
+            orderedMessages.length === 0 ? (
               <p className="route-hint">Сообщений пока нет.</p>
             ) : (
-              <ul className="chat-list">
-                {messages.map((message, index) => {
+              <ul ref={chatListRef} className="chat-list">
+                {orderedMessages.map((message, index) => {
                   const direction = readFirstString(message, [
                     "direction",
                     "author",
@@ -309,51 +388,51 @@ export function ProjectMessageThreadPanel({
           ) : null}
         </section>
 
-        <section className="panel-card page-stack">
-          <div className="panel-title-row">
-            <h3>Отправить сообщение</h3>
-            {mode === "page" && onCancel ? (
-              <button type="button" className="button button-ghost" onClick={onCancel}>
-                Закрыть чат
+        <div className="message-compose-inline">
+          <div className="message-compose-row" title={status}>
+            <div className="message-template-popover">
+              <button type="button" className="button button-ghost button-small message-template-trigger">
+                Шаблоны
               </button>
-            ) : null}
-          </div>
-          <div className="quick-replies">
-            {quickReplies.map((template, index) => (
-              <button
-                key={template}
-                type="button"
-                className="button button-ghost"
-                onClick={() => setOutgoingMessage(template)}
-              >
-                Шаблон {index + 1}
-              </button>
-            ))}
-          </div>
-          <label className="field">
-            <span>Новое сообщение</span>
-            <textarea
-              className="input textarea"
+              <div className="message-template-menu" role="menu">
+                {quickReplies.map((template, index) => (
+                  <button
+                    key={template}
+                    type="button"
+                    role="menuitem"
+                    className="message-template-item"
+                    onClick={() => setOutgoingMessage(template)}
+                    title={template}
+                  >
+                    Шаблон {index + 1}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <input
+              className="input message-compose-input"
               value={outgoingMessage}
               onChange={(event) => setOutgoingMessage(event.target.value)}
               placeholder="Введите сообщение"
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && !event.shiftKey && !sendMessageMutation.isPending && outgoingMessage.trim()) {
+                  event.preventDefault();
+                  sendMessageMutation.mutate();
+                }
+              }}
             />
-          </label>
-          <button
-            type="button"
-            className="button button-primary"
-            disabled={sendMessageMutation.isPending || !outgoingMessage.trim()}
-            onClick={() => sendMessageMutation.mutate()}
-          >
-            Отправить сообщение
-          </button>
-          {mode === "modal" && onCancel ? (
-            <button type="button" className="button button-ghost" onClick={onCancel}>
-              Закрыть чат
+            <button
+              type="button"
+              className="button button-primary button-small message-send-button"
+              aria-label="Отправить сообщение"
+              disabled={sendMessageMutation.isPending || !outgoingMessage.trim()}
+              onClick={() => sendMessageMutation.mutate()}
+            >
+              <span aria-hidden="true">➤</span>
+              <span className="visually-hidden">Отправить сообщение</span>
             </button>
-          ) : null}
-          <p className="route-hint">{status}</p>
-        </section>
+          </div>
+        </div>
       </div>
     </div>
   );

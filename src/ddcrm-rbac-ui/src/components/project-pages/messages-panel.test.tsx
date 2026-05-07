@@ -166,4 +166,29 @@ describe("ProjectMessagesPanel", () => {
     expect(await screen.findByText("Часть воркеров недоступна")).toBeInTheDocument();
     expect(await screen.findByText("WORKER_UNAVAILABLE: gateway timeout")).toBeInTheDocument();
   });
+
+  it("использует peerName как заголовок диалога вместо Без названия", async () => {
+    vi.mocked(runAccountActionRequest).mockImplementation(
+      async (_session, _accountId, action) => {
+        if (action !== "conversations.list") {
+          return {};
+        }
+
+        return {
+          items: [
+            {
+              conversationId: "conv-peer",
+              peerName: "ayder211",
+              lastMessagePreview: "Добрый вечер",
+            },
+          ],
+        };
+      },
+    );
+
+    renderPanel();
+
+    expect((await screen.findAllByText("ayder211")).length).toBeGreaterThan(0);
+    expect(screen.queryByText("Без названия")).not.toBeInTheDocument();
+  });
 });
