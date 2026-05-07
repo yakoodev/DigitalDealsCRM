@@ -1,0 +1,20 @@
+{
+  "screenshots": [
+    "F:\\ddcrm\\DigitalDealsCRM\\artifacts\\ui-review-2026-05-07\\01-dashboard-dark.png",
+    "F:\\ddcrm\\DigitalDealsCRM\\artifacts\\ui-review-2026-05-07\\02-dashboard-light.png",
+    "F:\\ddcrm\\DigitalDealsCRM\\artifacts\\ui-review-2026-05-07\\03-projects-light.png",
+    "F:\\ddcrm\\DigitalDealsCRM\\artifacts\\ui-review-2026-05-07\\04-project-overview-light.png",
+    "F:\\ddcrm\\DigitalDealsCRM\\artifacts\\ui-review-2026-05-07\\05-accounts-light.png",
+    "F:\\ddcrm\\DigitalDealsCRM\\artifacts\\ui-review-2026-05-07\\06-products-light.png",
+    "F:\\ddcrm\\DigitalDealsCRM\\artifacts\\ui-review-2026-05-07\\07-messages-light.png",
+    "F:\\ddcrm\\DigitalDealsCRM\\artifacts\\ui-review-2026-05-07\\08-admin-integrations-light.png",
+    "F:\\ddcrm\\DigitalDealsCRM\\artifacts\\ui-review-2026-05-07\\09-admin-integrations-dark.png"
+  ],
+  "checks": {
+    "headerHeightPx": 54,
+    "dropdownClosesOnOutsideClick": true
+  },
+  "urls": {
+    "project": "http://localhost:3000/projects/6e52dcc1-fe9d-48e7-9d51-16662569c25e"
+  }
+}

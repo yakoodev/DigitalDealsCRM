@@ -2,10 +2,9 @@
 
 import { useQueries } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
-import { AccountSelector } from "@/components/account-selector";
-import { ModulePageShell } from "@/components/layout/module-page-shell";
 import { RouteModalHost } from "@/components/layout/route-modal-host";
 import { ProjectMessageThreadPanel } from "@/components/project-pages/message-thread-panel";
+import { EmptyState } from "@/components/ui/page-primitives";
 import { useProjectAccounts } from "@/hooks/use-project-accounts";
 import { useRouteModal } from "@/hooks/use-route-modal";
 import type { ApiSession } from "@/lib/api-client";
@@ -95,11 +94,15 @@ export function ProjectMessagesPanel({ apiSession, projectId }: ProjectMessagesP
 
   const {
     accounts,
-    selectedAccountId,
     isLoading: accountsLoading,
     error: accountsError,
-    setSelectedAccountId,
   } = useProjectAccounts(apiSession, projectId);
+
+  const modalConversationKey =
+    modal === "thread" && modalAccountId && modalConversationId
+      ? `${modalAccountId}:${modalConversationId}`
+      : "";
+  const effectiveSelectedConversationKey = modalConversationKey || selectedConversationKey;
 
   const accountNameById = useMemo(
     () => new Map(accounts.map((account) => [account.id, account.displayName])),
@@ -176,55 +179,93 @@ export function ProjectMessagesPanel({ apiSession, projectId }: ProjectMessagesP
   }, [accountNameById, conversationSearch, conversations]);
 
   const selectedConversation = useMemo(() => {
-    if (!selectedConversationKey) {
+    if (!effectiveSelectedConversationKey) {
       return null;
     }
 
     return (
-      filteredConversations.find(({ accountId, row }) => {
+      conversations.find(({ accountId, row }) => {
         const conversationId = readFirstString(row, ["conversationId", "id"]);
-        return `${accountId}:${conversationId}` === selectedConversationKey;
+        return `${accountId}:${conversationId}` === effectiveSelectedConversationKey;
       }) ?? null
     );
-  }, [filteredConversations, selectedConversationKey]);
+  }, [conversations, effectiveSelectedConversationKey]);
 
   const unreadConversations = conversations.filter(({ row }) => readUnreadCount(row) > 0).length;
   const anyConversationsPending = conversationsQueries.some((query) => query.isPending);
   const anyConversationsFetching = conversationsQueries.some((query) => query.isFetching);
+  const selectedConversationId = selectedConversation
+    ? readFirstString(selectedConversation.row, ["conversationId", "id"])
+    : "";
+  const selectedConversationTitle = selectedConversation
+    ? readFirstString(selectedConversation.row, ["title", "subject", "counterparty", "peer"])
+    : "";
+  const selectedConversationPreview = selectedConversation
+    ? resolveConversationPreview(selectedConversation.row)
+    : "";
+  const selectedUnread = selectedConversation
+    ? readUnreadCount(selectedConversation.row)
+    : 0;
+  const selectedAccountName = selectedConversation
+    ? accountNameById.get(selectedConversation.accountId) ?? selectedConversation.accountId
+    : "";
 
   const refreshConversations = async () => {
     await Promise.all(conversationsQueries.map((query) => query.refetch()));
   };
 
   return (
-    <div className="page-stack" data-testid="project-messages-panel">
-      <ModulePageShell
-        title="Сообщения / Messages"
-        description="Список переписок загружается автоматически, а история чата открывается только в route-bound модалке."
-        stats={[
-          { label: "Переписок", value: String(conversations.length), hint: "Для текущего scope" },
-          { label: "Непрочитанных", value: String(unreadConversations), hint: "Требуют реакции" },
-          { label: "Аккаунтов", value: String(scopedAccountIds.length), hint: "В выборке" },
-        ]}
-        main={(
-          <section className="glass-card page-stack">
-            <div className="panel-title-row">
-              <h3>Список переписок</h3>
-              <button
-                type="button"
-                className="button button-ghost"
-                onClick={refreshConversations}
-                disabled={anyConversationsFetching || scopedAccountIds.length === 0}
-              >
-                Обновить
-              </button>
-            </div>
+    <div className="page-stack messages-page" data-testid="project-messages-panel">
+      <section className="page-head">
+        <div className="page-head__row">
+          <div>
+            <h1 className="page-title">Сообщения</h1>
+          </div>
+          <div className="inline">
+            <span className="status status--info">Непрочитано: {unreadConversations}</span>
+            <button
+              type="button"
+              className="button button-ghost button-small"
+              onClick={refreshConversations}
+              disabled={anyConversationsFetching || scopedAccountIds.length === 0}
+            >
+              Обновить
+            </button>
+          </div>
+        </div>
+      </section>
 
-            {scopedAccountIds.length === 0 ? (
-              <p className="route-hint">Добавьте аккаунт в проект, чтобы загрузить переписки.</p>
-            ) : anyConversationsPending ? (
-              <p className="route-hint">Загружаем список переписок по аккаунтам...</p>
-            ) : null}
+      <section className="messages-shell">
+        <section className="panel-card dialogs-panel">
+          <div className="dialogs-toolbar">
+            <div className="panel-title-row">
+              <h3>Диалоги</h3>
+              {anyConversationsPending ? <small className="route-hint">Загрузка...</small> : null}
+            </div>
+            <div className="dialogs-filters">
+              <select
+                className="input"
+                value={effectiveFilterId}
+                onChange={(event) => setAccountFilterId(event.target.value)}
+              >
+                <option value="all">Все аккаунты проекта</option>
+                {accounts.map((account) => (
+                  <option key={account.id} value={account.id}>
+                    {account.displayName} · {account.platform}
+                  </option>
+                ))}
+              </select>
+              <input
+                className="input"
+                value={conversationSearch}
+                onChange={(event) => setConversationSearch(event.target.value)}
+                placeholder="тема / контрагент / id"
+              />
+            </div>
+          </div>
+          <div className="dialogs-body">
+            {accountsError ? <p className="route-error">{accountsError.message}</p> : null}
+            {accountsLoading ? <p className="route-hint">Загружаем аккаунты...</p> : null}
 
             {accountQueryErrors.length > 0 ? (
               <section className="status-block status-warning">
@@ -242,10 +283,22 @@ export function ProjectMessagesPanel({ apiSession, projectId }: ProjectMessagesP
               </section>
             ) : null}
 
-            {!anyConversationsPending && filteredConversations.length === 0 ? (
-              <p className="route-hint">Переписки не найдены.</p>
-            ) : (
-              <ul className="entity-list">
+            {scopedAccountIds.length === 0 ? (
+              <EmptyState
+                title="Нет источников переписок"
+                description="Добавьте аккаунт в проект, чтобы загрузить диалоги."
+              />
+            ) : null}
+
+            {scopedAccountIds.length > 0 && !anyConversationsPending && filteredConversations.length === 0 ? (
+              <EmptyState
+                title="Переписки не найдены"
+                description="Проверьте фильтр и поисковый запрос."
+              />
+            ) : null}
+
+            {filteredConversations.length > 0 ? (
+              <ul className="dialogs-list">
                 {filteredConversations.map(({ accountId, row }, index) => {
                   const conversationId = readFirstString(row, ["conversationId", "id"]);
                   const title = readFirstString(row, ["title", "subject", "counterparty", "peer"]);
@@ -257,7 +310,7 @@ export function ProjectMessagesPanel({ apiSession, projectId }: ProjectMessagesP
                   return (
                     <li
                       key={itemKey}
-                      className={`entity-list-item ${selectedConversationKey === itemKey ? "is-selected" : ""}`}
+                      className={`dialog-item ${effectiveSelectedConversationKey === itemKey ? "is-active" : ""}`}
                     >
                       <button
                         type="button"
@@ -265,17 +318,17 @@ export function ProjectMessagesPanel({ apiSession, projectId }: ProjectMessagesP
                         onClick={() => setSelectedConversationKey(itemKey)}
                       >
                         <strong>{title || "Без названия"}</strong>
-                        <div className="entity-pills">
-                          <span className="entity-pill">{accountName}</span>
-                          <span className="entity-pill">{conversationId || "id: n/a"}</span>
+                        <div className="dialog-tags">
+                          <span className="chip">{accountName}</span>
+                          <span className="chip">{conversationId || "id: n/a"}</span>
+                          {unreadCount > 0 ? <span className="unread-badge">{unreadCount}</span> : null}
                         </div>
-                        <p>{preview || "Нет превью"}</p>
-                        {unreadCount > 0 ? <small className="badge badge-attention">{unreadCount} новых</small> : null}
+                        <p className="dialog-preview">{preview || "Нет превью"}</p>
                       </button>
                       {conversationId ? (
                         <button
                           type="button"
-                          className="button button-primary"
+                          className="button button-ghost button-small"
                           data-testid={`open-thread-${accountId}-${conversationId}`}
                           onClick={() =>
                             openModal("thread", {
@@ -284,108 +337,78 @@ export function ProjectMessagesPanel({ apiSession, projectId }: ProjectMessagesP
                             })
                           }
                         >
-                          Открыть чат
+                          Открыть
                         </button>
-                      ) : (
-                        <span className="route-hint">ID переписки недоступен</span>
-                      )}
+                      ) : null}
                     </li>
                   );
                 })}
               </ul>
-            )}
-          </section>
-        )}
-        side={(
-          <section className="glass-card page-stack">
-            <h3>Фильтры и контекст</h3>
-            {accountsError ? <p className="route-error">{accountsError.message}</p> : null}
+            ) : null}
+          </div>
+        </section>
 
-            <AccountSelector
-              accounts={accounts}
-              selectedAccountId={selectedAccountId}
-              onChange={setSelectedAccountId}
-              isLoading={accountsLoading}
+        <section className="panel-card chat-panel">
+          {!selectedConversation || !selectedConversationId ? (
+            <EmptyState
+              title="Переписка не выбрана"
+              description="Выберите диалог слева, чтобы открыть историю и отправить сообщение."
             />
+          ) : (
+            <>
+              <div className="chat-head">
+                <div className="chat-head__main">
+                  <h2 className="chat-head__title">{selectedConversationTitle || "Чат переписки"}</h2>
+                  <p className="dialog-meta">{selectedAccountName}</p>
+                </div>
+                <div className="chat-actions">
+                  <button
+                    type="button"
+                    className="button button-ghost button-small"
+                    onClick={() =>
+                      openModal("thread", {
+                        accountId: selectedConversation.accountId,
+                        conversationId: selectedConversationId,
+                      })
+                    }
+                  >
+                    Открыть в модалке
+                  </button>
+                </div>
+              </div>
 
-            <label className="field">
-              <span>Источник данных</span>
-              <select
-                className="input"
-                value={effectiveFilterId}
-                onChange={(event) => setAccountFilterId(event.target.value)}
-              >
-                <option value="all">Все аккаунты проекта</option>
-                {accounts.map((account) => (
-                  <option key={account.id} value={account.id}>
-                    {account.displayName} · {account.platform}
-                  </option>
-                ))}
-              </select>
-            </label>
+              <div className="chat-context">
+                <div className="context-grid">
+                  <div className="context-card">
+                    <span className="context-label">Account</span>
+                    <span className="context-value">{selectedAccountName}</span>
+                  </div>
+                  <div className="context-card">
+                    <span className="context-label">Conversation ID</span>
+                    <span className="context-value">{selectedConversationId}</span>
+                  </div>
+                  <div className="context-card">
+                    <span className="context-label">Unread</span>
+                    <span className="context-value">{selectedUnread}</span>
+                  </div>
+                  <div className="context-card">
+                    <span className="context-label">Preview</span>
+                    <span className="context-value">{selectedConversationPreview || "n/a"}</span>
+                  </div>
+                </div>
+              </div>
 
-            <label className="field">
-              <span>Поиск</span>
-              <input
-                className="input"
-                value={conversationSearch}
-                onChange={(event) => setConversationSearch(event.target.value)}
-                placeholder="тема / контрагент / id"
+              <ProjectMessageThreadPanel
+                apiSession={apiSession}
+                projectId={projectId}
+                accountId={selectedConversation.accountId}
+                conversationId={selectedConversationId}
+                mode="embedded"
               />
-            </label>
-
-            {selectedConversation ? (
-              <>
-                <h4>Выбранная переписка</h4>
-                <dl className="kv-list">
-                  <div>
-                    <dt>Аккаунт</dt>
-                    <dd>
-                      {accountNameById.get(selectedConversation.accountId) ?? selectedConversation.accountId}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt>Тема</dt>
-                    <dd>
-                      {readFirstString(selectedConversation.row, [
-                        "title",
-                        "subject",
-                        "counterparty",
-                        "peer",
-                      ]) || "n/a"}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt>Preview</dt>
-                    <dd>{resolveConversationPreview(selectedConversation.row) || "n/a"}</dd>
-                  </div>
-                  <div>
-                    <dt>Unread</dt>
-                    <dd>{String(readUnreadCount(selectedConversation.row))}</dd>
-                  </div>
-                </dl>
-                <details className="details-block">
-                  <summary>Technical details</summary>
-                  <dl className="kv-list">
-                    <div>
-                      <dt>Conversation ID</dt>
-                      <dd>{readFirstString(selectedConversation.row, ["conversationId", "id"]) || "n/a"}</dd>
-                    </div>
-                    <div>
-                      <dt>Worker request ID</dt>
-                      <dd>{toReadableValue(selectedConversation.row.requestId) || "n/a"}</dd>
-                    </div>
-                  </dl>
-                </details>
-              </>
-            ) : (
-              <p className="route-hint">
-                Выберите переписку в списке. История сообщений грузится только после открытия чата.
-              </p>
-            )}
-          </section>
-        )}
-      />
+            </>
+          )}
+        </section>
+      </section>
 
       <RouteModalHost
         isOpen={modal === "thread"}

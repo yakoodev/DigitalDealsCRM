@@ -14,7 +14,7 @@ interface ProjectMessageThreadPanelProps {
   projectId: string;
   accountId: string;
   conversationId: string;
-  mode?: "page" | "modal";
+  mode?: "page" | "modal" | "embedded";
   onCancel?: () => void;
 }
 
@@ -175,6 +175,9 @@ export function ProjectMessageThreadPanel({
     "Спасибо за сообщение. Сейчас уточню детали по товару.",
     "Принято. Подтверждаю, что запрос взят в работу.",
   ];
+  const isEmbedded = mode === "embedded";
+  const showFullContext = mode !== "embedded";
+  const headerSubtitle = "История и отправка сообщения вынесены в отдельный route, чтобы обзорная страница сообщений оставалась лёгкой.";
 
   if (!accountId || !conversationId) {
     return (
@@ -204,32 +207,32 @@ export function ProjectMessageThreadPanel({
       {mode === "page" ? (
         <header className="page-section-header">
           <h2>Чат переписки</h2>
-          <p>
-            История и отправка сообщения вынесены в отдельный route, чтобы обзорная
-            страница сообщений оставалась лёгкой.
-          </p>
+          <p>{headerSubtitle}</p>
         </header>
       ) : null}
 
-      <section className="summary-grid">
-        <article className="summary-card">
-          <p>Conversation ID</p>
-          <strong>{conversationId}</strong>
-          <small>Worker-thread идентификатор</small>
-        </article>
-        <article className="summary-card">
-          <p>Аккаунт</p>
-          <strong>{activeAccount?.displayName ?? accountId}</strong>
-          <small>{activeAccount?.platform ?? "unknown"}</small>
-        </article>
-        <article className="summary-card">
-          <p>Сообщений в истории</p>
-          <strong>{messagesQuery.isPending ? "…" : messages.length}</strong>
-          <small>С автосинхронизацией каждые 12 секунд</small>
-        </article>
-      </section>
+      {!isEmbedded ? (
+        <section className="summary-grid">
+          <article className="summary-card">
+            <p>Conversation ID</p>
+            <strong>{conversationId}</strong>
+            <small>Worker-thread идентификатор</small>
+          </article>
+          <article className="summary-card">
+            <p>Аккаунт</p>
+            <strong>{activeAccount?.displayName ?? accountId}</strong>
+            <small>{activeAccount?.platform ?? "unknown"}</small>
+          </article>
+          <article className="summary-card">
+            <p>Сообщений в истории</p>
+            <strong>{messagesQuery.isPending ? "…" : messages.length}</strong>
+            <small>С автосинхронизацией каждые 12 секунд</small>
+          </article>
+        </section>
+      ) : null}
 
-      <section className="panel-card">
+      {showFullContext ? (
+        <section className="panel-card">
           <div className="panel-title-row">
             <h3>Контекст чата</h3>
             {mode === "page" ? (
@@ -249,10 +252,11 @@ export function ProjectMessageThreadPanel({
           onChange={setSelectedAccountId}
           isLoading={accountsLoading}
         />
-      </section>
+        </section>
+      ) : null}
 
-      <div className="split-grid">
-        <section className="panel-card">
+      <div className={isEmbedded ? "thread-embedded-stack" : "split-grid"}>
+        <section className="panel-card page-stack">
           <div className="panel-title-row">
             <h3>История сообщений</h3>
             <button
@@ -305,8 +309,15 @@ export function ProjectMessageThreadPanel({
           ) : null}
         </section>
 
-        <section className="panel-card">
-          <h3>Отправить сообщение</h3>
+        <section className="panel-card page-stack">
+          <div className="panel-title-row">
+            <h3>Отправить сообщение</h3>
+            {mode === "page" && onCancel ? (
+              <button type="button" className="button button-ghost" onClick={onCancel}>
+                Закрыть чат
+              </button>
+            ) : null}
+          </div>
           <div className="quick-replies">
             {quickReplies.map((template, index) => (
               <button

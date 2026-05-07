@@ -17,6 +17,7 @@ interface ProjectAccountCreatePanelProps {
   apiSession: ApiSession;
   projectId: string;
   activeRole: ProjectRole;
+  canOpenIntegrationGrants?: boolean;
   mode?: "page" | "modal";
   onCompleted?: (account: Account) => void;
   onCancel?: () => void;
@@ -54,6 +55,7 @@ export function ProjectAccountCreatePanel({
   apiSession,
   projectId,
   activeRole,
+  canOpenIntegrationGrants = false,
   mode = "page",
   onCompleted,
   onCancel,
@@ -334,11 +336,15 @@ export function ProjectAccountCreatePanel({
             Для проекта нет доступных типов аккаунтов. Обычно это значит, что админ не выдал платформенный grant
             (например, <code>platform.funpay</code>) на странице интеграций.
           </p>
-          <div className="panel-actions">
-            <Link href="/admin/account-manager/integrations" className="button button-ghost">
-              Открыть выдачу integration grants
-            </Link>
-          </div>
+          {canOpenIntegrationGrants ? (
+            <div className="panel-actions">
+              <Link href="/admin/account-manager/integrations" className="button button-ghost">
+                Открыть выдачу integration grants
+              </Link>
+            </div>
+          ) : (
+            <p className="route-hint">Попросите system admin выдать платформенный grant, чтобы открыть создание аккаунта.</p>
+          )}
         </section>
       ) : null}
 

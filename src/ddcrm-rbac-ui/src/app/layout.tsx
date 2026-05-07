@@ -16,9 +16,9 @@ const ibmPlexMono = IBM_Plex_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "DDCRM Platform",
+  title: "DigitalDeals CRM",
   description:
-    "Платформенный UI DDCRM: авторизация, проекты, аккаунты, товары, сообщения и schema-driven workflow.",
+    "Dark CRM interface for projects, accounts, products, messages, workflows and admin control plane.",
 };
 
 export default function RootLayout({

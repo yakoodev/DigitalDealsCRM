@@ -77,9 +77,7 @@ describe("ProjectShell", () => {
     renderShell();
 
     await waitFor(() => {
-      expect(
-        screen.getByRole("heading", { name: "Project One", level: 1 }),
-      ).toBeInTheDocument();
+      expect(screen.getByText(/Project One/i)).toBeInTheDocument();
     });
 
     expect(screen.getByTestId("theme-option-system")).toBeInTheDocument();

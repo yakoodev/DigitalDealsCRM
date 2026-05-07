@@ -1,11 +1,14 @@
 "use client";
 
-import { useQueries } from "@tanstack/react-query";
+import { useQueries, useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { useMemo } from "react";
-import { ModulePageShell } from "@/components/layout/module-page-shell";
 import { useProjectAccounts } from "@/hooks/use-project-accounts";
-import { runAccountActionRequest, type ApiSession } from "@/lib/api-client";
+import {
+  listProjectIntegrationsStatusRequest,
+  runAccountActionRequest,
+  type ApiSession,
+} from "@/lib/api-client";
 import { extractObjectRows, isRecord } from "@/lib/worker-result";
 
 interface ProjectOverviewPanelProps {
@@ -48,14 +51,67 @@ function readUnreadCount(conversation: Record<string, unknown>) {
 export function ProjectOverviewPanel({ apiSession, projectId }: ProjectOverviewPanelProps) {
   const { accounts, isLoading, error } = useProjectAccounts(apiSession, projectId);
 
-  const activeCount = accounts.filter((account) => account.businessStatus === "active").length;
-  const pausedCount = accounts.length - activeCount;
-  const proxyConfiguredCount = accounts.filter((account) => account.proxyConfigured).length;
-  const workerReadyCount = accounts.filter((account) => account.businessStatus === "active").length;
+  const integrationsStatusQuery = useQuery({
+    queryKey: ["project-integrations-status", apiSession.baseUrl, apiSession.token, projectId],
+    queryFn: () => listProjectIntegrationsStatusRequest(apiSession, projectId),
+    staleTime: 10_000,
+  });
+
+  const integrationRuntimeAccountIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const item of integrationsStatusQuery.data?.items ?? []) {
+      if (item.runtimeAccountId?.trim()) {
+        ids.add(item.runtimeAccountId.trim());
+      }
+    }
+    return ids;
+  }, [integrationsStatusQuery.data?.items]);
+
+  const integrationPlatformHints = useMemo(() => {
+    const hints = new Set<string>();
+
+    for (const item of integrationsStatusQuery.data?.items ?? []) {
+      if (item.integrationType !== "worker") {
+        continue;
+      }
+
+      const parts = item.integrationKey
+        .trim()
+        .toLowerCase()
+        .split(/[^a-z0-9]+/g)
+        .filter((part) => part.length > 0);
+
+      if (parts.length > 0) {
+        hints.add(parts[0]);
+      }
+    }
+
+    return hints;
+  }, [integrationsStatusQuery.data?.items]);
+
+  const visibleAccounts = useMemo(
+    () =>
+      accounts.filter((account) => {
+        if (integrationRuntimeAccountIds.has(account.id)) {
+          return false;
+        }
+
+        const normalizedPlatform = account.platform.trim().toLowerCase();
+        if (!normalizedPlatform) {
+          return true;
+        }
+
+        return !integrationPlatformHints.has(normalizedPlatform);
+      }),
+    [accounts, integrationPlatformHints, integrationRuntimeAccountIds],
+  );
+
+  const activeCount = visibleAccounts.filter((account) => account.businessStatus === "active").length;
+  const proxyConfiguredCount = visibleAccounts.filter((account) => account.proxyConfigured).length;
 
   const platformStats = useMemo(() => {
     const map = new Map<string, number>();
-    for (const account of accounts) {
+    for (const account of visibleAccounts) {
       const key = account.platform.toLowerCase();
       map.set(key, (map.get(key) ?? 0) + 1);
     }
@@ -63,11 +119,11 @@ export function ProjectOverviewPanel({ apiSession, projectId }: ProjectOverviewP
     return [...map.entries()]
       .map(([platform, count]) => ({ platform, count }))
       .sort((left, right) => right.count - left.count || left.platform.localeCompare(right.platform));
-  }, [accounts]);
+  }, [visibleAccounts]);
 
-  const recentAccounts = accounts.slice(0, 6);
+  const recentAccounts = visibleAccounts.slice(0, 6);
   const productsQueries = useQueries({
-    queries: accounts.map((account) => ({
+    queries: visibleAccounts.map((account) => ({
       queryKey: [
         "overview-products.list",
         apiSession.baseUrl,
@@ -86,7 +142,7 @@ export function ProjectOverviewPanel({ apiSession, projectId }: ProjectOverviewP
   });
 
   const conversationsQueries = useQueries({
-    queries: accounts.map((account) => ({
+    queries: visibleAccounts.map((account) => ({
       queryKey: [
         "overview-conversations.list",
         apiSession.baseUrl,
@@ -105,7 +161,7 @@ export function ProjectOverviewPanel({ apiSession, projectId }: ProjectOverviewP
   });
 
   const workerSnapshots = useMemo<AccountWorkerSnapshot[]>(() => {
-    return accounts.map((account, index) => {
+    return visibleAccounts.map((account, index) => {
       const productPayload = productsQueries[index]?.data;
       const conversationPayload = conversationsQueries[index]?.data;
 
@@ -129,10 +185,10 @@ export function ProjectOverviewPanel({ apiSession, projectId }: ProjectOverviewP
         unreadCount,
       };
     });
-  }, [accounts, conversationsQueries, productsQueries]);
+  }, [visibleAccounts, conversationsQueries, productsQueries]);
 
   const workerWarnings = useMemo<WorkerWarning[]>(() => {
-    return accounts.flatMap((account, index) => {
+    return visibleAccounts.flatMap((account, index) => {
       const nextWarnings: WorkerWarning[] = [];
 
       const productsError = productsQueries[index]?.error;
@@ -163,11 +219,11 @@ export function ProjectOverviewPanel({ apiSession, projectId }: ProjectOverviewP
 
       return nextWarnings;
     });
-  }, [accounts, conversationsQueries, productsQueries]);
+  }, [visibleAccounts, conversationsQueries, productsQueries]);
 
   const degradedAccountIds = new Set(workerWarnings.map((warning) => warning.accountId));
   const degradedWorkersCount = degradedAccountIds.size;
-  const healthyWorkersCount = Math.max(0, accounts.length - degradedWorkersCount);
+  const healthyWorkersCount = Math.max(0, visibleAccounts.length - degradedWorkersCount);
 
   const productsTotal = workerSnapshots.reduce((sum, entry) => sum + entry.productsCount, 0);
   const conversationsTotal = workerSnapshots.reduce(
@@ -189,57 +245,138 @@ export function ProjectOverviewPanel({ apiSession, projectId }: ProjectOverviewP
 
   return (
     <div className="page-stack" data-testid="project-overview-panel">
-      <ModulePageShell
-        title="Обзор проекта / Overview"
-        description="Краткая статистика проекта, быстрые действия и переходы по рабочим модулям."
-        actions={(
-          <div className="panel-actions">
+      <section className="page-head">
+        <div className="page-head__row">
+          <div>
+            <h1 className="page-title">Обзор проекта</h1>
+          </div>
+          <div className="inline">
             <button
               type="button"
-              className="button button-ghost"
+              className="button button-ghost button-small"
               onClick={refreshWorkerData}
-              disabled={workerDataFetching || accounts.length === 0}
+              disabled={workerDataFetching || visibleAccounts.length === 0}
             >
               Обновить данные
             </button>
-            <Link className="button button-primary" href={`/projects/${projectId}/accounts`}>
-              Открыть аккаунты
-            </Link>
-            <Link className="button button-ghost" href={`/projects/${projectId}/products`}>
-              Открыть товары
-            </Link>
-            <Link className="button button-ghost" href={`/projects/${projectId}/messages`}>
-              Открыть сообщения
+            <Link className="button button-primary button-small" href={`/projects/${projectId}/accounts?modal=create`}>
+              ＋ Аккаунт
             </Link>
           </div>
-        )}
-        stats={[
-          { label: "Аккаунтов", value: String(accounts.length), hint: "Всего в проекте" },
-          { label: "Товаров", value: String(productsTotal), hint: "Агрегировано по воркерам" },
-          { label: "Переписок", value: String(conversationsTotal), hint: "Список диалогов" },
-          { label: "Непрочитанные", value: String(unreadTotal), hint: "Требуют реакции" },
-        ]}
-        main={(
-          <section className="glass-card page-stack">
-            <div className="panel-title-row">
-              <h3>Сводка проекта</h3>
-              <span className="pill">{activeCount} active</span>
+        </div>
+      </section>
+
+      <section aria-label="Сводка проекта" className="card workspace-card mb-4">
+        <div className="project-summary">
+          <div>
+            <div className="inline mb-2">
+              {platformStats.slice(0, 4).map((entry) => (
+                <span key={`badge-${entry.platform}`} className="badge">
+                  {entry.platform}
+                </span>
+              ))}
+              <span className={`status ${workerWarnings.length === 0 ? "status--ok" : "status--warn"}`}>
+                {workerWarnings.length === 0 ? "Все сервисы online" : "Есть предупреждения"}
+              </span>
+            </div>
+            <div className="project-meta">
+              <span className="chip">Команда: {Math.max(1, visibleAccounts.length)}</span>
+              <span className="chip">Воркеры: {healthyWorkersCount}</span>
+              <span className="chip">{workerDataFetching ? "Синхронизация..." : "Данные обновлены"}</span>
+            </div>
+          </div>
+          <div className="stack">
+            <div>
+              <div className="label">Project ID</div>
+              <div className="project-id">{projectId}</div>
+            </div>
+            <div className="inline">
+              <Link className="button button-ghost button-small" href={`/projects/${projectId}/accounts`}>
+                Открыть аккаунты
+              </Link>
+              <Link className="button button-ghost button-small" href={`/projects/${projectId}/messages`}>
+                Сообщения
+              </Link>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section aria-label="Ключевые метрики" className="compact-kpi-grid project-overview-kpi-grid">
+        <article className="compact-kpi">
+          <div className="compact-kpi__icon">◉</div>
+          <div className="compact-kpi__value">{visibleAccounts.length}</div>
+          <div className="compact-kpi__label">аккаунтов</div>
+        </article>
+        <article className="compact-kpi">
+          <div className="compact-kpi__icon">▣</div>
+          <div className="compact-kpi__value">{productsTotal}</div>
+          <div className="compact-kpi__label">товаров</div>
+        </article>
+        <article className="compact-kpi">
+          <div className="compact-kpi__icon">◇</div>
+          <div className="compact-kpi__value">{workerSnapshots.length}</div>
+          <div className="compact-kpi__label">воркер-срезов</div>
+        </article>
+        <article className="compact-kpi">
+          <div className="compact-kpi__icon">✉</div>
+          <div className="compact-kpi__value">{conversationsTotal}</div>
+          <div className="compact-kpi__label">сообщения</div>
+        </article>
+        <article className="compact-kpi">
+          <div className="compact-kpi__icon">!</div>
+          <div className="compact-kpi__value">{unreadTotal}</div>
+          <div className="compact-kpi__label">непрочитано</div>
+        </article>
+        <article className="compact-kpi">
+          <div className="compact-kpi__icon">⚙</div>
+          <div className="compact-kpi__value">{healthyWorkersCount}</div>
+          <div className="compact-kpi__label">healthy workers</div>
+        </article>
+      </section>
+
+      <section className="layout-grid">
+        <div className="col-12 stack">
+          <article className="card">
+            <div className="card__head">
+              <div>
+                <h2 className="card__title">Аккаунты</h2>
+                <div className="card__meta">Краткий статус. Полный список — на отдельной странице.</div>
+              </div>
+              <Link className="button button-ghost button-small" href={`/projects/${projectId}/accounts`}>
+                Открыть
+              </Link>
+            </div>
+            <div className="mini-stat-list">
+              <div className="mini-stat"><span>Online</span><strong>{activeCount}</strong></div>
+              <div className="mini-stat"><span>Warning</span><strong>{workerWarnings.length}</strong></div>
+              <div className="mini-stat"><span>Error</span><strong>{degradedWorkersCount}</strong></div>
+              <div className="mini-stat"><span>Proxy configured</span><strong>{proxyConfiguredCount}</strong></div>
+            </div>
+          </article>
+
+          <article className="card">
+            <div className="card__head">
+              <div>
+                <h2 className="card__title">Срез по воркерам</h2>
+                <div className="card__meta">Текущая активность по товарам и перепискам.</div>
+              </div>
+              <Link className="button button-ghost button-small" href={`/projects/${projectId}/messages`}>
+                Сообщения
+              </Link>
             </div>
 
             {error ? <p className="route-error">{error.message}</p> : null}
             {isLoading ? <p className="route-hint">Собираем статистику проекта...</p> : null}
-            {!isLoading && accounts.length > 0 && workerDataLoading ? (
+            {!isLoading && visibleAccounts.length > 0 && workerDataLoading ? (
               <p className="route-hint">Подтягиваем данные с воркеров (товары + переписки)...</p>
             ) : null}
-            {!isLoading && accounts.length > 0 && workerWarnings.length > 0 ? (
+            {!isLoading && visibleAccounts.length > 0 && workerWarnings.length > 0 ? (
               <section className="status-block status-warning">
                 <h4>Часть воркеров ответила с ошибкой</h4>
                 <ul className="entity-list compact-list">
                   {workerWarnings.map((warning) => (
-                    <li
-                      key={`${warning.accountId}-${warning.module}`}
-                      className="entity-list-item"
-                    >
+                    <li key={`${warning.accountId}-${warning.module}`} className="entity-list-item">
                       <div>
                         <strong>
                           {warning.accountName} · {warning.module}
@@ -252,135 +389,109 @@ export function ProjectOverviewPanel({ apiSession, projectId }: ProjectOverviewP
               </section>
             ) : null}
 
-            {!isLoading && !error && accounts.length === 0 ? (
+            {!isLoading && !error && visibleAccounts.length === 0 ? (
               <p className="route-hint">
                 В проекте пока нет аккаунтов. Добавьте первый аккаунт в модуле `Accounts`.
               </p>
             ) : null}
 
-            {!isLoading && !error && platformStats.length > 0 ? (
-              <>
-                <h4>Платформы</h4>
-                <ul className="entity-list compact-list">
-                  {platformStats.map((entry) => (
-                    <li key={`platform-${entry.platform}`} className="entity-list-item">
-                      <div>
-                        <strong>{entry.platform}</strong>
-                        <p>{entry.count} аккаунт(ов)</p>
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              </>
-            ) : null}
-
             {!isLoading && !error && workerSnapshots.length > 0 ? (
-              <>
-                <h4>Срез по воркерам</h4>
-                <ul className="entity-list">
-                  {workerSnapshots.map((snapshot) => (
-                    <li key={snapshot.accountId} className="entity-list-item">
-                      <div>
+              <div className="item-list">
+                {workerSnapshots.map((snapshot) => (
+                  <article key={snapshot.accountId} className="item-row">
+                    <div className="item-row__main">
+                      <div className="item-row__head">
                         <strong>{snapshot.accountName}</strong>
-                        <div className="entity-pills">
-                          <span className="entity-pill">{snapshot.platform}</span>
-                          <span className="entity-pill">Товары: {snapshot.productsCount}</span>
-                          <span className="entity-pill">Переписки: {snapshot.conversationsCount}</span>
-                          <span className="entity-pill">
-                            Непрочитанные: {snapshot.unreadCount}
-                          </span>
-                        </div>
+                        <span className="badge">{snapshot.platform}</span>
                       </div>
-                      <div className="inline-actions">
-                        <Link
-                          className="button button-ghost"
-                          href={`/projects/${projectId}/accounts?modal=manage&accountId=${snapshot.accountId}`}
-                        >
-                          Управлять
-                        </Link>
+                      <div className="item-row__stats">
+                        <span className="chip">Товары: {snapshot.productsCount}</span>
+                        <span className="chip">Переписки: {snapshot.conversationsCount}</span>
+                        <span className="chip">Непрочитанные: {snapshot.unreadCount}</span>
                       </div>
-                    </li>
-                  ))}
-                </ul>
-              </>
+                    </div>
+                    <div className="inline-actions">
+                      <Link
+                        className="button button-ghost button-small"
+                        href={`/projects/${projectId}/accounts?modal=manage&accountId=${snapshot.accountId}`}
+                      >
+                        Управлять
+                      </Link>
+                    </div>
+                  </article>
+                ))}
+              </div>
             ) : null}
 
             {!isLoading && !error && recentAccounts.length > 0 ? (
-              <>
-                <h4>Последние аккаунты</h4>
-                <ul className="entity-list compact-list">
-                  {recentAccounts.map((account) => (
-                    <li key={account.id} className="entity-list-item">
-                      <div>
-                        <strong>{account.displayName}</strong>
-                        <div className="entity-pills">
-                          <span className="entity-pill">{account.platform}</span>
-                          <span className="entity-pill">{account.businessStatus}</span>
-                          <span className="entity-pill">{account.id}</span>
-                        </div>
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              </>
+              <div className="hint-list">
+                {recentAccounts.map((account) => (
+                  <div key={account.id} className="hint-item">
+                    <div className="hint-row">
+                      <strong>{account.displayName}</strong>
+                      <span className="chip">{account.businessStatus}</span>
+                    </div>
+                    <div className="list-note">{account.id}</div>
+                  </div>
+                ))}
+              </div>
             ) : null}
-          </section>
-        )}
-        side={(
-          <section className="glass-card page-stack">
-            <h3>Быстрые действия</h3>
-            <p className="route-hint">
-              Боковые модули открываются без потери контекста проекта.
-            </p>
+          </article>
 
-            <div className="panel-actions">
-              <Link className="button button-primary" href={`/projects/${projectId}/accounts?modal=create`}>
-                Добавить аккаунт
-              </Link>
-              <Link className="button button-ghost" href={`/projects/${projectId}/products`}>
-                К товарам
-              </Link>
-              <Link className="button button-ghost" href={`/projects/${projectId}/messages`}>
-                К сообщениям
-              </Link>
+          <article className="card">
+            <div className="card__head">
+              <div>
+                <h2 className="card__title">Последняя активность</h2>
+                <div className="card__meta">События и быстрые переходы по модулям проекта.</div>
+              </div>
+              <div className="inline">
+                <Link className="button button-ghost button-small" href={`/projects/${projectId}/offers`}>
+                  Офферы
+                </Link>
+                <Link className="button button-ghost button-small" href={`/projects/${projectId}/products`}>
+                  Товары
+                </Link>
+              </div>
             </div>
 
-            <section className="status-block">
-              <h4>Операционный статус</h4>
-              <dl className="kv-list">
-                <div>
-                  <dt>Project ID</dt>
-                  <dd>{projectId}</dd>
-                </div>
-                <div>
-                  <dt>Активные аккаунты</dt>
-                  <dd>{activeCount}</dd>
-                </div>
-                <div>
-                  <dt>Неактивные аккаунты</dt>
-                  <dd>{pausedCount}</dd>
-                </div>
-                <div>
-                  <dt>Worker ready</dt>
-                  <dd>{workerReadyCount}</dd>
-                </div>
-                <div>
-                  <dt>Healthy workers</dt>
-                  <dd>{healthyWorkersCount}</dd>
-                </div>
-                <div>
-                  <dt>Degraded workers</dt>
-                  <dd>{degradedWorkersCount}</dd>
-                </div>
-                <div>
-                  <dt>Proxy configured</dt>
-                  <dd>{proxyConfiguredCount}</dd>
-                </div>
-              </dl>
-            </section>
-          </section>
-        )}
-      />
+            {workerWarnings.length > 0 ? (
+              <div className="activity-list">
+                {workerWarnings.slice(0, 4).map((warning) => (
+                  <div key={`activity-warning-${warning.accountId}-${warning.module}`} className="activity-item">
+                    <div className="activity-row">
+                      <strong>{warning.accountName}</strong>
+                      <span className="status status--warn">{warning.module}</span>
+                    </div>
+                    <div className="list-note">{warning.message}</div>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+
+            {workerWarnings.length === 0 && workerSnapshots.length > 0 ? (
+              <div className="activity-list">
+                {workerSnapshots.slice(0, 4).map((snapshot) => (
+                  <div key={`activity-snapshot-${snapshot.accountId}`} className="activity-item">
+                    <div className="activity-row">
+                      <strong>{snapshot.accountName}</strong>
+                      <span className="status status--ok">online</span>
+                    </div>
+                    <div className="list-note">
+                      Товары: {snapshot.productsCount} · Переписки: {snapshot.conversationsCount} · Непрочитанные: {snapshot.unreadCount}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+
+            {!isLoading && visibleAccounts.length === 0 ? (
+              <p className="route-hint">
+                Пока нет событий: добавьте первый аккаунт и откройте модуль Offers/Flow для запуска сценариев.
+              </p>
+            ) : null}
+          </article>
+        </div>
+      </section>
     </div>
   );
 }

@@ -1,39 +1,21 @@
 "use client";
 
-import { useParams } from "next/navigation";
-import { ProjectWorkflowsPanel } from "@/components/project-pages/project-workflows-panel";
-import { ProjectShell } from "@/components/project-shell";
-import { useSessionGuard } from "@/lib/use-session-guard";
+import { useEffect } from "react";
+import { useParams, useRouter } from "next/navigation";
 
 export default function ProjectWorkflowsRoute() {
   const params = useParams<{ projectId: string }>();
-  const projectId = params.projectId;
-  const { session, logout } = useSessionGuard();
+  const router = useRouter();
 
-  if (!session) {
-    return (
-      <main className="loading-shell">
-        <section className="glass-card">
-          <h1>Проверяем сессию...</h1>
-        </section>
-      </main>
-    );
-  }
+  useEffect(() => {
+    router.replace(`/projects/${params.projectId}/offers`);
+  }, [params.projectId, router]);
 
   return (
-    <ProjectShell
-      session={session}
-      projectId={projectId}
-      activeTab="workflows"
-      onLogout={logout}
-    >
-      {({ apiSession, project }) => (
-        <ProjectWorkflowsPanel
-          apiSession={apiSession}
-          projectId={project.id}
-          currentRole={session.profile.role}
-        />
-      )}
-    </ProjectShell>
+    <main className="loading-shell">
+      <section className="glass-card">
+        <h1>Перенаправляем в Offers...</h1>
+      </section>
+    </main>
   );
 }

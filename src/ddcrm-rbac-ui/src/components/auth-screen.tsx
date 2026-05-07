@@ -55,6 +55,7 @@ export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
   };
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void loadProviders();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -140,42 +141,21 @@ export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
 
   return (
     <main className="auth-layout" data-testid="auth-screen">
-      <section className="auth-hero-card">
-        <p className="module-page-kicker">DigitalDeals CRM</p>
-        <h1>Control plane для проектов, аккаунтов и воркеров</h1>
-        <p>
-          После входа вы попадете на `/dashboard`, затем сможете открыть `/projects` и
-          управлять аккаунтами, templates и интеграциями.
-        </p>
-        <div className="auth-hero-stats">
-          <article>
-            <span>Flow</span>
-            <strong>Register/Login → Dashboard → Projects</strong>
-          </article>
-          <article>
-            <span>Theme</span>
-            <strong>System / Light / Dark</strong>
-          </article>
-          <article>
-            <span>Auth</span>
-            <strong>Email + Password (+ integration-ready)</strong>
-          </article>
-        </div>
-      </section>
-
       <section className="auth-form-card">
-        <ThemeToggle />
+        <div className="auth-form-head">
+          <div className="auth-brand-block">
+            <div className="auth-logo-slot" aria-hidden="true">
+              <span>LOGO</span>
+            </div>
+            <div className="auth-brand-copy">
+              <span className="auth-brand-name">DigitalDeals CRM</span>
+              <span className="auth-brand-caption">место под логотип</span>
+            </div>
+          </div>
+          <h1>Вход в рабочее пространство</h1>
+        </div>
 
-        <label className="field">
-          <span>Core API Base URL</span>
-          <input
-            className="input"
-            value={baseUrl}
-            onChange={(event) => setBaseUrl(event.target.value)}
-            placeholder="http://localhost:15073"
-            data-testid="auth-base-url"
-          />
-        </label>
+        <ThemeToggle />
 
         {!requiresPasswordChange ? (
           <>
@@ -223,7 +203,7 @@ export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
 
             {authMode === "register" ? (
               <label className="field">
-                <span>Display name (optional)</span>
+                <span>Display name (опционально)</span>
                 <input
                   className="input"
                   value={displayName}
@@ -234,31 +214,6 @@ export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
               </label>
             ) : null}
 
-            <section className="hint-block">
-              <p>
-                JWT issuer/audience: <strong>{jwtMeta.issuer}</strong> /{" "}
-                <strong>{jwtMeta.audience}</strong>
-              </p>
-              <p>
-                Planned providers:{" "}
-                {providers.length > 0
-                  ? providers
-                      .filter((item) => item.provider !== "local")
-                      .map((item) => `${item.displayName} (${item.status})`)
-                      .join(", ")
-                  : "loading..."}
-              </p>
-              <button
-                type="button"
-                className="button"
-                onClick={loadProviders}
-                disabled={isLoadingProviders}
-                data-testid="auth-refresh-providers"
-              >
-                Обновить providers
-              </button>
-            </section>
-
             <button
               type="button"
               className="button button-primary"
@@ -268,6 +223,46 @@ export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
             >
               {authMode === "register" ? "Создать аккаунт" : "Войти"}
             </button>
+
+            <details className="details-block">
+              <summary>Дополнительные настройки</summary>
+              <section className="page-stack mt-3">
+                <label className="field">
+                  <span>Core API Base URL</span>
+                  <input
+                    className="input"
+                    value={baseUrl}
+                    onChange={(event) => setBaseUrl(event.target.value)}
+                    placeholder="http://localhost:15073"
+                    data-testid="auth-base-url"
+                  />
+                </label>
+                <section className="hint-block">
+                  <p>
+                    JWT issuer/audience: <strong>{jwtMeta.issuer}</strong> /{" "}
+                    <strong>{jwtMeta.audience}</strong>
+                  </p>
+                  <p>
+                    Planned providers:{" "}
+                    {providers.length > 0
+                      ? providers
+                          .filter((item) => item.provider !== "local")
+                          .map((item) => `${item.displayName} (${item.status})`)
+                          .join(", ")
+                      : "loading..."}
+                  </p>
+                  <button
+                    type="button"
+                    className="button"
+                    onClick={loadProviders}
+                    disabled={isLoadingProviders}
+                    data-testid="auth-refresh-providers"
+                  >
+                    Обновить providers
+                  </button>
+                </section>
+              </section>
+            </details>
           </>
         ) : (
           <>

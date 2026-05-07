@@ -1787,6 +1787,7 @@ export function ProjectWorkflowsPanel({ apiSession, projectId, currentRole }: Pr
 
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [isMiniMapVisible, setIsMiniMapVisible] = useState(false);
+  const [canvasLayoutVersion, setCanvasLayoutVersion] = useState(0);
   const [flowInstance, setFlowInstance] = useState<ReactFlowInstance<Node<WorkflowEditorNodeData>, Edge<WorkflowEditorEdgeData>> | null>(null);
   const importFileInputRef = useRef<HTMLInputElement | null>(null);
   const previousOfferIdRef = useRef("");
@@ -1917,6 +1918,7 @@ export function ProjectWorkflowsPanel({ apiSession, projectId, currentRole }: Pr
     const nextViewport = normalizeViewportInput(draft.ui?.viewport);
     pendingViewportRef.current = nextViewport;
     viewportRef.current = nextViewport;
+    setCanvasLayoutVersion((current) => current + 1);
     setSelectedNodeConfigVersion((current) => current + 1);
 
     setSelectedNodeId((previous) => {
@@ -2000,23 +2002,26 @@ export function ProjectWorkflowsPanel({ apiSession, projectId, currentRole }: Pr
   }, [applyDraftToEditor, draftQuery.data]);
 
   useEffect(() => {
-    if (!flowInstance || nodes.length === 0) {
+    if (!flowInstance) {
       return;
     }
 
     const pendingViewport = pendingViewportRef.current;
-    pendingViewportRef.current = undefined;
-
     if (pendingViewport) {
+      pendingViewportRef.current = undefined;
       void flowInstance.setViewport(pendingViewport, { duration: 0 });
       viewportRef.current = pendingViewport;
+      return;
+    }
+
+    if (canvasLayoutVersion === 0) {
       return;
     }
 
     void flowInstance.fitView({ padding: 0.2, duration: 0 }).then(() => {
       viewportRef.current = normalizeViewportInput(flowInstance.getViewport());
     });
-  }, [flowInstance, nodes]);
+  }, [canvasLayoutVersion, flowInstance]);
 
   const selectedNode = useMemo(
     () => nodes.find((node) => node.id === selectedNodeId) ?? null,

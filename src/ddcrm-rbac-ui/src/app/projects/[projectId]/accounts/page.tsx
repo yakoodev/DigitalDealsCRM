@@ -32,6 +32,7 @@ export default function ProjectAccountsRoute() {
           apiSession={apiSession}
           projectId={project.id}
           activeRole={session.profile.role}
+          canOpenIntegrationGrants={session.profile.isSystemAdmin === true}
         />
       )}
     </ProjectShell>

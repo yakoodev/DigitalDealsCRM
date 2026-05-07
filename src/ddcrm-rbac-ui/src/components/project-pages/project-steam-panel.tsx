@@ -1386,8 +1386,8 @@ export function ProjectSteamPanel({
         )}
       </article>
 
-      <section className="module-board">
-        <section className="module-main-column">
+      <section className="two-panel-layout">
+        <section className="page-stack">
           <article className="glass-card page-stack">
             <div className="panel-title-row">
               <h3>Аккаунты Steam</h3>
@@ -1703,7 +1703,7 @@ export function ProjectSteamPanel({
           </article>
         </section>
 
-        <aside className="module-side-column">
+        <aside className="sticky-side">
           <article className="glass-card page-stack panel-card-sticky">
             <div className="panel-title-row">
               <h3>{editingAccountId ? "Редактирование Steam-аккаунта" : "Новый Steam-аккаунт"}</h3>
@@ -2128,3 +2128,4 @@ export function ProjectSteamPanel({
     </div>
   );
 }
+

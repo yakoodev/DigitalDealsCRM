@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   applyThemeToDocument,
   readStoredThemePreference,
+  resolveTheme,
   type ResolvedTheme,
   type ThemePreference,
   writeStoredThemePreference,
@@ -31,9 +32,17 @@ export function useTheme(): ThemeState {
   const [themeState, setThemeState] = useState<{
     preference: ThemePreference;
     resolvedTheme: ResolvedTheme;
-  }>({
-    preference: "system",
-    resolvedTheme: "light",
+  }>(() => {
+    const preference = readStoredThemePreference();
+    const systemPrefersDark =
+      typeof window !== "undefined" &&
+      typeof window.matchMedia === "function" &&
+      window.matchMedia("(prefers-color-scheme: dark)").matches;
+
+    return {
+      preference,
+      resolvedTheme: resolveTheme(preference, systemPrefersDark),
+    };
   });
 
   const applyPreference = useCallback(
@@ -47,22 +56,6 @@ export function useTheme(): ThemeState {
     },
     [mediaQuery],
   );
-
-  useEffect(() => {
-    const initialPreference = readStoredThemePreference();
-    const initialResolvedTheme = applyThemeToDocument(initialPreference, mediaQuery);
-
-    const timer = window.setTimeout(() => {
-      setThemeState({
-        preference: initialPreference,
-        resolvedTheme: initialResolvedTheme,
-      });
-    }, 0);
-
-    return () => {
-      window.clearTimeout(timer);
-    };
-  }, [mediaQuery]);
 
   useEffect(() => {
     applyThemeToDocument(themeState.preference, mediaQuery);

@@ -1,13 +1,21 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import Link from "next/link";
 import { useMemo, type ReactNode } from "react";
 import type { Project } from "@/generated/external-api";
+import {
+  HeaderBrand,
+  HeaderDropdown,
+  HeaderEmail,
+  HeaderMeta,
+  HeaderLink,
+  HeaderNav,
+  HeaderSection,
+  HeaderStatus,
+} from "@/components/layout/app-header-primitives";
 import { DashboardLayout } from "@/components/layout/dashboard-layout";
 import { ThemeToggle } from "@/components/theme-toggle";
 import {
-  listAccountsRequest,
   listProjectsRequest,
   type ApiSession,
 } from "@/lib/api-client";
@@ -15,7 +23,7 @@ import type { PlatformSession } from "@/lib/auth";
 
 const tabMeta = {
   overview: {
-    label: "Обзор",
+    label: "Dashboard",
     hint: "Статистика и ключевые действия",
   },
   accounts: {
@@ -27,12 +35,12 @@ const tabMeta = {
     hint: "Каталог и изменения",
   },
   offers: {
-    label: "Offers",
+    label: "Офферы",
     hint: "Единые предложения CRM и variants",
   },
   workflows: {
-    label: "Workflows",
-    hint: "Draft/publish и история исполнения блок-схем",
+    label: "Flow",
+    hint: "Legacy route: объединено с Offers",
   },
   messages: {
     label: "Сообщения",
@@ -94,27 +102,20 @@ export function ProjectLayout({
 
   const projects = useMemo(() => projectsQuery.data ?? [], [projectsQuery.data]);
   const activeProject = projects.find((project) => project.id === projectId) ?? null;
-
-  const projectAccountsQuery = useQuery({
-    queryKey: [
-      "project-layout-accounts",
-      apiSession.baseUrl,
-      apiSession.token,
-      activeProject?.id ?? "",
-    ] as const,
-    queryFn: () => listAccountsRequest(apiSession, activeProject?.id ?? ""),
-    enabled: Boolean(activeProject?.id),
-    staleTime: 15_000,
-  });
-
-  const projectAccounts = projectAccountsQuery.data ?? [];
-  const activeAccountsCount = projectAccounts.filter(
-    (account) => account.businessStatus === "active",
-  ).length;
-  const pausedAccountsCount = projectAccounts.length - activeAccountsCount;
   const visibleTabs = useMemo(
-    () => Object.keys(tabMeta) as ProjectTab[],
+    () => ["overview", "accounts", "products", "offers", "messages", "integrations", "steam"] as ProjectTab[],
     [],
+  );
+  const projectTabItems = useMemo(
+    () =>
+      activeProject
+        ? visibleTabs.map((tab) => ({
+            href: tabHref(activeProject.id, tab),
+            label: tabMeta[tab].label,
+            active: tab === activeTab,
+          }))
+        : [],
+    [activeProject, activeTab, visibleTabs],
   );
 
   if (projectsQuery.isPending) {
@@ -144,139 +145,72 @@ export function ProjectLayout({
 
   return (
     <DashboardLayout
-      sidebar={(
+      header={(
         <>
-          <div className="sidebar-group">
-            <p className="sidebar-kicker">DDCRM Platform</p>
-            <h2>{session.profile.displayName}</h2>
-            <p className="sidebar-muted">{session.profile.email}</p>
-            <p className="sidebar-muted">Role: {session.profile.role}</p>
-          </div>
-
-          <nav className="sidebar-nav">
-            <Link href="/dashboard" className="sidebar-nav-link">
-              Dashboard
-            </Link>
-            <Link href="/projects" className="sidebar-nav-link">
-              Проекты
-            </Link>
-            {session.profile.isSystemAdmin ? (
-              <Link href="/admin/account-manager" className="sidebar-nav-link">
-                Admin
-              </Link>
-            ) : null}
-            <button type="button" className="sidebar-nav-link" onClick={onLogout}>
-              Выйти
-            </button>
-          </nav>
-
-          <ThemeToggle />
-
-          {activeProject ? (
-            <>
-              <div className="sidebar-group">
-                <h3>{activeProject.name}</h3>
-                <p className="sidebar-muted">Status: {activeProject.status}</p>
-                <p className="sidebar-muted">ID: {activeProject.id}</p>
-              </div>
-
-              <div className="sidebar-group">
-                <p className="sidebar-kicker">Раздел проекта</p>
-                <nav className="sidebar-nav">
-                  {visibleTabs.map((tab) => (
-                    <Link
-                      key={tab}
-                      href={tabHref(activeProject.id, tab)}
-                      className={`sidebar-nav-link ${tab === activeTab ? "is-active" : ""}`}
-                    >
-                      {tabMeta[tab].label}
-                    </Link>
-                  ))}
-                </nav>
-                <p className="sidebar-muted">{tabMeta[activeTab].hint}</p>
-              </div>
-
-              <div className="sidebar-group">
-                <p className="sidebar-kicker">Статистика проекта</p>
-                {projectAccountsQuery.isPending ? (
-                  <p className="sidebar-muted">Считаем аккаунты...</p>
-                ) : projectAccountsQuery.error ? (
-                  <p className="route-error">
-                    {projectAccountsQuery.error instanceof Error
-                      ? projectAccountsQuery.error.message
-                      : "Не удалось получить статистику аккаунтов."}
-                  </p>
-                ) : (
-                  <>
-                    <p className="sidebar-muted">Аккаунтов: {projectAccounts.length}</p>
-                    <p className="sidebar-muted">Активные: {activeAccountsCount}</p>
-                    <p className="sidebar-muted">Неактивные: {pausedAccountsCount}</p>
-                  </>
-                )}
-              </div>
-
-              <div className="sidebar-group">
-                <p className="sidebar-kicker">Контекст</p>
-                <p className="sidebar-muted">
-                  Подробности по операциям и техническим данным доступны в `Details`
-                  внутри активного раздела.
-                </p>
-              </div>
-            </>
-          ) : (
-            <div className="sidebar-group">
-              <p className="sidebar-muted">Проект не выбран. Откройте проект из портфеля.</p>
-            </div>
-          )}
+          <HeaderSection align="left">
+            <HeaderBrand label="DDCRM Platform" href="/projects" />
+            <HeaderNav>
+              <HeaderLink href="/projects" label="Dashboard" />
+              {activeProject ? (
+                <HeaderDropdown
+                  label={activeProject.name}
+                  active
+                  items={projectTabItems}
+                />
+              ) : null}
+              {session.profile.isSystemAdmin ? (
+                <HeaderDropdown
+                  label="Admin"
+                  items={[
+                    { href: "/admin/account-manager", label: "Обзор" },
+                    { href: "/admin/account-manager/servers", label: "Worker servers" },
+                    { href: "/admin/account-manager/templates", label: "Templates" },
+                    { href: "/admin/account-manager/integrations", label: "Integrations" },
+                  ]}
+                />
+              ) : null}
+            </HeaderNav>
+          </HeaderSection>
+          <HeaderSection align="right">
+            <HeaderStatus>
+              <span className={`status ${activeProject?.status === "active" ? "status--ok" : "status--warn"}`}>
+                {activeProject?.status ?? "no project"}
+              </span>
+              <HeaderMeta>
+                <HeaderEmail value={session.profile.email} />
+                <ThemeToggle />
+                <button type="button" className="button button-ghost button-small" onClick={onLogout}>
+                  Выйти
+                </button>
+              </HeaderMeta>
+            </HeaderStatus>
+          </HeaderSection>
         </>
       )}
-      topbar={(
-        activeProject ? (
-          <div className="topbar-content">
-            <div>
-              <p className="module-page-kicker">Project Workspace</p>
-              <h1>{activeProject.name}</h1>
-              <p>
-                {tabMeta[activeTab].label} · {tabMeta[activeTab].hint}
-              </p>
-            </div>
-            <div className="topbar-actions">
-              <Link href="/projects" className="button button-ghost">
-                К портфелю
-              </Link>
-            </div>
-          </div>
-        ) : (
-          <div className="topbar-content">
-            <div>
-              <p className="module-page-kicker">Project Workspace</p>
-              <h1>Project not selected</h1>
-            </div>
-          </div>
-        )
-      )}
     >
-      {activeProject ? (
-        children({
-          apiSession,
-          project: activeProject,
-          projects,
-        })
-      ) : (
-        <section className="glass-card">
-          {projects.length === 0 ? (
-            <>
-              <h1>Проектов пока нет</h1>
-              <p>Создайте проект на странице `/dashboard` или `/projects`.</p>
-            </>
-          ) : (
-            <>
-              <h1>Открываем проект...</h1>
-              <p>Выберите проект на странице `/projects`.</p>
-            </>
-          )}
-        </section>
-      )}
+      <section className="page-wide">
+        {activeProject ? (
+          children({
+            apiSession,
+            project: activeProject,
+            projects,
+          })
+        ) : (
+          <section className="glass-card">
+            {projects.length === 0 ? (
+              <>
+                <h1>Проектов пока нет</h1>
+                <p>Создайте проект на странице `/dashboard` или `/projects`.</p>
+              </>
+            ) : (
+              <>
+                <h1>Открываем проект...</h1>
+                <p>Выберите проект на странице `/projects`.</p>
+              </>
+            )}
+          </section>
+        )}
+      </section>
     </DashboardLayout>
   );
 }

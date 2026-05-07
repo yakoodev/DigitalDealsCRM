@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { PageHeader, StatCard } from "@/components/ui/page-primitives";
 
 interface ModuleStat {
   label: string;
@@ -25,30 +26,29 @@ export function ModulePageShell({
 }: ModulePageShellProps) {
   return (
     <section className="module-page-shell">
-      <header className="module-page-header">
-        <div>
-          <p className="module-page-kicker">Project Module</p>
-          <h2>{title}</h2>
-          <p>{description}</p>
-        </div>
-        {actions ? <div className="module-page-actions">{actions}</div> : null}
-      </header>
+      <PageHeader
+        eyebrow="Project Module"
+        title={title}
+        description={description}
+        actions={actions}
+      />
 
       {stats && stats.length > 0 ? (
         <section className="module-page-stats">
           {stats.map((item) => (
-            <article key={item.label} className="metric-tile">
-              <p>{item.label}</p>
-              <strong>{item.value}</strong>
-              {item.hint ? <small>{item.hint}</small> : null}
-            </article>
+            <StatCard
+              key={item.label}
+              label={item.label}
+              value={item.value}
+              hint={item.hint}
+            />
           ))}
         </section>
       ) : null}
 
       <section className="module-grid">
         <section className="module-main">{main}</section>
-        <aside className="module-side">{side}</aside>
+        <aside className="module-side-shell">{side}</aside>
       </section>
     </section>
   );

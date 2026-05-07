@@ -123,7 +123,7 @@ describe("ProjectProductCreatePanel", () => {
     await userEvent.clear(screen.getByLabelText("Цена"));
     await userEvent.type(screen.getByLabelText("Цена"), "199");
 
-    await userEvent.click(screen.getByRole("button", { name: "Создать товары" }));
+    await userEvent.click(screen.getByRole("button", { name: "Создать товар" }));
 
     await waitFor(() => {
       expect(runAccountActionRequest).toHaveBeenCalledWith(
@@ -207,7 +207,7 @@ describe("ProjectProductCreatePanel", () => {
       );
     });
 
-    expect(screen.getByText("Playerok metadata helper")).toBeInTheDocument();
+    expect(screen.getByText("Playerok helper")).toBeInTheDocument();
     expect(screen.queryByText(/Форма остаётся в ручном режиме/)).not.toBeInTheDocument();
   });
 });

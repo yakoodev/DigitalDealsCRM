@@ -1,8 +1,9 @@
 "use client";
 
 import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { AdminLayout } from "@/components/layout/admin-layout";
+import { RouteModalHost } from "@/components/layout/route-modal-host";
 import {
   checkAdminTelegramConnectivityRequest,
   listAdminProjectIntegrationGrantsRequest,
@@ -128,6 +129,9 @@ export default function AccountManagerIntegrationsPage() {
   const [telegramConnectivityStatus, setTelegramConnectivityStatus] = useState(
     "Проверьте доступность Telegram API (getMe) через активный proxy/без proxy.",
   );
+  const [grantModalOpen, setGrantModalOpen] = useState(false);
+  const [proxyModalOpen, setProxyModalOpen] = useState(false);
+  const [telegramModalOpen, setTelegramModalOpen] = useState(false);
 
   const apiSession = useMemo<ApiSession>(
     () => ({
@@ -137,13 +141,6 @@ export default function AccountManagerIntegrationsPage() {
     [session?.baseUrl, session?.token],
   );
 
-  const normalizedProjectId = projectId.trim();
-  const normalizedIntegrationKey = integrationKey.trim();
-  const hasIntegrationsPermission = useMemo(() => {
-    const permissions = session?.profile.systemPermissions ?? [];
-    return permissions.some((item) => item.toLowerCase() === SYSTEM_INTEGRATIONS_PERMISSION.toLowerCase());
-  }, [session?.profile.systemPermissions]);
-
   const projectsQuery = useQuery({
     queryKey: ["projects", apiSession.baseUrl, apiSession.token],
     queryFn: () => listProjectsRequest(apiSession),
@@ -151,16 +148,19 @@ export default function AccountManagerIntegrationsPage() {
     staleTime: 20_000,
   });
 
-  useEffect(() => {
-    if (normalizedProjectId) {
-      return;
+  const normalizedProjectId = useMemo(() => {
+    const trimmed = projectId.trim();
+    if (trimmed) {
+      return trimmed;
     }
 
-    const firstProject = projectsQuery.data?.[0];
-    if (firstProject) {
-      setProjectId(firstProject.id);
-    }
-  }, [normalizedProjectId, projectsQuery.data]);
+    return projectsQuery.data?.[0]?.id ?? "";
+  }, [projectId, projectsQuery.data]);
+  const normalizedIntegrationKey = integrationKey.trim();
+  const hasIntegrationsPermission = useMemo(() => {
+    const permissions = session?.profile.systemPermissions ?? [];
+    return permissions.some((item) => item.toLowerCase() === SYSTEM_INTEGRATIONS_PERMISSION.toLowerCase());
+  }, [session?.profile.systemPermissions]);
 
   const grantsQuery = useQuery({
     queryKey: ["admin-integration-grants", apiSession.baseUrl, apiSession.token, normalizedProjectId],
@@ -415,6 +415,14 @@ export default function AccountManagerIntegrationsPage() {
     : projectMatrixRows;
 
   const selectedPreset = integrationPresets.find((item) => item.key === selectedPresetKey) ?? null;
+  const activeGrantsCount = projectMatrixRows.reduce(
+    (sum, row) => sum + row.grants.filter((grant) => grant.status === "active").length,
+    0,
+  );
+  const projectsWithGrantCount = projectMatrixRows.filter(
+    (row) => row.grants.some((grant) => grant.status === "active"),
+  ).length;
+  const runtimeIntegrationsCount = integrationPresets.filter((item) => item.integrationType === "worker").length;
 
   const applyPreset = (preset: IntegrationPreset, issueGrant: boolean) => {
     const scopesText = scopesToText(preset.defaultScopes);
@@ -440,9 +448,118 @@ export default function AccountManagerIntegrationsPage() {
 
   return (
     <AdminLayout session={session} activeTab="integrations" onLogout={logout}>
-      <section className="module-board">
-        <section className="module-main-column">
-          <article className="glass-card page-stack">
+      <div className="page-stack">
+        <section className="page-head">
+          <div className="page-head__row">
+            <div>
+              <h1 className="page-title">Integrations</h1>
+              <p className="route-hint">Матрица доступов, runtime-операции и Telegram proxy/health checks.</p>
+            </div>
+            <div className="inline">
+              <button
+                type="button"
+                className="button button-ghost button-small"
+                disabled={projectsQuery.isFetching || grantsQuery.isFetching || proxiesQuery.isFetching}
+                onClick={async () => {
+                  await Promise.all([
+                    projectsQuery.refetch(),
+                    grantsQuery.refetch(),
+                    proxiesQuery.refetch(),
+                  ]);
+                  setMatrixStatus("Матрица и справочники обновлены.");
+                }}
+              >
+                Обновить
+              </button>
+              <button
+                type="button"
+                className="button button-primary button-small"
+                onClick={() => setGrantModalOpen(true)}
+              >
+                ＋ Выдать доступ
+              </button>
+            </div>
+          </div>
+          <div className={`status ${matrixStatus.toLowerCase().includes("не удалось") ? "status--bad" : "status--info"}`}>
+            {matrixStatus}
+          </div>
+        </section>
+
+        <section className="state-grid">
+          <article className="state-card">
+            <span className="label">Интеграций</span>
+            <strong>{integrationPresets.length}</strong>
+          </article>
+          <article className="state-card">
+            <span className="label">Проектов с grant</span>
+            <strong>{projectsWithGrantCount}</strong>
+          </article>
+          <article className="state-card">
+            <span className="label">Активных grants</span>
+            <strong>{activeGrantsCount}</strong>
+          </article>
+          <article className="state-card">
+            <span className="label">Runtime-интеграций</span>
+            <strong>{runtimeIntegrationsCount}</strong>
+          </article>
+        </section>
+
+        <section className="card">
+          <div className="toolbar-grid">
+            <label className="field">
+              <span>Поиск по матрице</span>
+              <input
+                className="input"
+                value={matrixFilter}
+                onChange={(event) => setMatrixFilter(event.target.value)}
+                placeholder="integration key, project, scope"
+              />
+            </label>
+            <label className="field">
+              <span>Проект (uuid)</span>
+              <input
+                className="input"
+                value={projectId}
+                onChange={(event) => setProjectId(event.target.value)}
+                placeholder="UUID проекта (фильтр)"
+              />
+            </label>
+            <label className="field">
+              <span>Preset</span>
+              <select
+                className="input"
+                value={selectedPreset?.key ?? ""}
+                onChange={(event) => {
+                  const next = integrationPresets.find((item) => item.key === event.target.value);
+                  if (!next) {
+                    return;
+                  }
+
+                  setSelectedPresetKey(next.key);
+                  setIntegrationKey(next.key);
+                  setScopes(scopesToText(next.defaultScopes));
+                }}
+              >
+                {integrationPresets.map((preset) => (
+                  <option key={preset.key} value={preset.key}>
+                    {preset.title}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button
+              type="button"
+              className="button button-small"
+              onClick={() => setMatrixStatus("Фильтры применены.")}
+            >
+              Применить
+            </button>
+          </div>
+        </section>
+
+        <section className="two-panel-layout">
+          <section className="page-stack">
+            <article className="card page-stack">
             <div className="panel-title-row">
               <h3>Матрица доступов проектов</h3>
             </div>
@@ -450,14 +567,6 @@ export default function AccountManagerIntegrationsPage() {
               Ориентация матрицы: сверху проекты, слева интеграции. На пересечении выдаём grant, управляем runtime и быстро
               переходим в Steam-кабинет для добавления нескольких аккаунтов.
             </p>
-            <div className="inline-actions">
-              <input
-                className="input"
-                value={matrixFilter}
-                onChange={(event) => setMatrixFilter(event.target.value)}
-                placeholder="Фильтр: имя проекта или UUID"
-              />
-            </div>
             {projectsQuery.isPending ? <p className="route-hint">Загрузка проектов для матрицы...</p> : null}
             {projectsQuery.error ? (
               <p className="route-error">
@@ -637,7 +746,7 @@ export default function AccountManagerIntegrationsPage() {
             <p className="route-hint">{matrixStatus}</p>
           </article>
 
-          <article className="glass-card page-stack">
+          <article className="card page-stack">
             <div className="panel-title-row">
               <h3>Проект и grant-ы</h3>
             </div>
@@ -800,7 +909,7 @@ export default function AccountManagerIntegrationsPage() {
             ) : null}
           </article>
 
-          <article className="glass-card page-stack">
+          <article className="card page-stack">
             <div className="panel-title-row">
               <h3>Telegram proxy profiles</h3>
             </div>
@@ -839,6 +948,7 @@ export default function AccountManagerIntegrationsPage() {
                         setProxyLogin("");
                         setProxyPassword("");
                         setProxyClearCredentials(false);
+                        setProxyModalOpen(true);
                       }}
                     >
                       В форму
@@ -850,11 +960,81 @@ export default function AccountManagerIntegrationsPage() {
           </article>
         </section>
 
-        <aside className="module-side-column">
-          <article className="glass-card page-stack panel-card-sticky">
+        <aside className="sticky-side">
+          <article className="card page-stack">
             <div className="panel-title-row">
-              <h3>Grant/Revoke</h3>
+              <h3>Операции</h3>
             </div>
+            <div className="hero-actions">
+              <button type="button" className="button button-primary" onClick={() => setGrantModalOpen(true)}>
+                Grant/Revoke
+              </button>
+              <button type="button" className="button button-ghost" onClick={() => setProxyModalOpen(true)}>
+                Telegram proxy
+              </button>
+              <button type="button" className="button button-ghost" onClick={() => setTelegramModalOpen(true)}>
+                Проверка Telegram
+              </button>
+            </div>
+            <p className="route-hint">{grantStatus}</p>
+            <p className="route-hint">{runtimeStatus}</p>
+            <p className="route-hint">{proxyStatus}</p>
+            <p className="route-hint">{telegramConnectivityStatus}</p>
+          </article>
+
+          <article className="card page-stack">
+            <div className="panel-title-row">
+              <h3>Worker runtime</h3>
+            </div>
+            <div className="hero-actions">
+              <button
+                type="button"
+                className="button button-ghost"
+                disabled={runtimeMutation.isPending || !normalizedProjectId || !normalizedIntegrationKey}
+                onClick={() =>
+                  runtimeMutation.mutate({ integrationKey: normalizedIntegrationKey, operation: "provision" })
+                }
+              >
+                Provision
+              </button>
+              <button
+                type="button"
+                className="button button-ghost"
+                disabled={runtimeMutation.isPending || !normalizedProjectId || !normalizedIntegrationKey}
+                onClick={() => runtimeMutation.mutate({ integrationKey: normalizedIntegrationKey, operation: "restart" })}
+              >
+                Restart
+              </button>
+              <button
+                type="button"
+                className="button button-ghost"
+                disabled={runtimeMutation.isPending || !normalizedProjectId || !normalizedIntegrationKey}
+                onClick={() =>
+                  runtimeMutation.mutate({ integrationKey: normalizedIntegrationKey, operation: "deprovision" })
+                }
+              >
+                Deprovision
+              </button>
+            </div>
+          </article>
+        </aside>
+
+        <RouteModalHost
+          isOpen={grantModalOpen}
+          title="Grant / Revoke integration"
+          description="Выберите проект, интеграцию и scopes для обновления доступа."
+          onClose={() => setGrantModalOpen(false)}
+        >
+          <section className="page-stack">
+            <label className="field">
+              <span>Project UUID</span>
+              <input
+                className="input"
+                value={projectId}
+                onChange={(event) => setProjectId(event.target.value)}
+                placeholder="uuid проекта (пусто = первый из списка)"
+              />
+            </label>
             <label className="field">
               <span>Preset</span>
               <select
@@ -896,12 +1076,15 @@ export default function AccountManagerIntegrationsPage() {
                 placeholder="read,jobs"
               />
             </label>
-            <div className="hero-actions">
+            <div className="inline">
               <button
                 type="button"
                 className="button button-primary"
                 disabled={grantMutation.isPending || !normalizedProjectId || !normalizedIntegrationKey}
-                onClick={() => grantMutation.mutate({ integrationKey: normalizedIntegrationKey, scopesText: scopes })}
+                onClick={async () => {
+                  await grantMutation.mutateAsync({ integrationKey: normalizedIntegrationKey, scopesText: scopes });
+                  setGrantModalOpen(false);
+                }}
               >
                 Выдать/обновить
               </button>
@@ -909,81 +1092,28 @@ export default function AccountManagerIntegrationsPage() {
                 type="button"
                 className="button button-ghost"
                 disabled={revokeMutation.isPending || !normalizedProjectId || !normalizedIntegrationKey}
-                onClick={() => revokeMutation.mutate({ integrationKey: normalizedIntegrationKey })}
+                onClick={async () => {
+                  await revokeMutation.mutateAsync({ integrationKey: normalizedIntegrationKey });
+                  setGrantModalOpen(false);
+                }}
               >
                 Отозвать
               </button>
+              <button type="button" className="button button-ghost" onClick={() => setGrantModalOpen(false)}>
+                Отмена
+              </button>
             </div>
             <p className="route-hint">{grantStatus}</p>
+          </section>
+        </RouteModalHost>
 
-            <div className="panel-title-row">
-              <h3>Worker runtime</h3>
-            </div>
-            <div className="hero-actions">
-              <button
-                type="button"
-                className="button button-ghost"
-                disabled={runtimeMutation.isPending || !normalizedProjectId || !normalizedIntegrationKey}
-                onClick={() =>
-                  runtimeMutation.mutate({ integrationKey: normalizedIntegrationKey, operation: "provision" })
-                }
-              >
-                Provision
-              </button>
-              <button
-                type="button"
-                className="button button-ghost"
-                disabled={runtimeMutation.isPending || !normalizedProjectId || !normalizedIntegrationKey}
-                onClick={() => runtimeMutation.mutate({ integrationKey: normalizedIntegrationKey, operation: "restart" })}
-              >
-                Restart
-              </button>
-              <button
-                type="button"
-                className="button button-ghost"
-                disabled={runtimeMutation.isPending || !normalizedProjectId || !normalizedIntegrationKey}
-                onClick={() =>
-                  runtimeMutation.mutate({ integrationKey: normalizedIntegrationKey, operation: "deprovision" })
-                }
-              >
-                Deprovision
-              </button>
-            </div>
-            <p className="route-hint">{runtimeStatus}</p>
-
-            <div className="panel-title-row">
-              <h3>Telegram Grant</h3>
-            </div>
-            <div className="hero-actions">
-              <button
-                type="button"
-                className="button button-primary"
-                disabled={grantMutation.isPending || !normalizedProjectId}
-                onClick={() => {
-                  setSelectedPresetKey("telegram");
-                  setIntegrationKey("telegram");
-                  setScopes("send");
-                  grantMutation.mutate({ integrationKey: "telegram", scopesText: "send" });
-                }}
-              >
-                Выдать Telegram проекту
-              </button>
-              <button
-                type="button"
-                className="button button-ghost"
-                disabled={revokeMutation.isPending || !normalizedProjectId}
-                onClick={() => revokeMutation.mutate({ integrationKey: "telegram" })}
-              >
-                Отозвать Telegram
-              </button>
-            </div>
-            <p className="route-hint">
-              Эта кнопка нужна для включения bind-flow и отправки уведомлений в Telegram для выбранного проекта.
-            </p>
-
-            <div className="panel-title-row">
-              <h3>Telegram proxy</h3>
-            </div>
+        <RouteModalHost
+          isOpen={proxyModalOpen}
+          title="Telegram proxy"
+          description="Конфигурация proxy-профиля для Telegram integration."
+          onClose={() => setProxyModalOpen(false)}
+        >
+          <section className="page-stack">
             <label className="field">
               <span>Proxy ID (uuid)</span>
               <input className="input" value={proxyId} onChange={(event) => setProxyId(event.target.value)} />
@@ -1039,19 +1169,33 @@ export default function AccountManagerIntegrationsPage() {
                 onChange={(event) => setProxyClearCredentials(event.target.checked)}
               />
             </label>
-            <button
-              type="button"
-              className="button button-primary"
-              disabled={proxyMutation.isPending || !proxyId.trim() || !proxyName.trim() || !proxyHost.trim()}
-              onClick={() => proxyMutation.mutate()}
-            >
-              Сохранить proxy
-            </button>
-            <p className="route-hint">{proxyStatus}</p>
-
-            <div className="panel-title-row">
-              <h3>Проверка Telegram</h3>
+            <div className="inline">
+              <button
+                type="button"
+                className="button button-primary"
+                disabled={proxyMutation.isPending || !proxyId.trim() || !proxyName.trim() || !proxyHost.trim()}
+                onClick={async () => {
+                  await proxyMutation.mutateAsync();
+                  setProxyModalOpen(false);
+                }}
+              >
+                Сохранить proxy
+              </button>
+              <button type="button" className="button button-ghost" onClick={() => setProxyModalOpen(false)}>
+                Отмена
+              </button>
             </div>
+            <p className="route-hint">{proxyStatus}</p>
+          </section>
+        </RouteModalHost>
+
+        <RouteModalHost
+          isOpen={telegramModalOpen}
+          title="Проверка Telegram"
+          description="Тестовая отправка и connectivity-check Telegram API."
+          onClose={() => setTelegramModalOpen(false)}
+        >
+          <section className="page-stack">
             <label className="field">
               <span>Chat ID для теста</span>
               <input
@@ -1070,27 +1214,33 @@ export default function AccountManagerIntegrationsPage() {
                 placeholder="DDCRM test message"
               />
             </label>
-            <button
-              type="button"
-              className="button button-primary"
-              disabled={telegramTestMutation.isPending || !telegramTestChatId.trim()}
-              onClick={() => telegramTestMutation.mutate()}
-            >
-              Отправить тест в Telegram
-            </button>
+            <div className="inline">
+              <button
+                type="button"
+                className="button button-primary"
+                disabled={telegramTestMutation.isPending || !telegramTestChatId.trim()}
+                onClick={() => telegramTestMutation.mutate()}
+              >
+                Отправить тест
+              </button>
+              <button
+                type="button"
+                className="button button-ghost"
+                disabled={telegramConnectivityMutation.isPending}
+                onClick={() => telegramConnectivityMutation.mutate()}
+              >
+                Проверить API (getMe)
+              </button>
+              <button type="button" className="button button-ghost" onClick={() => setTelegramModalOpen(false)}>
+                Закрыть
+              </button>
+            </div>
             <p className="route-hint">{telegramTestStatus}</p>
-            <button
-              type="button"
-              className="button button-ghost"
-              disabled={telegramConnectivityMutation.isPending}
-              onClick={() => telegramConnectivityMutation.mutate()}
-            >
-              Проверить Telegram API (getMe)
-            </button>
             <p className="route-hint">{telegramConnectivityStatus}</p>
-          </article>
-        </aside>
+          </section>
+        </RouteModalHost>
       </section>
+      </div>
     </AdminLayout>
   );
 }

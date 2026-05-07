@@ -1,7 +1,16 @@
 "use client";
 
-import Link from "next/link";
 import type { ReactNode } from "react";
+import {
+  HeaderBrand,
+  HeaderDropdown,
+  HeaderEmail,
+  HeaderMeta,
+  HeaderLink,
+  HeaderNav,
+  HeaderSection,
+  HeaderStatus,
+} from "@/components/layout/app-header-primitives";
 import { DashboardLayout } from "@/components/layout/dashboard-layout";
 import { ThemeToggle } from "@/components/theme-toggle";
 import type { PlatformSession } from "@/lib/auth";
@@ -16,66 +25,42 @@ interface AdminLayoutProps {
 }
 
 export function AdminLayout({ session, activeTab, onLogout, children }: AdminLayoutProps) {
-  const tabClass = (tab: AdminTab) =>
-    `sidebar-nav-link ${activeTab === tab ? "is-active" : ""}`;
+  const adminItems = [
+    { href: "/admin/account-manager", label: "Admin обзор", active: activeTab === "overview" },
+    { href: "/admin/account-manager/servers", label: "Worker servers", active: activeTab === "servers" },
+    { href: "/admin/account-manager/templates", label: "Platform templates", active: activeTab === "templates" },
+    { href: "/admin/account-manager/integrations", label: "Integrations", active: activeTab === "integrations" },
+  ] as const;
 
   return (
     <DashboardLayout
-      sidebar={(
+      header={(
         <>
-          <div className="sidebar-group">
-            <p className="sidebar-kicker">DDCRM System Admin</p>
-            <h2>{session.profile.displayName}</h2>
-            <p className="sidebar-muted">{session.profile.email}</p>
-            <p className="sidebar-muted">Scope: AccountManager control plane</p>
-          </div>
-
-          <nav className="sidebar-nav">
-            <Link href="/dashboard" className="sidebar-nav-link">
-              Dashboard
-            </Link>
-            <Link href="/projects" className="sidebar-nav-link">
-              Проекты
-            </Link>
-            <Link href="/admin/account-manager" className={tabClass("overview")}>
-              Admin обзор
-            </Link>
-            <Link href="/admin/account-manager/servers" className={tabClass("servers")}>
-              Worker servers
-            </Link>
-            <Link href="/admin/account-manager/templates" className={tabClass("templates")}>
-              Platform templates
-            </Link>
-            <Link href="/admin/account-manager/integrations" className={tabClass("integrations")}>
-              Integrations
-            </Link>
-            <button type="button" className="sidebar-nav-link" onClick={onLogout}>
-              Выйти
-            </button>
-          </nav>
-
-          <ThemeToggle />
-
-          <div className="sidebar-group">
-            <p className="sidebar-kicker">Policy</p>
-            <p className="sidebar-muted">
-              Доступ к этой зоне есть только при system-claim
-              {" "}
-              <code>system.accountManager.manage</code>.
-            </p>
-          </div>
+          <HeaderSection align="left">
+            <HeaderBrand label="DDCRM Platform" href="/projects" />
+            <HeaderNav>
+              <HeaderLink href="/projects" label="Dashboard" />
+              <HeaderDropdown label="Admin" active items={[...adminItems]} />
+            </HeaderNav>
+          </HeaderSection>
+          <HeaderSection align="right">
+            <HeaderStatus>
+              <span className="status status--info">system admin</span>
+              <HeaderMeta>
+                <HeaderEmail value={session.profile.email} />
+                <ThemeToggle />
+                <button type="button" className="button button-ghost button-small" onClick={onLogout}>
+                  Выйти
+                </button>
+              </HeaderMeta>
+            </HeaderStatus>
+          </HeaderSection>
         </>
       )}
-      topbar={(
-        <div className="topbar-content">
-          <div>
-            <p className="module-page-kicker">System Admin</p>
-            <h1>AccountManager Control Plane</h1>
-          </div>
-        </div>
-      )}
     >
-      {children}
+      <section className="page-wide">
+        {children}
+      </section>
     </DashboardLayout>
   );
 }

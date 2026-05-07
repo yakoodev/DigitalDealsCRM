@@ -5,6 +5,7 @@ import { useMutation, useQueries, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
+import { DetailRail, FormSection } from "@/components/ui/page-primitives";
 import { useProjectAccounts } from "@/hooks/use-project-accounts";
 import type { ApiSession } from "@/lib/api-client";
 import { runAccountActionRequest } from "@/lib/api-client";
@@ -993,14 +994,35 @@ export function ProjectProductCreatePanel({
   });
 
   const schemaLoading = schemaQueries.some((query) => query.isPending);
+  const selectedPlatformLabels = useMemo(
+    () => [...new Set(selectedAccounts.map((account) => account.platform))],
+    [selectedAccounts],
+  );
+  const selectedAccountLabels = useMemo(
+    () => selectedAccounts.map((account) => `${account.displayName} · ${account.platform}`),
+    [selectedAccounts],
+  );
+  const readyAccountCount = selectedAccounts.filter((account) => {
+    const schemaState = schemaStateByAccountId.get(account.id);
+    return Boolean(schemaState?.createEnabled && schemaState.schemas.length > 0);
+  }).length;
+  const selectedAccountsEmpty = selectedAccounts.length === 0;
+  const createDisabledReason = selectedAccountsEmpty
+    ? "Выберите хотя бы один аккаунт."
+    : schemaLoading
+      ? "Подождите, schema для выбранных аккаунтов ещё загружаются."
+      : readyAccountCount === 0
+        ? "Нет готовых аккаунтов для products.create."
+        : "";
 
   return (
-    <div className="page-stack" data-testid="project-product-create-panel">
+    <div className="product-create-layout" data-testid="project-product-create-panel">
+      <div className="product-create-main page-stack">
       {mode === "page" ? (
         <>
           <header className="page-section-header">
             <h2>Добавить товар</h2>
-            <p>Один submit на несколько аккаунтов: универсальные поля + platform/account overrides.</p>
+            <p>Один submit на несколько аккаунтов: универсальные поля, platform overrides и account overrides.</p>
           </header>
 
           <div className="panel-actions">
@@ -1013,60 +1035,69 @@ export function ProjectProductCreatePanel({
 
       {accountsError ? <p className="route-error">{accountsError.message}</p> : null}
 
-      <section className="panel-card page-stack">
-        <div className="panel-title-row">
-          <h3>Целевые аккаунты</h3>
-        </div>
+      <FormSection
+        title="Целевые аккаунты"
+        description="Выберите аккаунты, на которые отправится один submit."
+      >
         {accountsLoading ? <p className="route-hint">Загружаем аккаунты...</p> : null}
         {accounts.length === 0 ? (
           <p className="route-hint">В проекте нет аккаунтов для создания товара.</p>
         ) : (
-          <div className="grid-2">
+          <ul className="entity-list">
             {accounts.map((account) => {
               const checked = selectedAccountIds.includes(account.id);
               return (
-                <label key={account.id} className="field field-inline">
-                  <span>{account.displayName} · {account.platform}</span>
-                  <input
-                    type="checkbox"
-                    checked={checked}
-                    onChange={(event) => toggleAccountSelection(account.id, event.target.checked)}
-                  />
-                </label>
+                <li key={account.id} className={`entity-list-item ${checked ? "is-selected" : ""}`}>
+                  <label className="entity-hitbox field-inline">
+                    <div>
+                      <strong>{account.displayName}</strong>
+                      <div className="entity-pills">
+                        <span className="entity-pill">{account.platform}</span>
+                        <span className="entity-pill">{account.id}</span>
+                      </div>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={(event) => toggleAccountSelection(account.id, event.target.checked)}
+                    />
+                  </label>
+                </li>
               );
             })}
-          </div>
+          </ul>
         )}
-      </section>
+      </FormSection>
 
-      <section className="panel-card page-stack">
-        <div className="panel-title-row">
-          <h3>Универсальные поля</h3>
+      <FormSection
+        title="Универсальные поля"
+        description="Общие значения применяются ко всем выбранным аккаунтам."
+      >
+        <div className="grid-2">
+          <label className="field">
+            <span>Схема товара</span>
+            <select
+              className="input"
+              value={universalSchemaId}
+              onChange={(event) => setUniversalSchemaId(event.target.value)}
+              disabled={availableSchemaIds.length === 0}
+            >
+              {availableSchemaIds.map((schemaId) => (
+                <option key={schemaId} value={schemaId}>{schemaId}</option>
+              ))}
+            </select>
+          </label>
+
+          <label className="field">
+            <span>Название</span>
+            <input
+              className="input"
+              value={universalTitle}
+              onChange={(event) => setUniversalTitle(event.target.value)}
+              placeholder="Название товара"
+            />
+          </label>
         </div>
-
-        <label className="field">
-          <span>Схема товара</span>
-          <select
-            className="input"
-            value={universalSchemaId}
-            onChange={(event) => setUniversalSchemaId(event.target.value)}
-            disabled={availableSchemaIds.length === 0}
-          >
-            {availableSchemaIds.map((schemaId) => (
-              <option key={schemaId} value={schemaId}>{schemaId}</option>
-            ))}
-          </select>
-        </label>
-
-        <label className="field">
-          <span>Название</span>
-          <input
-            className="input"
-            value={universalTitle}
-            onChange={(event) => setUniversalTitle(event.target.value)}
-            placeholder="Название товара"
-          />
-        </label>
 
         <div className="grid-2">
           <label className="field">
@@ -1090,10 +1121,12 @@ export function ProjectProductCreatePanel({
         </div>
 
         {schemaLoading ? <p className="route-hint">Загружаем schema-поля по выбранным аккаунтам...</p> : null}
+      </FormSection>
 
+      <details className="details-block" open={playerokAccounts.length > 0}>
+        <summary>Playerok helper</summary>
         {playerokAccounts.length > 0 ? (
           <div className="stacked-block">
-            <h4>Playerok metadata helper</h4>
             {playerokMetadataLoading ? <p className="route-hint">Загружаем категории/опции Playerok...</p> : null}
             {playerokMetadataError ? (
               <p className="route-hint">
@@ -1116,11 +1149,15 @@ export function ProjectProductCreatePanel({
               </div>
             ) : null}
           </div>
-        ) : null}
+        ) : (
+          <p className="route-hint">Playerok helper нужен только для выбранных Playerok аккаунтов.</p>
+        )}
+      </details>
 
+      <details className="details-block" open>
+        <summary>Provider-required поля</summary>
         {providerFieldCatalog.length > 0 ? (
           <div className="stacked-block">
-            <h4>Provider-required поля</h4>
             {providerFieldCatalog.map((field) => renderProviderFieldInput(
               "universal",
               field,
@@ -1136,166 +1173,170 @@ export function ProjectProductCreatePanel({
         ) : (
           <p className="route-hint">Для выбранных схем нет дополнительных provider-полей.</p>
         )}
-      </section>
+      </details>
 
-      {groupedPlatforms.map(([platform, platformAccounts]) => {
-        const override = ensureOverrideDraft(platformOverrides[platform]);
-        return (
-          <section key={`platform-${platform}`} className="panel-card page-stack">
-            <div className="panel-title-row">
-              <h3>Platform override · {platform}</h3>
-            </div>
-            <p className="route-hint">Аккаунты: {platformAccounts.map((item) => item.displayName).join(", ")}</p>
+      <details className="details-block">
+        <summary>Platform overrides</summary>
+        {groupedPlatforms.length === 0 ? (
+          <p className="route-hint">Платформенные overrides появятся после выбора аккаунтов.</p>
+        ) : (
+          <div className="stacked-block">
+            {groupedPlatforms.map(([platform, platformAccounts]) => {
+              const override = ensureOverrideDraft(platformOverrides[platform]);
+              return (
+                <section key={`platform-${platform}`} className="panel-card page-stack">
+                  <div className="panel-title-row">
+                    <h3>Platform override · {platform}</h3>
+                  </div>
+                  <p className="route-hint">Аккаунты: {platformAccounts.map((item) => item.displayName).join(", ")}</p>
 
-            <div className="grid-2">
-              <label className="field">
-                <span>SchemaId override</span>
-                <input
-                  className="input"
-                  value={override.schemaId ?? ""}
-                  onChange={(event) => updatePlatformOverrideField(platform, "schemaId", event.target.value)}
-                  placeholder="optional"
-                />
-              </label>
-              <label className="field">
-                <span>Title override</span>
-                <input
-                  className="input"
-                  value={override.title ?? ""}
-                  onChange={(event) => updatePlatformOverrideField(platform, "title", event.target.value)}
-                  placeholder="optional"
-                />
-              </label>
-            </div>
+                  <div className="grid-2">
+                    <label className="field">
+                      <span>SchemaId override</span>
+                      <input
+                        className="input"
+                        value={override.schemaId ?? ""}
+                        onChange={(event) => updatePlatformOverrideField(platform, "schemaId", event.target.value)}
+                        placeholder="optional"
+                      />
+                    </label>
+                    <label className="field">
+                      <span>Title override</span>
+                      <input
+                        className="input"
+                        value={override.title ?? ""}
+                        onChange={(event) => updatePlatformOverrideField(platform, "title", event.target.value)}
+                        placeholder="optional"
+                      />
+                    </label>
+                  </div>
 
-            <div className="grid-2">
-              <label className="field">
-                <span>Price override</span>
-                <input
-                  className="input"
-                  value={override.priceAmount ?? ""}
-                  onChange={(event) => updatePlatformOverrideField(platform, "priceAmount", event.target.value)}
-                  placeholder="optional"
-                />
-              </label>
-              <label className="field">
-                <span>Currency override</span>
-                <input
-                  className="input"
-                  value={override.priceCurrency ?? ""}
-                  onChange={(event) => updatePlatformOverrideField(platform, "priceCurrency", event.target.value)}
-                  placeholder="optional"
-                />
-              </label>
-            </div>
+                  <div className="grid-2">
+                    <label className="field">
+                      <span>Price override</span>
+                      <input
+                        className="input"
+                        value={override.priceAmount ?? ""}
+                        onChange={(event) => updatePlatformOverrideField(platform, "priceAmount", event.target.value)}
+                        placeholder="optional"
+                      />
+                    </label>
+                    <label className="field">
+                      <span>Currency override</span>
+                      <input
+                        className="input"
+                        value={override.priceCurrency ?? ""}
+                        onChange={(event) => updatePlatformOverrideField(platform, "priceCurrency", event.target.value)}
+                        placeholder="optional"
+                      />
+                    </label>
+                  </div>
 
-            {providerFieldCatalog.length > 0 ? (
-              <div className="stacked-block">
-                {providerFieldCatalog.map((field) => renderProviderFieldInput(
-                  `platform-${platform}`,
-                  field,
-                  override.providerFields[field.key] ?? "",
-                  (nextValue) => updatePlatformProviderField(platform, field.key, nextValue),
-                  "",
-                ))}
-              </div>
-            ) : null}
-          </section>
-        );
-      })}
+                  {providerFieldCatalog.length > 0 ? (
+                    <div className="stacked-block">
+                      {providerFieldCatalog.map((field) => renderProviderFieldInput(
+                        `platform-${platform}`,
+                        field,
+                        override.providerFields[field.key] ?? "",
+                        (nextValue) => updatePlatformProviderField(platform, field.key, nextValue),
+                        "",
+                      ))}
+                    </div>
+                  ) : null}
+                </section>
+              );
+            })}
+          </div>
+        )}
+      </details>
 
-      {selectedAccounts.map((account) => {
-        const override = ensureOverrideDraft(accountOverrides[account.id]);
-        const schemaState = schemaStateByAccountId.get(account.id);
+      <details className="details-block">
+        <summary>Account overrides</summary>
+        {selectedAccounts.length === 0 ? (
+          <p className="route-hint">Сначала выберите хотя бы один аккаунт.</p>
+        ) : (
+          <div className="stacked-block">
+            {selectedAccounts.map((account) => {
+              const override = ensureOverrideDraft(accountOverrides[account.id]);
+              const schemaState = schemaStateByAccountId.get(account.id);
 
-        return (
-          <section key={`account-${account.id}`} className="panel-card page-stack">
-            <div className="panel-title-row">
-              <h3>Account override · {account.displayName}</h3>
-            </div>
-            <p className="route-hint">{account.platform} · accountId: {account.id}</p>
-            {schemaState && !schemaState.createEnabled ? (
-              <p className="route-error">
-                products.create disabled: {schemaState.createReason || "операция отключена по capability"}
-              </p>
-            ) : null}
+              return (
+                <section key={`account-${account.id}`} className="panel-card page-stack">
+                  <div className="panel-title-row">
+                    <h3>Account override · {account.displayName}</h3>
+                  </div>
+                  <p className="route-hint">{account.platform} · accountId: {account.id}</p>
+                  {schemaState && !schemaState.createEnabled ? (
+                    <p className="route-error">
+                      products.create disabled: {schemaState.createReason || "операция отключена по capability"}
+                    </p>
+                  ) : null}
 
-            <div className="grid-2">
-              <label className="field">
-                <span>SchemaId override</span>
-                <input
-                  className="input"
-                  value={override.schemaId ?? ""}
-                  onChange={(event) => updateAccountOverrideField(account.id, "schemaId", event.target.value)}
-                  placeholder="optional"
-                />
-              </label>
-              <label className="field">
-                <span>Title override</span>
-                <input
-                  className="input"
-                  value={override.title ?? ""}
-                  onChange={(event) => updateAccountOverrideField(account.id, "title", event.target.value)}
-                  placeholder="optional"
-                />
-              </label>
-            </div>
+                  <div className="grid-2">
+                    <label className="field">
+                      <span>SchemaId override</span>
+                      <input
+                        className="input"
+                        value={override.schemaId ?? ""}
+                        onChange={(event) => updateAccountOverrideField(account.id, "schemaId", event.target.value)}
+                        placeholder="optional"
+                      />
+                    </label>
+                    <label className="field">
+                      <span>Title override</span>
+                      <input
+                        className="input"
+                        value={override.title ?? ""}
+                        onChange={(event) => updateAccountOverrideField(account.id, "title", event.target.value)}
+                        placeholder="optional"
+                      />
+                    </label>
+                  </div>
 
-            <div className="grid-2">
-              <label className="field">
-                <span>Price override</span>
-                <input
-                  className="input"
-                  value={override.priceAmount ?? ""}
-                  onChange={(event) => updateAccountOverrideField(account.id, "priceAmount", event.target.value)}
-                  placeholder="optional"
-                />
-              </label>
-              <label className="field">
-                <span>Currency override</span>
-                <input
-                  className="input"
-                  value={override.priceCurrency ?? ""}
-                  onChange={(event) => updateAccountOverrideField(account.id, "priceCurrency", event.target.value)}
-                  placeholder="optional"
-                />
-              </label>
-            </div>
+                  <div className="grid-2">
+                    <label className="field">
+                      <span>Price override</span>
+                      <input
+                        className="input"
+                        value={override.priceAmount ?? ""}
+                        onChange={(event) => updateAccountOverrideField(account.id, "priceAmount", event.target.value)}
+                        placeholder="optional"
+                      />
+                    </label>
+                    <label className="field">
+                      <span>Currency override</span>
+                      <input
+                        className="input"
+                        value={override.priceCurrency ?? ""}
+                        onChange={(event) => updateAccountOverrideField(account.id, "priceCurrency", event.target.value)}
+                        placeholder="optional"
+                      />
+                    </label>
+                  </div>
 
-            {providerFieldCatalog.length > 0 ? (
-              <div className="stacked-block">
-                {providerFieldCatalog.map((field) => renderProviderFieldInput(
-                  `account-${account.id}`,
-                  field,
-                  override.providerFields[field.key] ?? "",
-                  (nextValue) => updateAccountProviderField(account.id, field.key, nextValue),
-                  "",
-                ))}
-              </div>
-            ) : null}
-          </section>
-        );
-      })}
-
-      <div className="panel-actions">
-        <button
-          type="button"
-          className="button button-primary"
-          disabled={createProductMutation.isPending || selectedAccounts.length === 0}
-          onClick={() => createProductMutation.mutate()}
-        >
-          Создать товары
-        </button>
-        {mode === "modal" && onCancel ? (
-          <button type="button" className="button button-ghost" onClick={onCancel}>
-            Отмена
-          </button>
-        ) : null}
-      </div>
+                  {providerFieldCatalog.length > 0 ? (
+                    <div className="stacked-block">
+                      {providerFieldCatalog.map((field) => renderProviderFieldInput(
+                        `account-${account.id}`,
+                        field,
+                        override.providerFields[field.key] ?? "",
+                        (nextValue) => updateAccountProviderField(account.id, field.key, nextValue),
+                        "",
+                      ))}
+                    </div>
+                  ) : null}
+                </section>
+              );
+            })}
+          </div>
+        )}
+      </details>
 
       {submitResults.length > 0 ? (
-        <section className="panel-card page-stack">
-          <h3>Результат по аккаунтам</h3>
+        <FormSection
+          title="Результат по аккаунтам"
+          description="Краткий итог по каждому выбранному аккаунту."
+        >
           <ul className="entity-list">
             {submitResults.map((item) => (
               <li key={`${item.accountId}-${item.status}`} className="entity-list-item">
@@ -1309,10 +1350,74 @@ export function ProjectProductCreatePanel({
               </li>
             ))}
           </ul>
-        </section>
+        </FormSection>
       ) : null}
 
       <p className="route-hint">{status}</p>
+      </div>
+
+      <DetailRail
+        title="Сводка"
+        badge={<span className="badge">Draft</span>}
+        sticky
+        className="product-create-rail"
+      >
+        <dl className="kv-list">
+          <div>
+            <dt>Выбрано аккаунтов</dt>
+            <dd>{selectedAccounts.length}</dd>
+          </div>
+          <div>
+            <dt>Готовые к submit</dt>
+            <dd>{readyAccountCount}</dd>
+          </div>
+          <div>
+            <dt>Платформы</dt>
+            <dd>{selectedPlatformLabels.length > 0 ? selectedPlatformLabels.join(", ") : "n/a"}</dd>
+          </div>
+          <div>
+            <dt>Schema</dt>
+            <dd>{universalSchemaId || "n/a"}</dd>
+          </div>
+          <div>
+            <dt>Provider fields</dt>
+            <dd>{providerFieldCatalog.length}</dd>
+          </div>
+          <div>
+            <dt>Playerok accounts</dt>
+            <dd>{playerokAccounts.length}</dd>
+          </div>
+        </dl>
+
+        {selectedAccountLabels.length > 0 ? (
+          <div className="stacked-block">
+            <p className="route-hint">Выбранные аккаунты</p>
+            <div className="entity-pills">
+              {selectedAccountLabels.map((label) => (
+                <span key={label} className="entity-pill">{label}</span>
+              ))}
+            </div>
+          </div>
+        ) : null}
+
+        {createDisabledReason ? <p className="route-error">{createDisabledReason}</p> : null}
+
+        <div className="action-stack">
+          <button
+            type="button"
+            className="button button-primary"
+            disabled={createProductMutation.isPending || selectedAccounts.length === 0}
+            onClick={() => createProductMutation.mutate()}
+          >
+            Создать товар
+          </button>
+          {mode === "modal" && onCancel ? (
+            <button type="button" className="button button-ghost" onClick={onCancel}>
+              Отмена
+            </button>
+          ) : null}
+        </div>
+      </DetailRail>
     </div>
   );
 }

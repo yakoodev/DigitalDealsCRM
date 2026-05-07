@@ -23,9 +23,9 @@ x-external-api-env: &external-api-env
   EXTERNAL_API_SYSTEM_PERMISSION_CLAIM_TYPE: ddcrm.system.permissions
   EXTERNAL_API_SYSTEM_PERMISSION_CLAIM_VALUE: system.accountManager.manage
   EXTERNAL_API_SYSTEM_INTEGRATIONS_PERMISSION_CLAIM_VALUE: system.integrations.manage
-  EXTERNAL_API_SUPER_ADMIN_EMAIL: root@ddcrm.local
-  EXTERNAL_API_SUPER_ADMIN_PASSWORD: ChangeMe123!
-  EXTERNAL_API_SUPER_ADMIN_DISPLAY_NAME: Root Admin
+  EXTERNAL_API_SUPER_ADMIN_EMAIL: admin@ddcrm.local
+  EXTERNAL_API_SUPER_ADMIN_PASSWORD: AdminFullAccess123!
+  EXTERNAL_API_SUPER_ADMIN_DISPLAY_NAME: Admin Full Access
   EXTERNAL_API_AUTH_TOKEN_LIFETIME_MINUTES: "60"
   EXTERNAL_API_AUTH_PROVIDER_TELEGRAM_ENABLED: "false"
   EXTERNAL_API_AUTH_PROVIDER_GITHUB_ENABLED: "false"
@@ -196,7 +196,7 @@ services:
       <<: *service-auth-env
       ENTITLEMENT_DB_CONNECTION: Host=postgres;Port=5432;Database=ddcrm_entitlement;Username=postgres;Password=postgres
     ports:
-      - "5221:8080"
+      - "15221:8080"
 
   gateway-api:
     <<: *dotnet-service
@@ -262,6 +262,7 @@ services:
     environment:
       NEXT_TELEMETRY_DISABLED: "1"
     ports:
+      - "3000:3000"
       - "3800:3000"
     networks:
       - ddcrm

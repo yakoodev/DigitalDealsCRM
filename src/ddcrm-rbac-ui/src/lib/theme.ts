@@ -15,11 +15,11 @@ export function isThemePreference(value: string | null | undefined): value is Th
 
 export function readStoredThemePreference(): ThemePreference {
   if (typeof window === "undefined") {
-    return "system";
+    return "dark";
   }
 
   const raw = window.localStorage.getItem(THEME_STORAGE_KEY);
-  return isThemePreference(raw) ? raw : "system";
+  return isThemePreference(raw) ? raw : "dark";
 }
 
 export function writeStoredThemePreference(preference: ThemePreference) {
@@ -77,7 +77,7 @@ export function getThemeInitScript() {
   const valid = ["system", "light", "dark"];
   const root = document.documentElement;
   const stored = localStorage.getItem(key);
-  const preference = valid.includes(stored ?? "") ? stored : "system";
+  const preference = valid.includes(stored ?? "") ? stored : "dark";
   const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
   const resolved = preference === "dark" ? "dark" : preference === "light" ? "light" : prefersDark ? "dark" : "light";
   root.dataset.themePreference = preference;

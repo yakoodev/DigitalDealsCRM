@@ -25,6 +25,7 @@ import {
   purchaseAddon,
   revealAccountProxyCredentials,
   removeMember,
+  updateProject,
   updateAccount,
   updateAccountProxyCredentials,
 } from "@/generated/external-api";
@@ -888,6 +889,21 @@ export async function createProjectRequest(
 ): Promise<Project> {
   const response = await createProject(
     { name },
+    buildRequestInit(session, true),
+    createBaseUrlFetcher(session.baseUrl),
+  );
+
+  return unwrapOrThrow(response).project;
+}
+
+export async function updateProjectRequest(
+  session: ApiSession,
+  projectId: string,
+  payload: GenericObjectRequest,
+): Promise<Project> {
+  const response = await updateProject(
+    projectId,
+    payload,
     buildRequestInit(session, true),
     createBaseUrlFetcher(session.baseUrl),
   );

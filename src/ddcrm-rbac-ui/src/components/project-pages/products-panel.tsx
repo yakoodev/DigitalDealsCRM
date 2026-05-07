@@ -2,8 +2,7 @@
 
 import { useMutation, useQueries, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
-import { AccountSelector } from "@/components/account-selector";
-import { ModulePageShell } from "@/components/layout/module-page-shell";
+import Link from "next/link";
 import { RouteModalHost } from "@/components/layout/route-modal-host";
 import { ProjectProductCreatePanel } from "@/components/project-pages/product-create-panel";
 import { ProjectProductEditPanel } from "@/components/project-pages/product-edit-panel";
@@ -27,6 +26,8 @@ interface AccountQueryError {
   accountId: string;
   message: string;
 }
+
+type StatusTone = "ok" | "warn" | "info" | "bad";
 
 function readFirstNumber(row: Record<string, unknown>, keys: readonly string[]) {
   for (const key of keys) {
@@ -75,10 +76,63 @@ function resolveProductStatus(row: Record<string, unknown>) {
   return toReadableValue(row.status ?? row.businessStatus ?? row.state);
 }
 
+function readStatusKey(status: string) {
+  return status.trim().toLowerCase();
+}
+
+function resolveStatusTone(status: string): StatusTone {
+  const normalized = readStatusKey(status);
+  if (!normalized) {
+    return "info";
+  }
+
+  if (normalized.includes("error") || normalized.includes("fail") || normalized.includes("broken")) {
+    return "bad";
+  }
+
+  if (
+    normalized.includes("warn")
+    || normalized.includes("review")
+    || normalized.includes("token")
+  ) {
+    return "warn";
+  }
+
+  if (
+    normalized.includes("active")
+    || normalized.includes("online")
+    || normalized.includes("enabled")
+    || normalized.includes("ok")
+  ) {
+    return "ok";
+  }
+
+  return "info";
+}
+
+function resolveStock(row: Record<string, unknown>) {
+  const direct = readFirstNumber(row, ["stock", "balance", "quantity", "available"]);
+  if (direct === null) {
+    return null;
+  }
+
+  return direct;
+}
+
+function resolveSales(row: Record<string, unknown>) {
+  return readFirstNumber(row, ["sales", "sold", "orders"]) ?? null;
+}
+
+function resolveOfferCount(row: Record<string, unknown>) {
+  return readFirstNumber(row, ["offersCount", "offers", "variants"]) ?? null;
+}
+
 export function ProjectProductsPanel({ apiSession, projectId }: ProjectProductsPanelProps) {
   const queryClient = useQueryClient();
   const [accountFilterId, setAccountFilterId] = useState("all");
   const [productSearch, setProductSearch] = useState("");
+  const [platformFilter, setPlatformFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState("all");
   const [selectedProductKey, setSelectedProductKey] = useState("");
   const [status, setStatus] = useState("");
   const { modal, accountId: modalAccountId, productId: modalProductId, closeModal, openModal } =
@@ -89,7 +143,6 @@ export function ProjectProductsPanel({ apiSession, projectId }: ProjectProductsP
     selectedAccountId,
     isLoading: accountsLoading,
     error: accountsError,
-    setSelectedAccountId,
   } = useProjectAccounts(apiSession, projectId);
 
   const accountNameById = useMemo(
@@ -150,17 +203,42 @@ export function ProjectProductsPanel({ apiSession, projectId }: ProjectProductsP
 
   const filteredRows = useMemo(() => {
     const query = productSearch.trim().toLowerCase();
-    if (!query) {
-      return aggregatedRows;
-    }
-
     return aggregatedRows.filter(({ accountId, row }) => {
       const id = readFirstString(row, ["productId", "id"]).toLowerCase();
       const title = readFirstString(row, ["title", "name", "displayName"]).toLowerCase();
       const accountName = (accountNameById.get(accountId) ?? "").toLowerCase();
-      return id.includes(query) || title.includes(query) || accountName.includes(query);
+      const accountPlatform =
+        accounts.find((account) => account.id === accountId)?.platform.toLowerCase() ?? "";
+      const normalizedStatus = readStatusKey(resolveProductStatus(row));
+      const passesQuery = !query || id.includes(query) || title.includes(query) || accountName.includes(query);
+
+      if (!passesQuery) {
+        return false;
+      }
+
+      if (platformFilter !== "all" && accountPlatform !== platformFilter) {
+        return false;
+      }
+
+      if (statusFilter === "all") {
+        return true;
+      }
+
+      if (statusFilter === "active") {
+        return normalizedStatus.includes("active") || normalizedStatus.includes("online") || normalizedStatus.includes("ok");
+      }
+
+      if (statusFilter === "paused") {
+        return normalizedStatus.includes("pause") || normalizedStatus.includes("draft") || normalizedStatus.includes("inactive");
+      }
+
+      if (statusFilter === "error") {
+        return normalizedStatus.includes("error") || normalizedStatus.includes("warn") || normalizedStatus.includes("fail");
+      }
+
+      return true;
     });
-  }, [accountNameById, aggregatedRows, productSearch]);
+  }, [accountNameById, accounts, aggregatedRows, platformFilter, productSearch, statusFilter]);
 
   const selectedProduct = useMemo(() => {
     if (!selectedProductKey) {
@@ -200,6 +278,39 @@ export function ProjectProductsPanel({ apiSession, projectId }: ProjectProductsP
     .map(({ row }) => readFirstNumber(row, ["price", "amount", "cost"]))
     .filter((value): value is number => typeof value === "number");
 
+  const statusSummary = useMemo(() => {
+    return aggregatedRows.reduce(
+      (acc, entry) => {
+        const statusText = resolveProductStatus(entry.row);
+        const tone = resolveStatusTone(statusText);
+
+        if (tone === "ok") {
+          acc.active += 1;
+        } else if (tone === "bad") {
+          acc.error += 1;
+        } else if (tone === "warn") {
+          acc.warn += 1;
+        } else {
+          acc.paused += 1;
+        }
+
+        const stock = resolveStock(entry.row);
+        if (typeof stock === "number" && Number.isFinite(stock) && stock <= 0) {
+          acc.outOfStock += 1;
+        }
+
+        return acc;
+      },
+      {
+        active: 0,
+        paused: 0,
+        warn: 0,
+        error: 0,
+        outOfStock: 0,
+      },
+    );
+  }, [aggregatedRows]);
+
   const averagePrice =
     pricedItems.length === 0 ? null : pricedItems.reduce((sum, value) => sum + value, 0) / pricedItems.length;
 
@@ -230,35 +341,136 @@ export function ProjectProductsPanel({ apiSession, projectId }: ProjectProductsP
 
   return (
     <div className="page-stack" data-testid="project-products-panel">
-      <ModulePageShell
-        title="Товары / Products"
-        description="Автосбор данных по воркерам, фильтрация по аккаунту и modal-first create/edit без перегруженных экранов."
-        actions={(
+      <section className="page-head">
+        <div className="page-head__row">
+          <div>
+            <h1 className="page-title">Товары</h1>
+          </div>
+          <div className="inline">
+            <button
+              type="button"
+              className="button button-ghost button-small"
+              onClick={refreshAllProducts}
+              disabled={anyFetching || scopedAccountIds.length === 0}
+            >
+              Обновить
+            </button>
+            <button
+              type="button"
+              className="button button-primary button-small"
+              onClick={() => openModal("create", { accountId: targetAccountId })}
+            >
+              ＋ Создать товар
+            </button>
+          </div>
+        </div>
+        {status ? <div className="status status--info">{status}</div> : null}
+      </section>
+
+      <section className="compact-kpi-grid" aria-label="Сводка товаров">
+        <article className="compact-kpi">
+          <div className="compact-kpi__value">{aggregatedRows.length}</div>
+          <div className="compact-kpi__label">всего товаров</div>
+        </article>
+        <article className="compact-kpi">
+          <div className="compact-kpi__value">{statusSummary.active}</div>
+          <div className="compact-kpi__label">активные</div>
+        </article>
+        <article className="compact-kpi">
+          <div className="compact-kpi__value">{statusSummary.paused + statusSummary.warn}</div>
+          <div className="compact-kpi__label">на паузе/проверке</div>
+        </article>
+        <article className="compact-kpi">
+          <div className="compact-kpi__value">{statusSummary.outOfStock}</div>
+          <div className="compact-kpi__label">закончились</div>
+        </article>
+        <article className="compact-kpi">
+          <div className="compact-kpi__value">{statusSummary.error}</div>
+          <div className="compact-kpi__label">с ошибками</div>
+        </article>
+      </section>
+
+      <section className="card mb-4" aria-label="Фильтры товаров">
+        <div className="product-filter">
+          <label className="field">
+            <span>Поиск</span>
+            <input
+              className="input"
+              value={productSearch}
+              onChange={(event) => setProductSearch(event.target.value)}
+              placeholder="Название, ID, аккаунт"
+            />
+          </label>
+          <label className="field">
+            <span>Аккаунт</span>
+            <select
+              className="input"
+              value={effectiveFilterId}
+              onChange={(event) => setAccountFilterId(event.target.value)}
+            >
+              <option value="all">Все аккаунты</option>
+              {accounts.map((account) => (
+                <option key={account.id} value={account.id}>
+                  {account.displayName}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="field">
+            <span>Площадка</span>
+            <select
+              className="input"
+              value={platformFilter}
+              onChange={(event) => setPlatformFilter(event.target.value)}
+            >
+              <option value="all">Все площадки</option>
+              {[...new Set(accounts.map((account) => account.platform.toLowerCase()))].map((platform) => (
+                <option key={`platform-${platform}`} value={platform}>
+                  {platform}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="field">
+            <span>Статус</span>
+            <select
+              className="input"
+              value={statusFilter}
+              onChange={(event) => setStatusFilter(event.target.value)}
+            >
+              <option value="all">Все статусы</option>
+              <option value="active">Активные</option>
+              <option value="paused">На паузе</option>
+              <option value="error">С ошибками</option>
+            </select>
+          </label>
           <button
             type="button"
-            className="button button-primary"
-            onClick={() => openModal("create", { accountId: targetAccountId })}
+            className="button"
+            onClick={refreshAllProducts}
+            disabled={anyFetching || scopedAccountIds.length === 0}
           >
-            Добавить товар
+            Применить
           </button>
-        )}
-        stats={[
-          { label: "Товаров", value: String(filteredRows.length), hint: "По текущему фильтру" },
-          { label: "Средняя цена", value: averagePrice === null ? "n/a" : averagePrice.toFixed(2) },
-          { label: "Аккаунтов", value: String(scopedAccountIds.length), hint: "В выборке" },
-        ]}
-        main={(
-          <section className="glass-card page-stack">
-            <div className="panel-title-row">
-              <h3>Каталог проекта</h3>
-              <button
-                type="button"
-                className="button button-ghost"
-                onClick={refreshAllProducts}
-                disabled={anyFetching || scopedAccountIds.length === 0}
-              >
-                Обновить
-              </button>
+        </div>
+      </section>
+
+      <section className="products-layout">
+        <div className="stack">
+          <section className="card">
+            <div className="card__head">
+              <div>
+                <h2 className="card__title">Список товаров</h2>
+                <div className="card__meta">Карточки компактные, чтобы быстро смотреть статус и ключевые поля.</div>
+              </div>
+              <div className="inline">
+                <button type="button" className="button button-ghost button-small">
+                  Массовые действия
+                </button>
+                <button type="button" className="button button-ghost button-small">
+                  Экспорт
+                </button>
+              </div>
             </div>
 
             {scopedAccountIds.length === 0 ? (
@@ -286,37 +498,62 @@ export function ProjectProductsPanel({ apiSession, projectId }: ProjectProductsP
             {!anyPending && filteredRows.length === 0 ? (
               <p className="route-hint">Товары не найдены для выбранной выборки.</p>
             ) : (
-              <ul className="entity-list">
+              <div className="product-list">
                 {filteredRows.map(({ accountId, row }, index) => {
                   const productId = readFirstString(row, ["productId", "id"]);
                   const title = readFirstString(row, ["title", "name", "displayName"]);
                   const price = resolveProductPrice(row);
                   const accountName = accountNameById.get(accountId) ?? accountId;
+                  const statusLabel = resolveProductStatus(row) || "n/a";
+                  const statusTone = resolveStatusTone(statusLabel);
+                  const stock = resolveStock(row);
+                  const sales = resolveSales(row);
+                  const offersCount = resolveOfferCount(row);
                   const itemKey = `${accountId}:${productId || index}`;
 
                   return (
-                    <li
+                    <article
                       key={itemKey}
-                      className={`entity-list-item ${selectedProductKey === itemKey ? "is-selected" : ""}`}
+                      className={`product-row ${selectedProductKey === itemKey ? "is-selected" : ""}`}
                     >
-                      <button
-                        type="button"
-                        className="entity-hitbox"
-                        onClick={() => setSelectedProductKey(itemKey)}
-                      >
-                        <strong>{title || "Без названия"}</strong>
-                        <div className="entity-pills">
-                          <span className="entity-pill">{accountName}</span>
-                          <span className="entity-pill">{productId || "id: n/a"}</span>
-                          <span className="entity-pill">Цена: {price || "n/a"}</span>
+                      <div className="product-main">
+                        <div className="product-head">
+                          <h3 className="product-title">{title || "Без названия"}</h3>
+                          <span
+                            className={`status ${statusTone === "ok"
+                              ? "status--ok"
+                              : statusTone === "warn"
+                                ? "status--warn"
+                                : statusTone === "bad"
+                                  ? "status--bad"
+                                  : "status--info"}`}
+                          >
+                            {statusLabel}
+                          </span>
+                          <span className="badge">{accountName}</span>
                         </div>
-                        <small>Статус: {resolveProductStatus(row) || "n/a"}</small>
-                      </button>
+                        <div className="product-meta">
+                          ID: {productId || "n/a"} · {accountName}
+                        </div>
+                        <div className="product-stats">
+                          <span className="chip">Цена: {price || "n/a"}</span>
+                          <span className="chip">Остаток: {stock === null ? "n/a" : formatNumber(stock)}</span>
+                          <span className="chip">Продаж: {sales === null ? "n/a" : formatNumber(sales)}</span>
+                          <span className="chip">Офферы: {offersCount === null ? "n/a" : formatNumber(offersCount)}</span>
+                        </div>
+                      </div>
 
-                      <div className="inline-actions">
+                      <div className="product-actions">
                         <button
                           type="button"
-                          className="button button-ghost"
+                          className="button button-ghost button-small"
+                          onClick={() => setSelectedProductKey(itemKey)}
+                        >
+                          Выбрать
+                        </button>
+                        <button
+                          type="button"
+                          className="button button-ghost button-small"
                           disabled={!productId}
                           onClick={() =>
                             openModal("edit", {
@@ -329,7 +566,7 @@ export function ProjectProductsPanel({ apiSession, projectId }: ProjectProductsP
                         </button>
                         <button
                           type="button"
-                          className="button button-ghost"
+                          className="button button-ghost button-small"
                           disabled={!productId || deleteProductMutation.isPending}
                           onClick={() => {
                             if (productId) {
@@ -340,53 +577,74 @@ export function ProjectProductsPanel({ apiSession, projectId }: ProjectProductsP
                           Удалить
                         </button>
                       </div>
-                    </li>
+                    </article>
                   );
                 })}
-              </ul>
+              </div>
             )}
           </section>
-        )}
-        side={(
-          <section className="glass-card page-stack">
-            <h3>Фильтры и контекст</h3>
+        </div>
+        <aside className="stack sticky-side">
+          <section className="card stack">
+            <div>
+              <h2 className="card__title">Контекст выборки</h2>
+              <div className="card__meta">Краткая информация по текущему списку</div>
+            </div>
+            <div className="side-list">
+              <div className="side-row">
+                <div className="summary-line">
+                  <span>Текущий фильтр</span>
+                  <strong>
+                    {statusFilter === "all" ? "Все товары" : statusFilter}
+                  </strong>
+                </div>
+              </div>
+              <div className="side-row">
+                <div className="summary-line">
+                  <span>Аккаунтов в выборке</span>
+                  <strong>{scopedAccountIds.length}</strong>
+                </div>
+              </div>
+              <div className="side-row">
+                <div className="summary-line">
+                  <span>Средняя цена</span>
+                  <strong>{averagePrice === null ? "n/a" : `${averagePrice.toFixed(2)} RUB`}</strong>
+                </div>
+              </div>
+              <div className="side-row">
+                <div className="summary-line">
+                  <span>Требуют внимания</span>
+                  <strong>{statusSummary.warn + statusSummary.error}</strong>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section className="card stack">
+            <div>
+              <h2 className="card__title">Действия</h2>
+              <div className="card__meta">Для выбранных или отфильтрованных товаров</div>
+            </div>
+            <button
+              type="button"
+              className="button button-primary w-full"
+              onClick={() => openModal("create", { accountId: targetAccountId })}
+            >
+              Создать товар
+            </button>
+            <button
+              type="button"
+              className="button w-full"
+              onClick={refreshAllProducts}
+              disabled={anyFetching || scopedAccountIds.length === 0}
+            >
+              Синхронизировать
+            </button>
             {accountsError ? <p className="route-error">{accountsError.message}</p> : null}
-            <AccountSelector
-              accounts={accounts}
-              selectedAccountId={selectedAccountId}
-              onChange={setSelectedAccountId}
-              isLoading={accountsLoading}
-            />
-
-            <label className="field">
-              <span>Источник данных</span>
-              <select
-                className="input"
-                value={effectiveFilterId}
-                onChange={(event) => setAccountFilterId(event.target.value)}
-              >
-                <option value="all">Все аккаунты проекта</option>
-                {accounts.map((account) => (
-                  <option key={account.id} value={account.id}>
-                    {account.displayName} · {account.platform}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <label className="field">
-              <span>Поиск</span>
-              <input
-                className="input"
-                value={productSearch}
-                onChange={(event) => setProductSearch(event.target.value)}
-                placeholder="название / id / аккаунт"
-              />
-            </label>
-
+            {accountsLoading ? <p className="route-hint">Загружаем аккаунты...</p> : null}
             {selectedProduct ? (
               <>
-                <h4>Выбранный товар</h4>
+                <h3>Выбранный товар</h3>
                 <dl className="kv-list">
                   <div>
                     <dt>Account</dt>
@@ -405,7 +663,17 @@ export function ProjectProductsPanel({ apiSession, projectId }: ProjectProductsP
                     <dd>{resolveProductStatus(selectedProduct.row) || "n/a"}</dd>
                   </div>
                 </dl>
-
+                <div className="split">
+                  <Link
+                    className="button button-ghost button-small"
+                    href={`/projects/${projectId}/products?modal=edit&accountId=${selectedProduct.accountId}&productId=${readFirstString(selectedProduct.row, ["productId", "id"])}`}
+                  >
+                    Редактировать
+                  </Link>
+                  <Link className="button button-ghost button-small" href={`/projects/${projectId}/offers`}>
+                    К офферам
+                  </Link>
+                </div>
                 <details className="details-block">
                   <summary>Technical details</summary>
                   <dl className="kv-list">
@@ -427,11 +695,9 @@ export function ProjectProductsPanel({ apiSession, projectId }: ProjectProductsP
             ) : (
               <p className="route-hint">Выберите товар в списке, чтобы увидеть детали.</p>
             )}
-
-            {status ? <p className="route-hint">{status}</p> : null}
           </section>
-        )}
-      />
+        </aside>
+      </section>
 
       <RouteModalHost
         isOpen={modal === "create"}

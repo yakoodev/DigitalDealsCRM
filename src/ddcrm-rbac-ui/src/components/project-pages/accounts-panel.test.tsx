@@ -101,7 +101,11 @@ describe("ProjectAccountsPanel", () => {
       );
     });
 
-    await userEvent.click(screen.getByRole("button", { name: "Обновить" }));
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Проверить" })).toBeEnabled();
+    });
+
+    await userEvent.click(screen.getByRole("button", { name: "Проверить" }));
 
     await waitFor(() => {
       const accountInfoCalls = vi
@@ -127,12 +131,8 @@ describe("ProjectAccountsPanel", () => {
   it("для moderator скрывает lifecycle-операции аккаунта", async () => {
     renderPanel("moderator");
 
-    expect(
-      await screen.findByText("`moderator` работает только в режиме просмотра без lifecycle-операций."),
-    ).toBeInTheDocument();
-    expect(
-      screen.queryByRole("button", { name: "Управлять выбранным аккаунтом" }),
-    ).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Добавить аккаунт" })).not.toBeInTheDocument();
+    expect(await screen.findByText("Proxy reveal/update доступны только ролям owner/admin.")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Управлять" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "+ Аккаунт" })).not.toBeInTheDocument();
   });
 });
