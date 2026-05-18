@@ -632,8 +632,25 @@ public sealed class InvokeCustomHttpNodeExecutor(ICustomHttpIntegrationInvoker i
     }
 }
 
-public sealed class SteamActionNodeExecutor : IWorkflowNodeExecutor
+public sealed class SteamActionNodeExecutor(
+    WorkflowWorkerBridgeClient workflowWorkerBridgeClient,
+    IOptions<WorkflowMessagePollingOptions> workflowMessagePollingOptions)
+    : IWorkflowNodeExecutor
 {
+    private static readonly HashSet<string> SteamReadOperations = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "accounts.list",
+        "jobs.list",
+        "workflow.blocks.catalog",
+        "workflow.actions.catalog",
+        "rentals.availability.list",
+        "rentals.account.select",
+        "denuvo.availability.list",
+        "denuvo.slot.stats",
+    };
+
+    private readonly WorkflowMessagePollingOptions _workflowMessagePollingOptions = workflowMessagePollingOptions.Value;
+
     public string NodeType => WorkflowNodeTypes.SteamAction;
 
     public async Task<WorkflowNodeExecutionResult> ExecuteAsync(
@@ -655,64 +672,234 @@ public sealed class SteamActionNodeExecutor : IWorkflowNodeExecutor
                 $"SteamAction node недоступен: интеграция `{IntegrationKeys.SteamAccountsManager}` не активна.");
         }
 
-        var action = ReadOptionalString(request.Node.Config, "action") ?? "change-password";
-        var accountId = ReadOptionalString(request.Node.Config, "accountId");
-        var delaySeconds = ReadOptionalInt(request.Node.Config, "delaySeconds");
-        var payload = ReadOptionalJson(request.Node.Config, "payload");
+        var runtime = await request.DbContext.ProjectIntegrationWorkerRuntimes
+            .AsNoTracking()
+            .Where(x =>
+                x.ProjectId == request.Context.ProjectId &&
+                x.IntegrationKey == IntegrationKeys.SteamAccountsManager &&
+                x.Status == "active")
+            .OrderByDescending(x => x.IsDefault)
+            .ThenBy(x => x.CreatedAtUtc)
+            .FirstOrDefaultAsync(cancellationToken);
+        if (runtime is null)
+        {
+            throw new ApiErrorException(
+                StatusCodes.Status409Conflict,
+                ApiErrorCodes.Conflict,
+                "SteamAction node недоступен: активный runtime интеграции Steam не найден.");
+        }
 
-        return
-            new WorkflowNodeExecutionResult(
-                new Dictionary<string, object?>
+        var operation = ReadRequiredStringTemplate(request.Node.Config, "action", request.Context.Variables);
+        var workerAction = ResolveWorkerActionKey(request.Node.Config, operation, request.Context.Variables);
+        var workerPayload = BuildWorkerPayload(request.Node.Config, request.Context, operation);
+
+        var route = await workflowWorkerBridgeClient.ResolveRouteAsync(
+            _workflowMessagePollingOptions,
+            runtime.RuntimeAccountId,
+            cancellationToken);
+        if (route is null)
+        {
+            throw new InvalidOperationException(
+                $"SteamAction: route не найден для runtime account `{runtime.RuntimeAccountId}`.");
+        }
+
+        var idempotencyKey = $"wf-steam-action:{request.Context.TriggerEventId:N}:{request.Node.Id.Trim()}";
+        var responseElement = await workflowWorkerBridgeClient.InvokeActionAsync(
+            _workflowMessagePollingOptions,
+            route,
+            workerAction,
+            workerPayload,
+            idempotencyKey,
+            cancellationToken);
+
+        var responseObject = JsonSerializer.Deserialize<object?>(responseElement.GetRawText());
+        var variables = new Dictionary<string, object?>
+        {
+            ["steam.action.status"] = "completed",
+            ["steam.action.type"] = operation,
+            ["steam.action.integrationAction"] = workerAction,
+            ["steam.action.runtimeAccountId"] = runtime.RuntimeAccountId.ToString(),
+            ["steam.action.response"] = responseObject,
+        };
+
+        if (responseElement.ValueKind == JsonValueKind.Object)
+        {
+            foreach (var property in responseElement.EnumerateObject())
+            {
+                variables[$"steam.action.{property.Name}"] =
+                    ConvertJsonElement(property.Value);
+            }
+        }
+
+        if (operation.StartsWith("rentals.", StringComparison.OrdinalIgnoreCase))
+        {
+            PromoteRentalVariables(responseElement, variables);
+        }
+
+        if (operation.StartsWith("denuvo.", StringComparison.OrdinalIgnoreCase))
+        {
+            PromoteDenuvoVariables(responseElement, variables);
+        }
+
+        return new WorkflowNodeExecutionResult(variables);
+    }
+
+    private static Dictionary<string, JsonElement> BuildWorkerPayload(
+        Dictionary<string, JsonElement>? config,
+        WorkflowExecutionRuntimeContext context,
+        string operation)
+    {
+        var result = new Dictionary<string, object?>(StringComparer.Ordinal);
+        result["operation"] = operation;
+        result["projectId"] = context.ProjectId;
+
+        if (config is not null)
+        {
+            foreach (var pair in config)
+            {
+                if (pair.Key is "action" or "integrationAction" or "payload")
                 {
-                    ["steam.action.status"] = "queued",
-                    ["steam.action.type"] = action,
-                    ["steam.action.accountId"] = accountId,
-                    ["steam.action.delaySeconds"] = delaySeconds,
-                    ["steam.action.payload"] = payload,
-                    ["steam.action.integrationKey"] = IntegrationKeys.SteamAccountsManager,
-                });
-    }
+                    continue;
+                }
 
-    private static string? ReadOptionalString(Dictionary<string, JsonElement>? config, string key)
-    {
-        if (config is null || !config.TryGetValue(key, out var value) || value.ValueKind != JsonValueKind.String)
-        {
-            return null;
+                result[pair.Key] = WorkflowRuntimeTemplateResolver.ResolveJsonElementTemplates(pair.Value, context.Variables);
+            }
+
+            if (config.TryGetValue("payload", out var payloadElement) &&
+                payloadElement.ValueKind == JsonValueKind.Object)
+            {
+                var resolvedPayload = WorkflowRuntimeTemplateResolver.ResolveJsonElementTemplates(payloadElement, context.Variables);
+                result["payload"] = resolvedPayload;
+
+                if (resolvedPayload is IDictionary<string, object?> payloadDictionary &&
+                    (operation.StartsWith("rentals.", StringComparison.OrdinalIgnoreCase)
+                     || operation.StartsWith("denuvo.", StringComparison.OrdinalIgnoreCase)
+                     || string.Equals(operation, "workflow.blocks.enqueue", StringComparison.OrdinalIgnoreCase)))
+                {
+                    foreach (var entry in payloadDictionary)
+                    {
+                        if (!result.ContainsKey(entry.Key))
+                        {
+                            result[entry.Key] = entry.Value;
+                        }
+                    }
+                }
+            }
         }
 
-        var text = value.GetString()?.Trim();
-        return string.IsNullOrWhiteSpace(text) ? null : text;
+        return result.ToDictionary(
+            x => x.Key,
+            x => JsonSerializer.SerializeToElement(x.Value),
+            StringComparer.Ordinal);
     }
 
-    private static int? ReadOptionalInt(Dictionary<string, JsonElement>? config, string key)
+    private static void PromoteRentalVariables(
+        JsonElement response,
+        IDictionary<string, object?> target)
+    {
+        if (response.ValueKind != JsonValueKind.Object)
+        {
+            return;
+        }
+
+        foreach (var property in response.EnumerateObject())
+        {
+            target[$"rental.{property.Name}"] = ConvertJsonElement(property.Value);
+        }
+
+        if (!response.TryGetProperty("credentials", out var credentials) ||
+            credentials.ValueKind != JsonValueKind.Object)
+        {
+            return;
+        }
+
+        foreach (var property in credentials.EnumerateObject())
+        {
+            target[$"rental.credentials.{property.Name}"] = ConvertJsonElement(property.Value);
+            target[$"rental.{property.Name}"] = ConvertJsonElement(property.Value);
+        }
+    }
+
+    private static void PromoteDenuvoVariables(
+        JsonElement response,
+        IDictionary<string, object?> target)
+    {
+        if (response.ValueKind != JsonValueKind.Object)
+        {
+            return;
+        }
+
+        foreach (var property in response.EnumerateObject())
+        {
+            target[$"denuvo.{property.Name}"] = ConvertJsonElement(property.Value);
+        }
+    }
+
+    private static object? ConvertJsonElement(JsonElement value)
+    {
+        return value.ValueKind switch
+        {
+            JsonValueKind.String => value.GetString(),
+            JsonValueKind.Number when value.TryGetInt64(out var asLong) => asLong,
+            JsonValueKind.Number when value.TryGetDecimal(out var asDecimal) => asDecimal,
+            JsonValueKind.True => true,
+            JsonValueKind.False => false,
+            JsonValueKind.Object or JsonValueKind.Array => JsonSerializer.Deserialize<object?>(value.GetRawText()),
+            _ => null,
+        };
+    }
+
+    private static string ResolveWorkerActionKey(
+        Dictionary<string, JsonElement>? config,
+        string operation,
+        IReadOnlyDictionary<string, object?> variables)
+    {
+        var raw = ReadOptionalStringTemplate(config, "integrationAction", variables);
+        if (!string.IsNullOrWhiteSpace(raw))
+        {
+            return raw.Trim();
+        }
+
+        return SteamReadOperations.Contains(operation)
+            ? "ext.integration.steam.read"
+            : "ext.integration.steam.jobs";
+    }
+
+    private static string ReadRequiredStringTemplate(
+        Dictionary<string, JsonElement>? config,
+        string key,
+        IReadOnlyDictionary<string, object?> variables)
+    {
+        var value = ReadOptionalStringTemplate(config, key, variables);
+        if (!string.IsNullOrWhiteSpace(value))
+        {
+            return value.Trim();
+        }
+
+        throw new ApiErrorException(
+            StatusCodes.Status400BadRequest,
+            ApiErrorCodes.ValidationError,
+            $"SteamAction node config.{key} обязателен.");
+    }
+
+    private static string? ReadOptionalStringTemplate(
+        Dictionary<string, JsonElement>? config,
+        string key,
+        IReadOnlyDictionary<string, object?> variables)
     {
         if (config is null || !config.TryGetValue(key, out var value))
         {
             return null;
         }
 
-        if (value.ValueKind == JsonValueKind.Number && value.TryGetInt32(out var number))
+        if (value.ValueKind != JsonValueKind.String)
         {
-            return number;
+            return value.GetRawText();
         }
 
-        if (value.ValueKind == JsonValueKind.String
-            && int.TryParse(value.GetString(), out var parsed))
-        {
-            return parsed;
-        }
-
-        return null;
-    }
-
-    private static object? ReadOptionalJson(Dictionary<string, JsonElement>? config, string key)
-    {
-        if (config is null || !config.TryGetValue(key, out var value))
-        {
-            return null;
-        }
-
-        return JsonSerializer.Deserialize<object?>(value.GetRawText());
+        var rawText = value.GetString() ?? string.Empty;
+        var resolved = WorkflowRuntimeTemplateResolver.ResolveStringTemplateValue(rawText, variables);
+        return resolved?.ToString();
     }
 }
 
@@ -822,12 +1009,7 @@ public sealed class SendBuyerResponseNodeExecutor(
     {
         var template = ReadOptionalString(request.Node.Config, "message")
             ?? "Спасибо за покупку. Данные по заказу подготовлены.";
-        var selectedAccount = ReadRuntimeString(request.Context.Variables, "selectedVariant.accountId");
-        var selectedProduct = ReadRuntimeString(request.Context.Variables, "selectedVariant.workerProductId");
-
-        var message = template
-            .Replace("{{selectedVariant.accountId}}", selectedAccount, StringComparison.Ordinal)
-            .Replace("{{selectedVariant.workerProductId}}", selectedProduct, StringComparison.Ordinal);
+        var message = WorkflowRuntimeTemplateResolver.RenderStringTemplate(template, request.Context.Variables);
 
         var dispatchChannel = await TryDispatchMessageAsync(
             request,
@@ -844,12 +1026,19 @@ public sealed class SendBuyerResponseNodeExecutor(
 
     private static string ReadRuntimeString(Dictionary<string, object?> source, string key)
     {
-        if (!source.TryGetValue(key, out var value) || value is null)
+        var value = WorkflowRuntimeTemplateResolver.ResolvePathValue(key, source);
+        if (value is null)
         {
             return string.Empty;
         }
 
-        return value.ToString() ?? string.Empty;
+        return value switch
+        {
+            JsonElement element when element.ValueKind == JsonValueKind.String => element.GetString() ?? string.Empty,
+            JsonElement element when element.ValueKind == JsonValueKind.Number => element.GetRawText(),
+            JsonElement element when element.ValueKind is JsonValueKind.True or JsonValueKind.False => element.GetBoolean() ? "true" : "false",
+            _ => value.ToString() ?? string.Empty,
+        };
     }
 
     private static string? ReadOptionalString(Dictionary<string, JsonElement>? config, string key)

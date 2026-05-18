@@ -55,6 +55,7 @@
 - релизный прогон worker-контракта обязателен и на симуляторе, и минимум на одной реальной интеграции.
 
 ## 6. Связанные документы
+- `docs/api-contracts/services-and-integrations-api.md`
 - `docs/spec/technical-specification.md`
 - `docs/testing/test-strategy.md`
 - `docs/testing/contract-gates-execution.md`

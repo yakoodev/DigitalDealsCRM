@@ -222,6 +222,52 @@ public sealed class WorkflowWorkerBridgeClient(
         return false;
     }
 
+    public async Task<JsonElement> InvokeActionAsync(
+        WorkflowMessagePollingOptions options,
+        WorkflowWorkerRouteBinding binding,
+        string action,
+        IDictionary<string, JsonElement> payload,
+        string idempotencyKey,
+        CancellationToken cancellationToken)
+    {
+        var actionKey = action.Trim();
+        if (actionKey.Length == 0)
+        {
+            throw new InvalidOperationException("Worker action key is empty.");
+        }
+
+        var path = $"{BuildWorkerPathPrefix(options)}/actions/{Uri.EscapeDataString(actionKey)}";
+        var endpoint = BuildWorkerEndpoint(options, binding, path);
+        var requestBody = new Dictionary<string, object?>
+        {
+            ["payload"] = payload,
+        };
+
+        var request = new HttpRequestMessage(HttpMethod.Post, endpoint)
+        {
+            Content = JsonContent.Create(requestBody),
+        };
+        AddHeaderIfPresent(request, HeaderNames.ServiceToken, options.WorkerServiceToken);
+        request.Headers.TryAddWithoutValidation(HeaderNames.IdempotencyKey, idempotencyKey);
+
+        var response = await httpClient.SendAsync(request, cancellationToken);
+        var body = await response.Content.ReadAsStringAsync(cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            logger.LogWarning(
+                "worker.actions.invoke failed for account {AccountId}, action {Action}. status={StatusCode}; body={Body}",
+                binding.AccountId,
+                actionKey,
+                (int)response.StatusCode,
+                TrimForLog(body));
+            throw new InvalidOperationException(
+                $"Worker action `{actionKey}` failed with status {(int)response.StatusCode}.");
+        }
+
+        using var document = JsonDocument.Parse(body);
+        return document.RootElement.Clone();
+    }
+
     private static string BuildRouteRegistryEndpoint(WorkflowMessagePollingOptions options, string path)
     {
         var baseUrl = options.RouteRegistryBaseUrl.TrimEnd('/');

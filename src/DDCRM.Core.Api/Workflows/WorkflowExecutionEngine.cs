@@ -57,7 +57,7 @@ public sealed class WorkflowExecutionEngine(
                 StepIndex = stepIndex,
                 Status = "running",
                 StartedAtUtc = DateTimeOffset.UtcNow,
-                InputJson = JsonSerializer.Serialize(context.Variables),
+                InputJson = WorkflowAuditRedactor.SerializeRedacted(context.Variables),
             };
             dbContext.WorkflowExecutionSteps.Add(step);
             await dbContext.SaveChangesAsync(cancellationToken);
@@ -79,7 +79,7 @@ public sealed class WorkflowExecutionEngine(
 
                 step.Status = "completed";
                 step.FinishedAtUtc = DateTimeOffset.UtcNow;
-                step.OutputJson = JsonSerializer.Serialize(result.Variables ?? new Dictionary<string, object?>());
+                step.OutputJson = WorkflowAuditRedactor.SerializeRedacted(result.Variables ?? new Dictionary<string, object?>());
 
                 await dbContext.SaveChangesAsync(cancellationToken);
 

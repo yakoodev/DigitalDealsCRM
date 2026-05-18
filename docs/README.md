@@ -28,6 +28,7 @@
 
 ## API-контракты
 - [api-contracts.md](./api-contracts/api-contracts.md)
+- [services-and-integrations-api.md](./api-contracts/services-and-integrations-api.md) — практический гайд по API сервисов, runtime-интеграций и workflow-вызовов
 - [openapi-common.yaml](./api-contracts/openapi-common.yaml) — общие переиспользуемые компоненты
 - [openapi-external.yaml](./api-contracts/openapi-external.yaml) — публичный API
 - [openapi-internal.yaml](./api-contracts/openapi-internal.yaml) — внутренний service-to-service API

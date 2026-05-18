@@ -1,19 +1,14 @@
 import type { Metadata } from "next";
-import { IBM_Plex_Mono, Space_Grotesk } from "next/font/google";
+import type { CSSProperties } from "react";
 import { QueryProvider } from "@/components/query-provider";
 import { getThemeInitScript } from "@/lib/theme";
 import "./globals.css";
 
-const spaceGrotesk = Space_Grotesk({
-  variable: "--font-space-grotesk",
-  subsets: ["latin"],
-});
-
-const ibmPlexMono = IBM_Plex_Mono({
-  variable: "--font-ibm-plex-mono",
-  weight: ["400", "500"],
-  subsets: ["latin"],
-});
+const rootFontVariables: CSSProperties = {
+  // Локальные fallback-шрифты, чтобы сборка не зависела от google fonts сети.
+  ["--font-space-grotesk" as string]: "Segoe UI",
+  ["--font-ibm-plex-mono" as string]: "Cascadia Mono",
+};
 
 export const metadata: Metadata = {
   title: "DigitalDeals CRM",
@@ -37,7 +32,7 @@ export default function RootLayout({
     <html
       lang="ru"
       suppressHydrationWarning
-      className={`${spaceGrotesk.variable} ${ibmPlexMono.variable}`}
+      style={rootFontVariables}
     >
       <head>
         <script dangerouslySetInnerHTML={{ __html: getThemeInitScript() }} />

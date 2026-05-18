@@ -115,6 +115,11 @@ builder.Services.AddHttpClient<WorkflowWorkerBridgeClient>(client =>
 {
     client.Timeout = TimeSpan.FromSeconds(20);
 });
+builder.Services.AddHttpClient("integration-ui-proxy", client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(30);
+});
+builder.Services.Configure<IntegrationEmbeddedUiOptions>(builder.Configuration.GetSection("IntegrationEmbeddedUi"));
 builder.Services.AddScoped<IProjectServiceIntegrationClient>(serviceProvider => serviceProvider.GetRequiredService<FunPayStatIntegrationClient>());
 builder.Services.AddScoped<ProjectServiceIntegrationRegistry>();
 builder.Services.AddSingleton<ProjectSecretCrypto>();
@@ -2581,6 +2586,324 @@ external.MapPost("/projects/{projectId:guid}/integrations/{integrationKey}/insta
         token,
         expiresAtUtc,
         iframeUrl));
+});
+
+app.MapGet("/projects/{projectId:guid}/integrations/{integrationKey}/{instanceId:guid}", async (
+    HttpContext httpContext,
+    Guid projectId,
+    string integrationKey,
+    Guid instanceId,
+    CoreDbContext dbContext,
+    IHttpClientFactory httpClientFactory,
+    IConfiguration configuration,
+    IOptions<IntegrationEmbeddedUiOptions> uiOptions,
+    CancellationToken cancellationToken) =>
+{
+    var uiTokenRaw = httpContext.Request.Query["uiToken"].ToString();
+    if (!TryParseIntegrationUiToken(uiTokenRaw, out var uiToken))
+    {
+        throw new ApiErrorException(StatusCodes.Status401Unauthorized, ApiErrorCodes.Unauthorized, "uiToken отсутствует или невалиден.");
+    }
+
+    if (uiToken.ExpiresAtUtc <= DateTimeOffset.UtcNow)
+    {
+        throw new ApiErrorException(StatusCodes.Status401Unauthorized, ApiErrorCodes.Unauthorized, "uiToken истёк. Обновите iframe-сессию.");
+    }
+
+    var normalizedIntegrationKey = NormalizeIntegrationKey(integrationKey);
+    if (!string.Equals(uiToken.IntegrationKey, normalizedIntegrationKey, StringComparison.OrdinalIgnoreCase)
+        || uiToken.ProjectId != projectId
+        || uiToken.InstanceId != instanceId)
+    {
+        throw new ApiErrorException(StatusCodes.Status403Forbidden, ApiErrorCodes.Forbidden, "uiToken не совпадает с запрошенным integration instance.");
+    }
+
+    if (!IntegrationKeys.WorkerIntegrations.Contains(normalizedIntegrationKey))
+    {
+        throw new ApiErrorException(StatusCodes.Status400BadRequest, ApiErrorCodes.ValidationError, "Embedded UI поддержан только для worker-интеграций.");
+    }
+
+    var runtime = await dbContext.ProjectIntegrationWorkerRuntimes
+        .AsNoTracking()
+        .SingleOrDefaultAsync(
+            x => x.ProjectId == projectId
+                 && x.IntegrationKey == normalizedIntegrationKey
+                 && x.Id == instanceId,
+            cancellationToken);
+    if (runtime is null)
+    {
+        throw new ApiErrorException(StatusCodes.Status404NotFound, ApiErrorCodes.NotFound, "Integration instance не найден.");
+    }
+
+    if (uiToken.RuntimeAccountId.HasValue && uiToken.RuntimeAccountId.Value != runtime.RuntimeAccountId)
+    {
+        throw new ApiErrorException(StatusCodes.Status403Forbidden, ApiErrorCodes.Forbidden, "uiToken содержит несоответствующий runtimeAccountId.");
+    }
+
+    var upstreamBaseUrl = ResolveIntegrationEmbeddedUiBaseUrl(uiOptions.Value, normalizedIntegrationKey);
+    var upstreamPath = ResolveIntegrationEmbeddedUiPath(normalizedIntegrationKey, null);
+    var upstreamBuilder = new UriBuilder(new Uri(new Uri(upstreamBaseUrl.TrimEnd('/')), upstreamPath))
+    {
+        Query = string.Join(
+            "&",
+            new[]
+            {
+                $"projectId={Uri.EscapeDataString(projectId.ToString("D"))}",
+                $"instanceId={Uri.EscapeDataString(instanceId.ToString("D"))}",
+                $"runtimeAccountId={Uri.EscapeDataString(runtime.RuntimeAccountId.ToString("D"))}",
+            }),
+    };
+
+    var workerServiceToken = configuration["WORKER_API_SERVICE_AUTH_CLIENT_TOKEN"];
+    if (string.IsNullOrWhiteSpace(workerServiceToken))
+    {
+        throw new ApiErrorException(
+            StatusCodes.Status503ServiceUnavailable,
+            ApiErrorCodes.InternalError,
+            "Не задан WORKER_API_SERVICE_AUTH_CLIENT_TOKEN для embedded UI proxy.");
+    }
+
+    var upstreamRequest = new HttpRequestMessage(HttpMethod.Get, upstreamBuilder.Uri);
+    upstreamRequest.Headers.TryAddWithoutValidation(HeaderNames.ServiceToken, workerServiceToken);
+
+    var acceptHeader = httpContext.Request.Headers.Accept.ToString();
+    if (!string.IsNullOrWhiteSpace(acceptHeader))
+    {
+        upstreamRequest.Headers.TryAddWithoutValidation("Accept", acceptHeader);
+    }
+
+    var proxyClient = httpClientFactory.CreateClient("integration-ui-proxy");
+    var upstreamResponse = await proxyClient.SendAsync(upstreamRequest, cancellationToken);
+    var contentType = upstreamResponse.Content.Headers.ContentType?.ToString()
+                      ?? "text/plain; charset=utf-8";
+    var body = await upstreamResponse.Content.ReadAsStringAsync(cancellationToken);
+
+    return Results.Content(body, contentType, Encoding.UTF8, (int)upstreamResponse.StatusCode);
+});
+
+app.MapGet("/projects/{projectId:guid}/integrations/{integrationKey}/{instanceId:guid}/{**embeddedPath}", async (
+    HttpContext httpContext,
+    Guid projectId,
+    string integrationKey,
+    Guid instanceId,
+    string embeddedPath,
+    CoreDbContext dbContext,
+    IHttpClientFactory httpClientFactory,
+    IConfiguration configuration,
+    IOptions<IntegrationEmbeddedUiOptions> uiOptions,
+    CancellationToken cancellationToken) =>
+{
+    var uiTokenRaw = httpContext.Request.Query["uiToken"].ToString();
+    if (!TryParseIntegrationUiToken(uiTokenRaw, out var uiToken))
+    {
+        throw new ApiErrorException(StatusCodes.Status401Unauthorized, ApiErrorCodes.Unauthorized, "uiToken отсутствует или невалиден.");
+    }
+
+    if (uiToken.ExpiresAtUtc <= DateTimeOffset.UtcNow)
+    {
+        throw new ApiErrorException(StatusCodes.Status401Unauthorized, ApiErrorCodes.Unauthorized, "uiToken истёк. Обновите iframe-сессию.");
+    }
+
+    var normalizedIntegrationKey = NormalizeIntegrationKey(integrationKey);
+    if (!string.Equals(uiToken.IntegrationKey, normalizedIntegrationKey, StringComparison.OrdinalIgnoreCase)
+        || uiToken.ProjectId != projectId
+        || uiToken.InstanceId != instanceId)
+    {
+        throw new ApiErrorException(StatusCodes.Status403Forbidden, ApiErrorCodes.Forbidden, "uiToken не совпадает с запрошенным integration instance.");
+    }
+
+    if (!IntegrationKeys.WorkerIntegrations.Contains(normalizedIntegrationKey))
+    {
+        throw new ApiErrorException(StatusCodes.Status400BadRequest, ApiErrorCodes.ValidationError, "Embedded UI поддержан только для worker-интеграций.");
+    }
+
+    var runtime = await dbContext.ProjectIntegrationWorkerRuntimes
+        .AsNoTracking()
+        .SingleOrDefaultAsync(
+            x => x.ProjectId == projectId
+                 && x.IntegrationKey == normalizedIntegrationKey
+                 && x.Id == instanceId,
+            cancellationToken);
+    if (runtime is null)
+    {
+        throw new ApiErrorException(StatusCodes.Status404NotFound, ApiErrorCodes.NotFound, "Integration instance не найден.");
+    }
+
+    if (uiToken.RuntimeAccountId.HasValue && uiToken.RuntimeAccountId.Value != runtime.RuntimeAccountId)
+    {
+        throw new ApiErrorException(StatusCodes.Status403Forbidden, ApiErrorCodes.Forbidden, "uiToken содержит несоответствующий runtimeAccountId.");
+    }
+
+    var upstreamBaseUrl = ResolveIntegrationEmbeddedUiBaseUrl(uiOptions.Value, normalizedIntegrationKey);
+    var upstreamPath = ResolveIntegrationEmbeddedUiPath(normalizedIntegrationKey, embeddedPath);
+    var forwardQueryPairs = new List<string>
+    {
+        $"projectId={Uri.EscapeDataString(projectId.ToString("D"))}",
+        $"instanceId={Uri.EscapeDataString(instanceId.ToString("D"))}",
+        $"runtimeAccountId={Uri.EscapeDataString(runtime.RuntimeAccountId.ToString("D"))}",
+    };
+
+    foreach (var item in httpContext.Request.Query)
+    {
+        if (string.Equals(item.Key, "uiToken", StringComparison.OrdinalIgnoreCase))
+        {
+            continue;
+        }
+
+        foreach (var value in item.Value)
+        {
+            forwardQueryPairs.Add($"{Uri.EscapeDataString(item.Key)}={Uri.EscapeDataString(value ?? string.Empty)}");
+        }
+    }
+
+    var upstreamBuilder = new UriBuilder(new Uri(new Uri(upstreamBaseUrl.TrimEnd('/')), upstreamPath))
+    {
+        Query = string.Join("&", forwardQueryPairs),
+    };
+
+    var workerServiceToken = configuration["WORKER_API_SERVICE_AUTH_CLIENT_TOKEN"];
+    if (string.IsNullOrWhiteSpace(workerServiceToken))
+    {
+        throw new ApiErrorException(
+            StatusCodes.Status503ServiceUnavailable,
+            ApiErrorCodes.InternalError,
+            "Не задан WORKER_API_SERVICE_AUTH_CLIENT_TOKEN для embedded UI proxy.");
+    }
+
+    var upstreamRequest = new HttpRequestMessage(HttpMethod.Get, upstreamBuilder.Uri);
+    upstreamRequest.Headers.TryAddWithoutValidation(HeaderNames.ServiceToken, workerServiceToken);
+
+    var acceptHeader = httpContext.Request.Headers.Accept.ToString();
+    if (!string.IsNullOrWhiteSpace(acceptHeader))
+    {
+        upstreamRequest.Headers.TryAddWithoutValidation("Accept", acceptHeader);
+    }
+
+    var proxyClient = httpClientFactory.CreateClient("integration-ui-proxy");
+    var upstreamResponse = await proxyClient.SendAsync(upstreamRequest, cancellationToken);
+    var contentType = upstreamResponse.Content.Headers.ContentType?.ToString()
+                      ?? "text/plain; charset=utf-8";
+    var body = await upstreamResponse.Content.ReadAsStringAsync(cancellationToken);
+
+    return Results.Content(body, contentType, Encoding.UTF8, (int)upstreamResponse.StatusCode);
+});
+
+app.MapMethods("/projects/{projectId:guid}/integrations/{integrationKey}/{instanceId:guid}/{**embeddedPath}", ["POST", "PUT", "PATCH", "DELETE"], async (
+    HttpContext httpContext,
+    Guid projectId,
+    string integrationKey,
+    Guid instanceId,
+    string embeddedPath,
+    CoreDbContext dbContext,
+    IHttpClientFactory httpClientFactory,
+    IConfiguration configuration,
+    IOptions<IntegrationEmbeddedUiOptions> uiOptions,
+    CancellationToken cancellationToken) =>
+{
+    var uiTokenRaw = httpContext.Request.Query["uiToken"].ToString();
+    if (!TryParseIntegrationUiToken(uiTokenRaw, out var uiToken))
+    {
+        throw new ApiErrorException(StatusCodes.Status401Unauthorized, ApiErrorCodes.Unauthorized, "uiToken отсутствует или невалиден.");
+    }
+
+    if (uiToken.ExpiresAtUtc <= DateTimeOffset.UtcNow)
+    {
+        throw new ApiErrorException(StatusCodes.Status401Unauthorized, ApiErrorCodes.Unauthorized, "uiToken истёк. Обновите iframe-сессию.");
+    }
+
+    var normalizedIntegrationKey = NormalizeIntegrationKey(integrationKey);
+    if (!string.Equals(uiToken.IntegrationKey, normalizedIntegrationKey, StringComparison.OrdinalIgnoreCase)
+        || uiToken.ProjectId != projectId
+        || uiToken.InstanceId != instanceId)
+    {
+        throw new ApiErrorException(StatusCodes.Status403Forbidden, ApiErrorCodes.Forbidden, "uiToken не совпадает с запрошенным integration instance.");
+    }
+
+    if (!IntegrationKeys.WorkerIntegrations.Contains(normalizedIntegrationKey))
+    {
+        throw new ApiErrorException(StatusCodes.Status400BadRequest, ApiErrorCodes.ValidationError, "Embedded UI поддержан только для worker-интеграций.");
+    }
+
+    var runtime = await dbContext.ProjectIntegrationWorkerRuntimes
+        .AsNoTracking()
+        .SingleOrDefaultAsync(
+            x => x.ProjectId == projectId
+                 && x.IntegrationKey == normalizedIntegrationKey
+                 && x.Id == instanceId,
+            cancellationToken);
+    if (runtime is null)
+    {
+        throw new ApiErrorException(StatusCodes.Status404NotFound, ApiErrorCodes.NotFound, "Integration instance не найден.");
+    }
+
+    if (uiToken.RuntimeAccountId.HasValue && uiToken.RuntimeAccountId.Value != runtime.RuntimeAccountId)
+    {
+        throw new ApiErrorException(StatusCodes.Status403Forbidden, ApiErrorCodes.Forbidden, "uiToken содержит несоответствующий runtimeAccountId.");
+    }
+
+    var upstreamBaseUrl = ResolveIntegrationEmbeddedUiBaseUrl(uiOptions.Value, normalizedIntegrationKey);
+    var upstreamPath = ResolveIntegrationEmbeddedUiPath(normalizedIntegrationKey, embeddedPath);
+    var forwardQueryPairs = new List<string>
+    {
+        $"projectId={Uri.EscapeDataString(projectId.ToString("D"))}",
+        $"instanceId={Uri.EscapeDataString(instanceId.ToString("D"))}",
+        $"runtimeAccountId={Uri.EscapeDataString(runtime.RuntimeAccountId.ToString("D"))}",
+    };
+
+    foreach (var item in httpContext.Request.Query)
+    {
+        if (string.Equals(item.Key, "uiToken", StringComparison.OrdinalIgnoreCase))
+        {
+            continue;
+        }
+
+        foreach (var value in item.Value)
+        {
+            forwardQueryPairs.Add($"{Uri.EscapeDataString(item.Key)}={Uri.EscapeDataString(value ?? string.Empty)}");
+        }
+    }
+
+    var upstreamBuilder = new UriBuilder(new Uri(new Uri(upstreamBaseUrl.TrimEnd('/')), upstreamPath))
+    {
+        Query = string.Join("&", forwardQueryPairs),
+    };
+
+    var workerServiceToken = configuration["WORKER_API_SERVICE_AUTH_CLIENT_TOKEN"];
+    if (string.IsNullOrWhiteSpace(workerServiceToken))
+    {
+        throw new ApiErrorException(
+            StatusCodes.Status503ServiceUnavailable,
+            ApiErrorCodes.InternalError,
+            "Не задан WORKER_API_SERVICE_AUTH_CLIENT_TOKEN для embedded UI proxy.");
+    }
+
+    var upstreamRequest = new HttpRequestMessage(new HttpMethod(httpContext.Request.Method), upstreamBuilder.Uri);
+    upstreamRequest.Headers.TryAddWithoutValidation(HeaderNames.ServiceToken, workerServiceToken);
+
+    var acceptHeader = httpContext.Request.Headers.Accept.ToString();
+    if (!string.IsNullOrWhiteSpace(acceptHeader))
+    {
+        upstreamRequest.Headers.TryAddWithoutValidation("Accept", acceptHeader);
+    }
+
+    if ((httpContext.Request.ContentLength ?? 0) > 0 || httpContext.Request.Headers.ContainsKey("Transfer-Encoding"))
+    {
+        var content = new StreamContent(httpContext.Request.Body);
+        if (!string.IsNullOrWhiteSpace(httpContext.Request.ContentType))
+        {
+            content.Headers.TryAddWithoutValidation("Content-Type", httpContext.Request.ContentType);
+        }
+
+        upstreamRequest.Content = content;
+    }
+
+    var proxyClient = httpClientFactory.CreateClient("integration-ui-proxy");
+    var upstreamResponse = await proxyClient.SendAsync(upstreamRequest, cancellationToken);
+    var contentType = upstreamResponse.Content.Headers.ContentType?.ToString()
+                      ?? "text/plain; charset=utf-8";
+    var body = await upstreamResponse.Content.ReadAsStringAsync(cancellationToken);
+
+    return Results.Content(body, contentType, Encoding.UTF8, (int)upstreamResponse.StatusCode);
 });
 
 external.MapPost("/projects/{projectId:guid}/integrations/{integrationKey}/runtime/provision", async (
@@ -5723,6 +6046,123 @@ static string NormalizeIntegrationKey(string integrationKey)
     return integrationKey.Trim().ToLowerInvariant();
 }
 
+static bool TryParseIntegrationUiToken(string rawToken, out IntegrationUiTokenClaims token)
+{
+    token = default;
+
+    if (string.IsNullOrWhiteSpace(rawToken))
+    {
+        return false;
+    }
+
+    try
+    {
+        var payloadJson = Encoding.UTF8.GetString(Convert.FromBase64String(rawToken.Trim()));
+        using var document = JsonDocument.Parse(payloadJson);
+        var root = document.RootElement;
+
+        if (!root.TryGetProperty("projectId", out var projectIdElement)
+            || projectIdElement.ValueKind != JsonValueKind.String
+            || !Guid.TryParse(projectIdElement.GetString(), out var projectId))
+        {
+            return false;
+        }
+
+        if (!root.TryGetProperty("integrationKey", out var integrationKeyElement)
+            || integrationKeyElement.ValueKind != JsonValueKind.String)
+        {
+            return false;
+        }
+
+        var integrationKey = integrationKeyElement.GetString();
+        if (string.IsNullOrWhiteSpace(integrationKey))
+        {
+            return false;
+        }
+
+        if (!root.TryGetProperty("instanceId", out var instanceIdElement)
+            || instanceIdElement.ValueKind != JsonValueKind.String
+            || !Guid.TryParse(instanceIdElement.GetString(), out var instanceId))
+        {
+            return false;
+        }
+
+        Guid? runtimeAccountId = null;
+        if (root.TryGetProperty("runtimeAccountId", out var runtimeAccountIdElement)
+            && runtimeAccountIdElement.ValueKind == JsonValueKind.String
+            && Guid.TryParse(runtimeAccountIdElement.GetString(), out var parsedRuntimeAccountId))
+        {
+            runtimeAccountId = parsedRuntimeAccountId;
+        }
+
+        if (!root.TryGetProperty("exp", out var expElement))
+        {
+            return false;
+        }
+
+        long expUnix = expElement.ValueKind switch
+        {
+            JsonValueKind.Number when expElement.TryGetInt64(out var value) => value,
+            JsonValueKind.String when long.TryParse(expElement.GetString(), out var value) => value,
+            _ => -1,
+        };
+        if (expUnix <= 0)
+        {
+            return false;
+        }
+
+        token = new IntegrationUiTokenClaims(
+            projectId,
+            NormalizeIntegrationKey(integrationKey),
+            instanceId,
+            runtimeAccountId,
+            DateTimeOffset.FromUnixTimeSeconds(expUnix));
+
+        return true;
+    }
+    catch
+    {
+        return false;
+    }
+}
+
+static string ResolveIntegrationEmbeddedUiBaseUrl(IntegrationEmbeddedUiOptions options, string integrationKey)
+{
+    if (string.Equals(integrationKey, IntegrationKeys.SteamAccountsManager, StringComparison.OrdinalIgnoreCase))
+    {
+        if (string.IsNullOrWhiteSpace(options.SteamAccountsManagerBaseUrl))
+        {
+            throw new ApiErrorException(
+                StatusCodes.Status503ServiceUnavailable,
+                ApiErrorCodes.InternalError,
+                "Не задан IntegrationEmbeddedUi:SteamAccountsManagerBaseUrl.");
+        }
+
+        return options.SteamAccountsManagerBaseUrl;
+    }
+
+    throw new ApiErrorException(
+        StatusCodes.Status400BadRequest,
+        ApiErrorCodes.ValidationError,
+        $"Для integration `{integrationKey}` не настроен embedded UI endpoint.");
+}
+
+static string ResolveIntegrationEmbeddedUiPath(string integrationKey, string? embeddedPath)
+{
+    if (!string.Equals(integrationKey, IntegrationKeys.SteamAccountsManager, StringComparison.OrdinalIgnoreCase))
+    {
+        throw new ApiErrorException(
+            StatusCodes.Status400BadRequest,
+            ApiErrorCodes.ValidationError,
+            $"Для integration `{integrationKey}` не поддержан embedded UI path resolver.");
+    }
+
+    var pathSuffix = string.IsNullOrWhiteSpace(embeddedPath)
+        ? string.Empty
+        : $"/{embeddedPath.Trim().Trim('/')}";
+    return $"/internal/v2/worker/ui/steam{pathSuffix}";
+}
+
 static bool IsSupportedIntegrationKey(string integrationKey)
 {
     if (IntegrationKeys.All.Contains(integrationKey))
@@ -7169,6 +7609,18 @@ public sealed record ProjectIntegrationUiSessionResponse(
     string Token,
     DateTimeOffset ExpiresAtUtc,
     string IframeUrl);
+
+public sealed class IntegrationEmbeddedUiOptions
+{
+    public string SteamAccountsManagerBaseUrl { get; set; } = "http://host.docker.internal:8080";
+}
+
+public readonly record struct IntegrationUiTokenClaims(
+    Guid ProjectId,
+    string IntegrationKey,
+    Guid InstanceId,
+    Guid? RuntimeAccountId,
+    DateTimeOffset ExpiresAtUtc);
 
 public sealed record AdminCustomHttpAllowlistUpsertRequest(
     string HostPattern,

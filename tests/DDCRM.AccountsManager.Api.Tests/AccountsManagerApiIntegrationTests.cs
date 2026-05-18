@@ -1,7 +1,10 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
+using DDCRM.AccountsManager.Persistence;
+using DDCRM.AccountsManager.Persistence.Entities;
 using DDCRM.AccountsManager.Api.Tests.Infrastructure;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace DDCRM.AccountsManager.Api.Tests;
 
@@ -25,6 +28,53 @@ public sealed class AccountsManagerApiIntegrationTests
             .ToArray();
 
         Assert.Empty(items);
+    }
+
+    [Fact]
+    [Trait("Category", "Integration")]
+    public async Task AccountTypesList_DeserializesCamelCaseJsonFromDatabase()
+    {
+        using var factory = new AccountsManagerApiFactory();
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add("X-Service-Token", "internal-token-a");
+
+        using (var scope = factory.Services.CreateScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<AccountsManagerDbContext>();
+            dbContext.AccountTypes.Add(new AccountTypeEntity
+            {
+                AccountTypeId = "steam.integration.main",
+                Platform = "steam-integration",
+                DisplayName = "Steam Integration Runtime",
+                Description = "Template for steam worker runtime provision",
+                WorkerProfileId = "test-worker",
+                Enabled = true,
+                SortOrder = 5,
+                FormFieldsJson =
+                    """
+                    [{"key":"displayName","label":"Название аккаунта","inputType":"text","required":true,"secret":false,"placeholder":"Steam runtime","defaultValue":"Steam runtime"}]
+                    """,
+                RuntimeConfigJson =
+                    """
+                    {"autospawnEnabled":true,"workerImage":"ddcrm-steam-steam-worker:latest","workerPathPrefix":"/internal/v2/worker","healthPath":"/health","containerPort":8080,"environmentVariables":{"A":"B"}}
+                    """,
+            });
+
+            await dbContext.SaveChangesAsync();
+        }
+
+        var response = await client.GetAsync("/internal/v1/account-types");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var item = json.RootElement.GetProperty("items")[0];
+        var formField = item.GetProperty("formFields")[0];
+
+        Assert.Equal("displayName", formField.GetProperty("key").GetString());
+        Assert.Equal("Название аккаунта", formField.GetProperty("label").GetString());
+        Assert.Equal("Steam runtime", formField.GetProperty("placeholder").GetString());
+        Assert.Equal("ddcrm-steam-steam-worker:latest", item.GetProperty("runtime").GetProperty("workerImage").GetString());
+        Assert.Equal(8080, item.GetProperty("runtime").GetProperty("containerPort").GetInt32());
     }
 
     [Fact]

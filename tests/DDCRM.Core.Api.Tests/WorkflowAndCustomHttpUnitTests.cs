@@ -7,6 +7,7 @@ using DDCRM.Core.Persistence.Entities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 
 namespace DDCRM.Core.Api.Tests;
 
@@ -243,7 +244,10 @@ public sealed class WorkflowAndCustomHttpUnitTests
             .Options;
 
         await using var dbContext = new CoreDbContext(options);
-        var executor = new SteamActionNodeExecutor();
+        var bridgeClient = new WorkflowWorkerBridgeClient(new HttpClient(), NullLogger<WorkflowWorkerBridgeClient>.Instance);
+        var executor = new SteamActionNodeExecutor(
+            bridgeClient,
+            Options.Create(new WorkflowMessagePollingOptions()));
         var context = new WorkflowExecutionRuntimeContext
         {
             ProjectId = Guid.NewGuid(),
@@ -265,6 +269,120 @@ public sealed class WorkflowAndCustomHttpUnitTests
         var exception = await Assert.ThrowsAsync<DDCRM.Shared.Errors.ApiErrorException>(() =>
             executor.ExecuteAsync(new WorkflowNodeExecutionRequest(node, context, dbContext), CancellationToken.None));
         Assert.Contains("steam-accounts-manager", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public void WorkflowRuntimeTemplateResolver_ResolvesNestedPayloadAndTypedValues()
+    {
+        var variables = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["payload"] = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["leaseId"] = "lease-42",
+                ["durationMinutes"] = 120,
+            },
+            ["message.conversationId"] = "conv-1",
+        };
+
+        var leaseIdValue = WorkflowRuntimeTemplateResolver.ResolveStringTemplateValue("{{payload.leaseId}}", variables);
+        Assert.Equal("lease-42", leaseIdValue?.ToString());
+
+        var durationValue = WorkflowRuntimeTemplateResolver.ResolveStringTemplateValue("{{payload.durationMinutes}}", variables);
+        Assert.Equal("120", durationValue?.ToString());
+
+        var rendered = WorkflowRuntimeTemplateResolver.RenderStringTemplate(
+            "lease={{payload.leaseId}}, conv={{message.conversationId}}",
+            variables);
+        Assert.Equal("lease=lease-42, conv=conv-1", rendered);
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public void WorkflowAuditRedactor_RedactsSensitiveFields()
+    {
+        var payload = new Dictionary<string, object?>
+        {
+            ["credentials"] = new Dictionary<string, object?>
+            {
+                ["login"] = "user1",
+                ["password"] = "super-secret-password",
+            },
+            ["payload"] = new Dictionary<string, object?>
+            {
+                ["sharedSecret"] = "abc",
+                ["accessToken"] = "token-value",
+            },
+        };
+
+        var json = WorkflowAuditRedactor.SerializeRedacted(payload);
+        Assert.DoesNotContain("super-secret-password", json, StringComparison.Ordinal);
+        Assert.DoesNotContain("token-value", json, StringComparison.Ordinal);
+        Assert.Contains("***redacted***", json, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public async Task SendBuyerResponseNodeExecutor_RendersGenericRuntimePlaceholders()
+    {
+        var dbOptions = new DbContextOptionsBuilder<CoreDbContext>()
+            .UseInMemoryDatabase(databaseName: $"workflow-send-buyer-template-tests-{Guid.NewGuid():N}")
+            .Options;
+        await using var dbContext = new CoreDbContext(dbOptions);
+
+        var cryptoConfig = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["CORE_SECRETS_ENCRYPTION_KEY"] = "unit-test-secret-key-1234567890",
+            })
+            .Build();
+
+        var executor = new SendBuyerResponseNodeExecutor(
+            new TelegramNotificationSender(
+                Options.Create(new TelegramNotificationOptions
+                {
+                    Enabled = false,
+                    BotToken = "dummy-token",
+                }),
+                NullLogger<TelegramNotificationSender>.Instance),
+            new ProjectSecretCrypto(cryptoConfig),
+            new WorkflowWorkerBridgeClient(new HttpClient(), NullLogger<WorkflowWorkerBridgeClient>.Instance),
+            Options.Create(new WorkflowMessagePollingOptions
+            {
+                DispatchWorkerReplies = false,
+            }),
+            NullLogger<SendBuyerResponseNodeExecutor>.Instance);
+
+        var context = new WorkflowExecutionRuntimeContext
+        {
+            ProjectId = Guid.NewGuid(),
+            OfferId = Guid.NewGuid(),
+            TriggerEventId = Guid.NewGuid(),
+            SourceOrderId = "order-send-1",
+        };
+        context.Variables["rental.login"] = "steam_login";
+        context.Variables["rental.password"] = "steam_password";
+        context.Variables["steam.action.listText"] = "1. account-a";
+
+        var node = new WorkflowNodeModel
+        {
+            Id = "send-buyer-1",
+            Type = WorkflowNodeTypes.SendBuyerResponse,
+            Config = new Dictionary<string, JsonElement>
+            {
+                ["message"] = JsonSerializer.SerializeToElement(
+                    "Логин: {{rental.login}}, пароль: {{rental.password}}, список: {{steam.action.listText}}"),
+            },
+        };
+
+        var result = await executor.ExecuteAsync(
+            new WorkflowNodeExecutionRequest(node, context, dbContext),
+            CancellationToken.None);
+
+        Assert.NotNull(result.Variables);
+        Assert.Equal(
+            "Логин: steam_login, пароль: steam_password, список: 1. account-a",
+            result.Variables!["buyerResponse.message"]?.ToString());
     }
 
     [Fact]

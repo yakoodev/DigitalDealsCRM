@@ -1,4 +1,3 @@
-using System.Text.Json;
 using DDCRM.Core.Persistence;
 using DDCRM.Core.Persistence.Entities;
 using Microsoft.EntityFrameworkCore;
@@ -108,7 +107,7 @@ public sealed class WorkflowExecutionBackgroundService(
                 execution.Status = "completed";
                 execution.FinishedAtUtc = DateTimeOffset.UtcNow;
                 execution.LastError = null;
-                execution.OutputJson = JsonSerializer.Serialize(output);
+                execution.OutputJson = WorkflowAuditRedactor.SerializeRedacted(output);
 
                 triggerEvent.Status = "processed";
                 triggerEvent.ProcessedAtUtc = DateTimeOffset.UtcNow;

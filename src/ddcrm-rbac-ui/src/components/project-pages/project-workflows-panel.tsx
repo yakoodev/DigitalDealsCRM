@@ -34,6 +34,8 @@ import type {
 } from "@/lib/api-client";
 import {
   getOfferWorkflowDraftRequest,
+  invokeProjectIntegrationInstanceActionRequest,
+  listProjectIntegrationInstancesRequest,
   listOfferWorkflowExecutionsRequest,
   listProjectIntegrationsStatusRequest,
   listOffersRequest,
@@ -109,6 +111,55 @@ interface WorkflowNodeCatalogItem {
   tone: "start" | "branch" | "data" | "input" | "routing" | "worker" | "http" | "integration" | "task" | "response" | "notify" | "end";
   group: "start" | "base" | "integration";
   integrationKey?: string;
+}
+
+interface WorkflowPaletteNodeItem extends WorkflowNodeCatalogItem {
+  paletteKey: string;
+  presetConfig?: Record<string, unknown>;
+  presetName?: string;
+}
+
+interface SteamWorkflowBlockCatalogItem {
+  key: string;
+  title: string;
+  executionMode: string;
+  legacyJobType: string | null;
+  requiredFields: string[];
+}
+
+interface SteamWorkflowBlockLocalization {
+  title: string;
+  description?: string;
+}
+
+type SteamActionCatalogFieldType = "string" | "int" | "guid" | "bool" | "json";
+type SteamActionCatalogFieldTarget = "payload" | "root";
+
+interface SteamActionCatalogField {
+  key: string;
+  label: string;
+  description: string;
+  type: SteamActionCatalogFieldType;
+  required: boolean;
+  target: SteamActionCatalogFieldTarget;
+  placeholder?: string;
+}
+
+interface SteamActionCatalogPreset {
+  name: string;
+  showInPalette: boolean;
+  nodeLabel: string;
+  description: string;
+  config: Record<string, unknown>;
+}
+
+interface SteamActionCatalogOperation {
+  action: string;
+  scope: "read" | "jobs";
+  title: string;
+  description: string;
+  fields: SteamActionCatalogField[];
+  preset: SteamActionCatalogPreset | null;
 }
 
 interface WorkflowNodePort {
@@ -426,7 +477,7 @@ const nodeFieldDescriptors: Record<WorkflowNode["type"], readonly WorkflowFieldD
     {
       key: "action",
       label: "action",
-      description: "Тип Steam-операции. Common варианты: accounts.profile.update, accounts.nickname.update, accounts.avatar.update, accounts.privacy.update, accounts.sessions.deauthorize, workflow.blocks.enqueue.",
+      description: "Тип Steam-операции. Common варианты: rentals.availability.list, rentals.reserve, rentals.extend, accounts.nickname.update, accounts.avatar.update, accounts.sessions.deauthorize, workflow.blocks.enqueue.",
       required: true,
       type: "string",
       placeholder: "accounts.nickname.update",
@@ -500,7 +551,7 @@ const nodeFieldDescriptors: Record<WorkflowNode["type"], readonly WorkflowFieldD
     {
       key: "message",
       label: "message",
-      description: "Шаблон сообщения покупателю; поддерживает токены selectedVariant.*.",
+      description: "Шаблон сообщения покупателю; поддерживает runtime-токены {{payload.*}}, {{message.*}}, {{rental.*}}, {{steam.action.*}}.",
       required: false,
       type: "string",
       placeholder: "Ваш товар: {{selectedVariant.workerProductId}}",
@@ -980,6 +1031,348 @@ function readFieldHintText(nodeType: WorkflowNode["type"], fieldKey: string) {
 
   const requiredTitle = descriptor.required ? "Обязательно" : "Опционально";
   return `${requiredTitle} · ${readFieldTypeTitle(descriptor.type)}. ${descriptor.description}`;
+}
+
+function cloneConfigObject(value: Record<string, unknown> | undefined) {
+  if (!value) {
+    return {};
+  }
+
+  return JSON.parse(JSON.stringify(value)) as Record<string, unknown>;
+}
+
+function toStaticPaletteNodes() {
+  return workflowNodeCatalog.map((item) => ({
+    ...item,
+    paletteKey: item.type,
+  })) as WorkflowPaletteNodeItem[];
+}
+
+function parseSteamBlocksCatalog(result: Record<string, unknown>) {
+  const rawBlocks = result.blocks;
+  if (!Array.isArray(rawBlocks)) {
+    return [] as SteamWorkflowBlockCatalogItem[];
+  }
+
+  const items: SteamWorkflowBlockCatalogItem[] = [];
+  for (const rawBlock of rawBlocks) {
+    if (!isRecord(rawBlock)) {
+      continue;
+    }
+
+    const key = typeof rawBlock.key === "string" ? rawBlock.key.trim() : "";
+    if (!key) {
+      continue;
+    }
+
+    const title = typeof rawBlock.title === "string" && rawBlock.title.trim().length > 0
+      ? rawBlock.title.trim()
+      : key;
+    const executionMode = typeof rawBlock.executionMode === "string" && rawBlock.executionMode.trim().length > 0
+      ? rawBlock.executionMode.trim()
+      : "workflow_queue";
+    const legacyJobType = typeof rawBlock.legacyJobType === "string" && rawBlock.legacyJobType.trim().length > 0
+      ? rawBlock.legacyJobType.trim()
+      : null;
+    const requiredFields = Array.isArray(rawBlock.requiredFields)
+      ? rawBlock.requiredFields
+        .filter((value): value is string => typeof value === "string")
+        .map((value) => value.trim())
+        .filter((value) => value.length > 0)
+      : [];
+
+    items.push({
+      key,
+      title,
+      executionMode,
+      legacyJobType,
+      requiredFields,
+    });
+  }
+
+  return items;
+}
+
+function parseSteamActionCatalog(result: Record<string, unknown>) {
+  const rawOperations = result.operations;
+  if (!Array.isArray(rawOperations)) {
+    return [] as SteamActionCatalogOperation[];
+  }
+
+  const operations: SteamActionCatalogOperation[] = [];
+  for (const rawOperation of rawOperations) {
+    if (!isRecord(rawOperation)) {
+      continue;
+    }
+
+    const action = typeof rawOperation.action === "string" ? rawOperation.action.trim() : "";
+    if (!action) {
+      continue;
+    }
+
+    const scopeRaw = typeof rawOperation.scope === "string" ? rawOperation.scope.trim().toLowerCase() : "jobs";
+    const scope: "read" | "jobs" = scopeRaw === "read" ? "read" : "jobs";
+    const title = typeof rawOperation.title === "string" && rawOperation.title.trim().length > 0
+      ? rawOperation.title.trim()
+      : action;
+    const description = typeof rawOperation.description === "string" ? rawOperation.description.trim() : "";
+    const fields = parseSteamActionCatalogFields(rawOperation.fields);
+    const preset = parseSteamActionCatalogPreset(rawOperation.preset, action, scope, title, description);
+
+    operations.push({
+      action,
+      scope,
+      title,
+      description,
+      fields,
+      preset,
+    });
+  }
+
+  return operations;
+}
+
+function parseSteamActionCatalogFields(value: unknown) {
+  if (!Array.isArray(value)) {
+    return [] as SteamActionCatalogField[];
+  }
+
+  const fields: SteamActionCatalogField[] = [];
+  for (const item of value) {
+    if (!isRecord(item)) {
+      continue;
+    }
+
+    const key = typeof item.key === "string" ? item.key.trim() : "";
+    if (!key) {
+      continue;
+    }
+
+    const typeRaw = typeof item.type === "string" ? item.type.trim().toLowerCase() : "string";
+    const type: SteamActionCatalogFieldType = typeRaw === "int"
+      ? "int"
+      : typeRaw === "guid"
+        ? "guid"
+        : typeRaw === "bool"
+          ? "bool"
+          : typeRaw === "json"
+            ? "json"
+            : "string";
+    const targetRaw = typeof item.target === "string" ? item.target.trim().toLowerCase() : "payload";
+    const target: SteamActionCatalogFieldTarget = targetRaw === "root" ? "root" : "payload";
+
+    fields.push({
+      key,
+      label: typeof item.label === "string" && item.label.trim().length > 0 ? item.label.trim() : key,
+      description: typeof item.description === "string" ? item.description.trim() : "",
+      type,
+      required: item.required === true,
+      target,
+      placeholder: typeof item.placeholder === "string" ? item.placeholder : undefined,
+    });
+  }
+
+  return fields;
+}
+
+function parseSteamActionCatalogPreset(
+  value: unknown,
+  action: string,
+  scope: "read" | "jobs",
+  title: string,
+  description: string,
+) {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const rawConfig = isRecord(value.config) ? cloneConfigObject(value.config) : { action, payload: {} };
+  const normalizedConfig: Record<string, unknown> = {
+    ...rawConfig,
+    action: action,
+  };
+  if (!("payload" in normalizedConfig) || !isRecord(normalizedConfig.payload)) {
+    normalizedConfig.payload = {};
+  }
+
+  const preset: SteamActionCatalogPreset = {
+    name: typeof value.name === "string" && value.name.trim().length > 0 ? value.name.trim() : title,
+    showInPalette: value.showInPalette === true,
+    nodeLabel: typeof value.nodeLabel === "string" && value.nodeLabel.trim().length > 0 ? value.nodeLabel.trim() : title,
+    description: typeof value.description === "string" && value.description.trim().length > 0
+      ? value.description.trim()
+      : description || `${scope.toUpperCase()} · ${action}`,
+    config: normalizedConfig,
+  };
+
+  return preset;
+}
+
+function readSteamCatalogFieldTypeTitle(type: SteamActionCatalogFieldType) {
+  if (type === "guid") {
+    return "GUID";
+  }
+
+  if (type === "int") {
+    return "целое число";
+  }
+
+  if (type === "bool") {
+    return "bool";
+  }
+
+  if (type === "json") {
+    return "JSON";
+  }
+
+  return "строка";
+}
+
+function readSteamCatalogFieldHint(field: SteamActionCatalogField) {
+  const requiredTitle = field.required ? "Обязательно" : "Опционально";
+  const targetTitle = field.target === "root" ? "root" : "payload";
+  const description = field.description.length > 0 ? ` ${field.description}` : "";
+  return `${requiredTitle} · ${readSteamCatalogFieldTypeTitle(field.type)} · ${targetTitle}.${field.key}.${description}`.trim();
+}
+
+function readSteamActionScopeDescription(scope: "read" | "jobs") {
+  return scope === "read" ? "read (без изменения состояния)" : "jobs (изменяет состояние)";
+}
+
+const steamWorkflowBlockLocalizations: Readonly<Record<string, SteamWorkflowBlockLocalization>> = {
+  "steam.session.validate": {
+    title: "Steam: проверка сессий",
+    description: "Проверяет валидность текущих сессий аккаунтов.",
+  },
+  "steam.session.refresh": {
+    title: "Steam: обновление сессий",
+    description: "Переинициализирует/обновляет сессионные данные.",
+  },
+  "steam.password.change": {
+    title: "Steam: смена пароля",
+    description: "Меняет пароль аккаунта, опционально с закрытием сессий.",
+  },
+  "steam.profile.update": {
+    title: "Steam: обновление профиля",
+    description: "Меняет поля профиля аккаунта (о себе, локация, URL и т.д.).",
+  },
+  "steam.nickname.update": {
+    title: "Steam: смена ника",
+    description: "Обновляет отображаемое имя аккаунта.",
+  },
+  "steam.avatar.update": {
+    title: "Steam: смена аватара",
+    description: "Обновляет аватар профиля.",
+  },
+  "steam.privacy.update": {
+    title: "Steam: приватность",
+    description: "Обновляет privacy-настройки профиля, друзей и инвентаря.",
+  },
+  "steam.sessions.deauthorize": {
+    title: "Steam: деавторизация сессий",
+    description: "Завершает активные сессии аккаунтов.",
+  },
+  "steam.workflow.custom": {
+    title: "Steam: custom workflow block",
+    description: "Запускает кастомный block-flow в Steam runtime очереди.",
+  },
+};
+
+const steamRequiredFieldLabels: Readonly<Record<string, string>> = {
+  accountIds: "accountIds (список GUID аккаунтов)",
+  blockKey: "blockKey (ключ block-flow)",
+};
+
+const steamExecutionModeLabels: Readonly<Record<string, string>> = {
+  legacy_job: "legacy job",
+  workflow_queue: "очередь workflow",
+};
+
+const steamLegacyJobTypeLabels: Readonly<Record<string, string>> = {
+  SessionValidate: "проверка сессий",
+  SessionRefresh: "обновление сессий",
+  PasswordChange: "смена пароля",
+  ProfileUpdate: "обновление профиля",
+  NicknameUpdate: "смена ника",
+  AvatarUpdate: "смена аватара",
+  PrivacyUpdate: "обновление приватности",
+  SessionsDeauthorize: "деавторизация сессий",
+};
+
+function localizeSteamExecutionMode(value: string) {
+  return steamExecutionModeLabels[value] ?? value;
+}
+
+function localizeSteamLegacyJobType(value: string) {
+  return steamLegacyJobTypeLabels[value] ?? value;
+}
+
+function localizeSteamRequiredField(value: string) {
+  return steamRequiredFieldLabels[value] ?? value;
+}
+
+function toSteamPaletteNodes(blocks: readonly SteamWorkflowBlockCatalogItem[]) {
+  return blocks.map((block): WorkflowPaletteNodeItem => {
+    const localization = steamWorkflowBlockLocalizations[block.key];
+    const descriptionTokens: string[] = [];
+    if (localization?.description) {
+      descriptionTokens.push(localization.description);
+    }
+    descriptionTokens.push(`режим: ${localizeSteamExecutionMode(block.executionMode)}`);
+
+    if (block.legacyJobType) {
+      descriptionTokens.push(`legacy job: ${localizeSteamLegacyJobType(block.legacyJobType)}`);
+    }
+
+    if (block.requiredFields.length > 0) {
+      descriptionTokens.push(`обязательные поля: ${block.requiredFields.map(localizeSteamRequiredField).join(", ")}`);
+    }
+
+    const payload: Record<string, unknown> = {
+      blockKey: block.key,
+    };
+    if (block.requiredFields.includes("accountIds")) {
+      payload.accountIds = [];
+    }
+
+    return {
+      paletteKey: `steam.block.${block.key}`,
+      type: "SteamAction",
+      label: localization?.title ?? block.title,
+      description: descriptionTokens.join(" · "),
+      tone: "integration",
+      group: "integration",
+      integrationKey: "steam-accounts-manager",
+      presetName: localization?.title ?? block.title,
+      presetConfig: {
+        action: "workflow.blocks.enqueue",
+        payload,
+      },
+    };
+  });
+}
+
+function toSteamActionPaletteNodes(operations: readonly SteamActionCatalogOperation[]) {
+  const items: WorkflowPaletteNodeItem[] = [];
+  for (const operation of operations) {
+    if (!operation.preset?.showInPalette) {
+      continue;
+    }
+
+    items.push({
+      paletteKey: `steam.action.${operation.action}`,
+      type: "SteamAction",
+      label: operation.preset.nodeLabel,
+      description: operation.preset.description,
+      tone: "integration",
+      group: "integration",
+      integrationKey: "steam-accounts-manager",
+      presetName: operation.preset.name,
+      presetConfig: cloneConfigObject(operation.preset.config),
+    });
+  }
+
+  return items;
 }
 
 function buildEmptyTypedEditorState(): WorkflowTypedEditorState {
@@ -1491,6 +1884,61 @@ function parseGuidListText(text: string) {
     .filter((item) => item.length > 0);
 }
 
+function parseJsonObjectText(text: string) {
+  const normalized = text.trim();
+  if (normalized.length === 0) {
+    return {} as Record<string, unknown>;
+  }
+
+  const parsed = JSON.parse(normalized);
+  if (!isRecord(parsed)) {
+    throw new Error("Payload должен быть JSON-объектом.");
+  }
+
+  return parsed;
+}
+
+function stringifyJsonObject(value: Record<string, unknown>) {
+  return JSON.stringify(value, null, 2);
+}
+
+function isTemplateString(value: unknown) {
+  return typeof value === "string" && value.includes("{{") && value.includes("}}");
+}
+
+function isRequiredStringLike(value: unknown) {
+  if (typeof value === "string") {
+    return value.trim().length > 0;
+  }
+
+  if (typeof value === "number" || typeof value === "boolean") {
+    return true;
+  }
+
+  return false;
+}
+
+function isIntegerLike(value: unknown, min: number) {
+  if (typeof value === "number") {
+    return Number.isInteger(value) && value >= min;
+  }
+
+  if (isTemplateString(value)) {
+    return true;
+  }
+
+  if (typeof value === "string") {
+    const normalized = value.trim();
+    if (!/^[-]?\d+$/.test(normalized)) {
+      return false;
+    }
+
+    return Number.parseInt(normalized, 10) >= min;
+  }
+
+  return false;
+}
+
 function readNodeDisplayName(node: Node<WorkflowEditorNodeData>) {
   const trimmedName = node.data.name.trim();
   return trimmedName.length > 0 ? `${node.data.nodeType} (${trimmedName})` : `${node.data.nodeType} (${node.id})`;
@@ -1549,7 +1997,58 @@ function validateConfigValueType(
   }
 }
 
-function validateNodeConfig(node: Node<WorkflowEditorNodeData>) {
+function validateSteamCatalogFieldValue(
+  nodeLabel: string,
+  field: SteamActionCatalogField,
+  value: unknown,
+) {
+  if (value === undefined) {
+    if (field.required) {
+      throw new Error(`Node ${nodeLabel}: поле payload.${field.key} обязательно.`);
+    }
+    return;
+  }
+
+  if (field.type === "string") {
+    if (typeof value !== "string") {
+      throw new Error(`Node ${nodeLabel}: поле payload.${field.key} должно быть непустой строкой.`);
+    }
+    if (value.trim().length === 0 && field.required) {
+      throw new Error(`Node ${nodeLabel}: поле payload.${field.key} должно быть непустой строкой.`);
+    }
+    return;
+  }
+
+  if (field.type === "int") {
+    if (typeof value !== "number" || !Number.isInteger(value)) {
+      throw new Error(`Node ${nodeLabel}: поле payload.${field.key} должно быть целым числом.`);
+    }
+    return;
+  }
+
+  if (field.type === "guid") {
+    if (typeof value !== "string" || !workflowNodeGuidRegex.test(value.trim())) {
+      throw new Error(`Node ${nodeLabel}: поле payload.${field.key} должно быть валидным GUID.`);
+    }
+    return;
+  }
+
+  if (field.type === "bool") {
+    if (typeof value !== "boolean") {
+      throw new Error(`Node ${nodeLabel}: поле payload.${field.key} должно быть boolean.`);
+    }
+    return;
+  }
+
+  if (!isRecord(value) && !Array.isArray(value)) {
+    throw new Error(`Node ${nodeLabel}: поле payload.${field.key} должно быть JSON значением.`);
+  }
+}
+
+function validateNodeConfig(
+  node: Node<WorkflowEditorNodeData>,
+  steamActionCatalogByAction?: ReadonlyMap<string, SteamActionCatalogOperation>,
+) {
   const config = node.data.config;
   const descriptors = nodeFieldDescriptors[node.data.nodeType];
   for (const descriptor of descriptors) {
@@ -1573,6 +2072,20 @@ function validateNodeConfig(node: Node<WorkflowEditorNodeData>) {
     }
 
     const payload = isRecord(config.payload) ? config.payload : {};
+    const nodeLabel = readNodeDisplayName(node);
+    const operationMeta = steamActionCatalogByAction?.get(action);
+    if (operationMeta) {
+      const rootFields = operationMeta.fields.filter((field) => field.target === "root");
+      const payloadFields = operationMeta.fields.filter((field) => field.target === "payload");
+      for (const field of rootFields) {
+        validateSteamCatalogFieldValue(nodeLabel, field, config[field.key]);
+      }
+      for (const field of payloadFields) {
+        validateSteamCatalogFieldValue(nodeLabel, field, payload[field.key]);
+      }
+      return;
+    }
+
     if (action === "accounts.profile.update") {
       const hasProfileField = [
         "displayName",
@@ -1584,15 +2097,15 @@ function validateNodeConfig(node: Node<WorkflowEditorNodeData>) {
         "customUrl",
       ].some((key) => readString(payload, key).trim().length > 0);
       if (!hasProfileField) {
-        throw new Error(`Node ${readNodeDisplayName(node)}: заполните хотя бы одно поле профиля.`);
+        throw new Error(`Node ${nodeLabel}: заполните хотя бы одно поле профиля.`);
       }
     } else if (action === "accounts.nickname.update") {
       if (!readString(payload, "displayName").trim()) {
-        throw new Error(`Node ${readNodeDisplayName(node)}: payload.displayName обязателен для смены ника.`);
+        throw new Error(`Node ${nodeLabel}: payload.displayName обязателен для смены ника.`);
       }
     } else if (action === "accounts.avatar.update") {
       if (!readString(payload, "avatarBase64").trim()) {
-        throw new Error(`Node ${readNodeDisplayName(node)}: payload.avatarBase64 обязателен для смены аватара.`);
+        throw new Error(`Node ${nodeLabel}: payload.avatarBase64 обязателен для смены аватара.`);
       }
     } else if (action === "accounts.privacy.update") {
       const hasPrivacyField = ["profilePrivate", "friendsPrivate", "inventoryPrivate"].some((key) => {
@@ -1600,25 +2113,77 @@ function validateNodeConfig(node: Node<WorkflowEditorNodeData>) {
         return value === true || value === false || (typeof value === "string" && value.trim().length > 0);
       });
       if (!hasPrivacyField) {
-        throw new Error(`Node ${readNodeDisplayName(node)}: выберите хотя бы один privacy-флаг.`);
+        throw new Error(`Node ${nodeLabel}: выберите хотя бы один privacy-флаг.`);
       }
     } else if (action === "workflow.blocks.enqueue") {
       const blockKey = readString(payload, "blockKey").trim();
       if (!blockKey) {
-        throw new Error(`Node ${readNodeDisplayName(node)}: payload.blockKey обязателен.`);
+        throw new Error(`Node ${nodeLabel}: payload.blockKey обязателен.`);
       }
 
       if (blockKey !== "steam.workflow.custom") {
         const accountIds = payload.accountIds;
         if (!Array.isArray(accountIds) || accountIds.length === 0) {
-          throw new Error(`Node ${readNodeDisplayName(node)}: payload.accountIds обязателен для block-flow.`);
+          throw new Error(`Node ${nodeLabel}: payload.accountIds обязателен для block-flow.`);
         }
 
         for (const accountId of accountIds) {
           if (typeof accountId !== "string" || !workflowNodeGuidRegex.test(accountId.trim())) {
-            throw new Error(`Node ${readNodeDisplayName(node)}: payload.accountIds содержит невалидный GUID.`);
+            throw new Error(`Node ${nodeLabel}: payload.accountIds содержит невалидный GUID.`);
           }
         }
+      }
+    } else if (action === "rentals.availability.list") {
+      if (!isIntegerLike(payload.appId, 1)) {
+        throw new Error(`Node ${nodeLabel}: payload.appId обязателен и должен быть целым числом > 0.`);
+      }
+    } else if (action === "rentals.reserve") {
+      if (!isIntegerLike(payload.appId, 1)) {
+        throw new Error(`Node ${nodeLabel}: payload.appId обязателен и должен быть целым числом > 0.`);
+      }
+
+      if (!isRequiredStringLike(payload.buyerId)) {
+        throw new Error(`Node ${nodeLabel}: payload.buyerId обязателен.`);
+      }
+
+      if (!isRequiredStringLike(payload.sourceOrderId)) {
+        throw new Error(`Node ${nodeLabel}: payload.sourceOrderId обязателен.`);
+      }
+
+      if (!isRequiredStringLike(payload.marketplaceAccountId)) {
+        throw new Error(`Node ${nodeLabel}: payload.marketplaceAccountId обязателен.`);
+      }
+
+      if (!isRequiredStringLike(payload.conversationId)) {
+        throw new Error(`Node ${nodeLabel}: payload.conversationId обязателен.`);
+      }
+
+      if (!isIntegerLike(payload.durationMinutes, 1)) {
+        throw new Error(`Node ${nodeLabel}: payload.durationMinutes обязателен и должен быть целым числом > 0.`);
+      }
+
+      if (!isIntegerLike(payload.warningMinutes, 0)) {
+        throw new Error(`Node ${nodeLabel}: payload.warningMinutes обязателен и должен быть целым числом >= 0.`);
+      }
+
+      if (!isIntegerLike(payload.graceMinutes, 0)) {
+        throw new Error(`Node ${nodeLabel}: payload.graceMinutes обязателен и должен быть целым числом >= 0.`);
+      }
+    } else if (action === "rentals.extend") {
+      if (!isRequiredStringLike(payload.leaseId)) {
+        throw new Error(`Node ${nodeLabel}: payload.leaseId обязателен.`);
+      }
+
+      if (!isRequiredStringLike(payload.sourceOrderId)) {
+        throw new Error(`Node ${nodeLabel}: payload.sourceOrderId обязателен.`);
+      }
+
+      if (!isIntegerLike(payload.extendMinutes, 1)) {
+        throw new Error(`Node ${nodeLabel}: payload.extendMinutes обязателен и должен быть целым числом > 0.`);
+      }
+    } else if (action === "rentals.expire") {
+      if (!isRequiredStringLike(payload.leaseId)) {
+        throw new Error(`Node ${nodeLabel}: payload.leaseId обязателен.`);
       }
     }
   }
@@ -1634,6 +2199,7 @@ function validateWorkflowDraftClient(params: {
   edges: Edge<WorkflowEditorEdgeData>[];
   entryNodeId: string;
   activeIntegrationKeys: ReadonlySet<string>;
+  steamActionCatalogByAction?: ReadonlyMap<string, SteamActionCatalogOperation>;
 }) {
   if (!params.selectedOfferId) {
     throw new Error("Сначала выберите Offer.");
@@ -1699,7 +2265,7 @@ function validateWorkflowDraftClient(params: {
     if (catalogNode.integrationKey && !params.activeIntegrationKeys.has(catalogNode.integrationKey)) {
       throw new Error(`Node ${readNodeDisplayName(node)} недоступен: интеграция \`${catalogNode.integrationKey}\` не активна в проекте.`);
     }
-    validateNodeConfig(node);
+    validateNodeConfig(node, params.steamActionCatalogByAction);
   }
 }
 
@@ -1829,6 +2395,106 @@ export function ProjectWorkflowsPanel({ apiSession, projectId, currentRole }: Pr
     ),
     [integrationsStatusQuery.data],
   );
+  const steamInstancesQuery = useQuery({
+    queryKey: ["project-integration-instances", apiSession.baseUrl, apiSession.token, projectId, "steam-accounts-manager"],
+    queryFn: () => listProjectIntegrationInstancesRequest(apiSession, projectId, "steam-accounts-manager"),
+    staleTime: 15_000,
+    gcTime: 60_000,
+    notifyOnChangeProps: ["data", "error", "isPending", "isFetching"],
+    enabled: canManageWorkflows && activeIntegrationKeys.has("steam-accounts-manager"),
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+  });
+  const activeSteamInstance = useMemo(() => {
+    const items = steamInstancesQuery.data?.items ?? [];
+    if (items.length === 0) {
+      return null;
+    }
+
+    return items.find((item) => item.runtimeStatus === "active" && item.isDefault)
+      ?? items.find((item) => item.runtimeStatus === "active")
+      ?? items.find((item) => item.isDefault)
+      ?? items[0]
+      ?? null;
+  }, [steamInstancesQuery.data]);
+  const steamBlocksCatalogQuery = useQuery({
+    queryKey: [
+      "project-workflow-steam-block-catalog",
+      apiSession.baseUrl,
+      apiSession.token,
+      projectId,
+      activeSteamInstance?.instanceId ?? "",
+    ],
+    queryFn: async () => {
+      if (!activeSteamInstance) {
+        return [] as SteamWorkflowBlockCatalogItem[];
+      }
+
+      const result = await invokeProjectIntegrationInstanceActionRequest(
+        apiSession,
+        projectId,
+        "steam-accounts-manager",
+        activeSteamInstance.instanceId,
+        "read",
+        {
+          operation: "workflow.blocks.catalog",
+        },
+      );
+
+      return parseSteamBlocksCatalog(result);
+    },
+    staleTime: 15_000,
+    gcTime: 60_000,
+    notifyOnChangeProps: ["data", "error", "isPending", "isFetching"],
+    enabled: canManageWorkflows && Boolean(activeSteamInstance),
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+  });
+  const steamActionsCatalogQuery = useQuery({
+    queryKey: [
+      "project-workflow-steam-actions-catalog",
+      apiSession.baseUrl,
+      apiSession.token,
+      projectId,
+      activeSteamInstance?.instanceId ?? "",
+    ],
+    queryFn: async () => {
+      if (!activeSteamInstance) {
+        return [] as SteamActionCatalogOperation[];
+      }
+
+      const result = await invokeProjectIntegrationInstanceActionRequest(
+        apiSession,
+        projectId,
+        "steam-accounts-manager",
+        activeSteamInstance.instanceId,
+        "read",
+        {
+          operation: "workflow.actions.catalog",
+        },
+      );
+
+      return parseSteamActionCatalog(result);
+    },
+    staleTime: 15_000,
+    gcTime: 60_000,
+    notifyOnChangeProps: ["data", "error", "isPending", "isFetching"],
+    enabled: canManageWorkflows && Boolean(activeSteamInstance),
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+  });
+  const steamActionCatalog = useMemo(
+    () => steamActionsCatalogQuery.data ?? [],
+    [steamActionsCatalogQuery.data],
+  );
+  const steamActionCatalogByAction = useMemo(() => {
+    const map = new Map<string, SteamActionCatalogOperation>();
+    for (const operation of steamActionCatalog) {
+      map.set(operation.action, operation);
+    }
+
+    return map;
+  }, [steamActionCatalog]);
 
   useEffect(() => {
     if (!canManageWorkflows) {
@@ -2232,13 +2898,13 @@ export function ProjectWorkflowsPanel({ apiSession, projectId, currentRole }: Pr
     interactionWidth: 12,
   }), []);
 
-  const appendNode = (nodeType: WorkflowNode["type"]) => {
-    const catalogNode = workflowNodeCatalogByType[nodeType];
-    if (catalogNode.integrationKey && !activeIntegrationKeys.has(catalogNode.integrationKey)) {
-      setStatus(`Node ${catalogNode.label} недоступен: активируйте интеграцию \`${catalogNode.integrationKey}\`.`);
+  const appendPaletteNode = (nodeItem: WorkflowPaletteNodeItem) => {
+    if (nodeItem.integrationKey && !activeIntegrationKeys.has(nodeItem.integrationKey)) {
+      setStatus(`Node ${nodeItem.label} недоступен: активируйте интеграцию \`${nodeItem.integrationKey}\`.`);
       return;
     }
 
+    const nodeType = nodeItem.type;
     if (workflowStartNodeTypes.includes(nodeType) && nodes.some((node) => node.data.nodeType === nodeType)) {
       setStatus(`Стартовая node ${nodeType} уже добавлена.`);
       return;
@@ -2251,8 +2917,8 @@ export function ProjectWorkflowsPanel({ apiSession, projectId, currentRole }: Pr
       position,
       data: {
         nodeType,
-        name: "",
-        config: {},
+        name: nodeItem.presetName ?? "",
+        config: cloneConfigObject(nodeItem.presetConfig),
         isEntry: false,
       },
     };
@@ -2267,7 +2933,7 @@ export function ProjectWorkflowsPanel({ apiSession, projectId, currentRole }: Pr
       });
       viewportRef.current = normalizeViewportInput(flowInstance.getViewport());
     }
-    setStatus(`Node ${nodeType} добавлен.`);
+    setStatus(`Node ${nodeItem.label} добавлен.`);
   };
 
   const removeSelectedNode = useCallback(() => {
@@ -2425,8 +3091,22 @@ export function ProjectWorkflowsPanel({ apiSession, projectId, currentRole }: Pr
       if (delaySeconds !== undefined && (!Number.isFinite(delaySeconds) || delaySeconds < 0)) {
         throw new Error("delaySeconds должен быть неотрицательным числом.");
       }
+      const operationMeta = steamActionCatalogByAction.get(action);
 
       const buildSteamPayload = (): Record<string, unknown> | undefined => {
+        if (operationMeta) {
+          const parsed = parseJsonObjectText(typedEditor.steamPayloadText);
+          for (const field of operationMeta.fields) {
+            if (field.target !== "payload") {
+              continue;
+            }
+
+            validateSteamCatalogFieldValue(`SteamAction (${action})`, field, parsed[field.key]);
+          }
+
+          return Object.keys(parsed).length === 0 ? undefined : parsed;
+        }
+
         if (action === "accounts.profile.update") {
           const payload: Record<string, unknown> = {};
           if (typedEditor.steamProfileDisplayName.trim()) {
@@ -2614,7 +3294,7 @@ export function ProjectWorkflowsPanel({ apiSession, projectId, currentRole }: Pr
     }
 
     return { ...baseConfig };
-  }, [applyConfigPatch, typedEditor]);
+  }, [applyConfigPatch, steamActionCatalogByAction, typedEditor]);
 
   const replaceSelectedNodeConfig = useCallback((nextConfig: Record<string, unknown>) => {
     if (!selectedNodeId) {
@@ -2692,6 +3372,7 @@ export function ProjectWorkflowsPanel({ apiSession, projectId, currentRole }: Pr
       edges,
       entryNodeId: normalizedEntryNodeId,
       activeIntegrationKeys,
+      steamActionCatalogByAction,
     });
 
     return buildWorkflowDraftFromEditor({
@@ -2704,7 +3385,7 @@ export function ProjectWorkflowsPanel({ apiSession, projectId, currentRole }: Pr
       viewport: readViewportForSave(),
       entryNodeId: normalizedEntryNodeId || undefined,
     });
-  }, [activeIntegrationKeys, buildConfigFromTypedEditor, edges, entryNodeId, maxDurationSeconds, maxRetries, maxSteps, nodes, readViewportForSave, selectedNode, selectedOfferId, version]);
+  }, [activeIntegrationKeys, buildConfigFromTypedEditor, edges, entryNodeId, maxDurationSeconds, maxRetries, maxSteps, nodes, readViewportForSave, selectedNode, selectedOfferId, steamActionCatalogByAction, version]);
 
   const saveDraftMutation = useMutation({
     mutationFn: async () => {
@@ -2790,9 +3471,16 @@ export function ProjectWorkflowsPanel({ apiSession, projectId, currentRole }: Pr
     };
   }, [canManageWorkflows, handleCenterCanvas, removeSelectedEdge, removeSelectedNode, saveDraft, selectedEdgeId, selectedNodeId]);
 
+  const paletteCatalog = useMemo(() => {
+    const staticNodes = toStaticPaletteNodes();
+    const steamNodes = toSteamPaletteNodes(steamBlocksCatalogQuery.data ?? []);
+    const steamActionNodes = toSteamActionPaletteNodes(steamActionCatalog);
+    return [...staticNodes, ...steamActionNodes, ...steamNodes];
+  }, [steamActionCatalog, steamBlocksCatalogQuery.data]);
+
   const filteredNodeCatalog = useMemo(() => {
     const query = nodeSearch.trim().toLowerCase();
-    const bySearch = workflowNodeCatalog.filter((node) => (query.length === 0
+    const bySearch = paletteCatalog.filter((node) => (query.length === 0
       || node.label.toLowerCase().includes(query)
       || node.type.toLowerCase().includes(query)
       || node.description.toLowerCase().includes(query)));
@@ -2801,7 +3489,7 @@ export function ProjectWorkflowsPanel({ apiSession, projectId, currentRole }: Pr
     return bySearch.filter((node) => !node.integrationKey
       || !hasIntegrationSnapshot
       || activeIntegrationKeys.has(node.integrationKey));
-  }, [activeIntegrationKeys, integrationsStatusQuery.data, nodeSearch]);
+  }, [activeIntegrationKeys, integrationsStatusQuery.data, nodeSearch, paletteCatalog]);
 
   const filteredStartNodes = useMemo(
     () => filteredNodeCatalog.filter((item) => item.group === "start"),
@@ -2816,7 +3504,7 @@ export function ProjectWorkflowsPanel({ apiSession, projectId, currentRole }: Pr
     [filteredNodeCatalog],
   );
 
-  const isPaletteNodeDisabled = useCallback((nodeItem: WorkflowNodeCatalogItem) => {
+  const isPaletteNodeDisabled = useCallback((nodeItem: WorkflowPaletteNodeItem) => {
     if (nodeItem.integrationKey && !activeIntegrationKeys.has(nodeItem.integrationKey)) {
       return true;
     }
@@ -2828,7 +3516,7 @@ export function ProjectWorkflowsPanel({ apiSession, projectId, currentRole }: Pr
     return false;
   }, [activeIntegrationKeys, nodes]);
 
-  const readPaletteNodeDisabledHint = useCallback((nodeItem: WorkflowNodeCatalogItem) => {
+  const readPaletteNodeDisabledHint = useCallback((nodeItem: WorkflowPaletteNodeItem) => {
     if (nodeItem.integrationKey && !activeIntegrationKeys.has(nodeItem.integrationKey)) {
       return `Требуется активная интеграция: ${nodeItem.integrationKey}.`;
     }
@@ -2860,6 +3548,59 @@ export function ProjectWorkflowsPanel({ apiSession, projectId, currentRole }: Pr
   };
 
   const steamActionValue = typedEditor.steamAction.trim() || "accounts.profile.update";
+  const activeSteamActionMeta = steamActionCatalogByAction.get(steamActionValue) ?? null;
+  const useLegacySteamStructuredEditor = !activeSteamActionMeta || steamActionValue === "workflow.blocks.enqueue";
+  const steamActionPayloadObject = useMemo(() => {
+    try {
+      return parseJsonObjectText(typedEditor.steamPayloadText);
+    } catch {
+      return null;
+    }
+  }, [typedEditor.steamPayloadText]);
+  const updateSteamActionPayloadField = useCallback((field: SteamActionCatalogField, value: unknown) => {
+    setTypedEditor((prev) => {
+      let currentPayload: Record<string, unknown>;
+      try {
+        currentPayload = parseJsonObjectText(prev.steamPayloadText);
+      } catch {
+        currentPayload = {};
+      }
+
+      const nextPayload = { ...currentPayload };
+      const isEmptyString = typeof value === "string" && value.trim().length === 0;
+      if (value === undefined || value === null || isEmptyString) {
+        delete nextPayload[field.key];
+      } else {
+        nextPayload[field.key] = value;
+      }
+
+      return {
+        ...prev,
+        steamPayloadText: stringifyJsonObject(nextPayload),
+      };
+    });
+  }, []);
+  const applySteamActionPreset = useCallback((operation: SteamActionCatalogOperation) => {
+    const presetConfig = operation.preset?.config ?? { action: operation.action, payload: {} };
+    const action = typeof presetConfig.action === "string" ? presetConfig.action : operation.action;
+    const payload = isRecord(presetConfig.payload)
+      ? stringifyJsonObject(presetConfig.payload)
+      : "{}";
+    const accountId = typeof presetConfig.accountId === "string" ? presetConfig.accountId : "";
+    const delaySeconds = typeof presetConfig.delaySeconds === "number"
+      ? String(Math.trunc(presetConfig.delaySeconds))
+      : typeof presetConfig.delaySeconds === "string"
+        ? presetConfig.delaySeconds
+        : "";
+
+    setTypedEditor((prev) => ({
+      ...prev,
+      steamAction: action,
+      steamAccountId: accountId,
+      steamDelaySeconds: delaySeconds,
+      steamPayloadText: payload,
+    }));
+  }, []);
 
   const applyAdvancedJson = () => {
     if (!selectedNode) {
@@ -3043,10 +3784,10 @@ export function ProjectWorkflowsPanel({ apiSession, projectId, currentRole }: Pr
                   const disabledHint = readPaletteNodeDisabledHint(nodeItem);
                   return (
                     <button
-                      key={nodeItem.type}
+                      key={nodeItem.paletteKey}
                       type="button"
                       className="workflow-node-palette-item"
-                      onClick={() => appendNode(nodeItem.type)}
+                      onClick={() => appendPaletteNode(nodeItem)}
                       disabled={disabled}
                       title={disabledHint || undefined}
                     >
@@ -3062,10 +3803,10 @@ export function ProjectWorkflowsPanel({ apiSession, projectId, currentRole }: Pr
                   const disabledHint = readPaletteNodeDisabledHint(nodeItem);
                   return (
                     <button
-                      key={nodeItem.type}
+                      key={nodeItem.paletteKey}
                       type="button"
                       className="workflow-node-palette-item"
-                      onClick={() => appendNode(nodeItem.type)}
+                      onClick={() => appendPaletteNode(nodeItem)}
                       disabled={disabled}
                       title={disabledHint || undefined}
                     >
@@ -3081,10 +3822,10 @@ export function ProjectWorkflowsPanel({ apiSession, projectId, currentRole }: Pr
                   const disabledHint = readPaletteNodeDisabledHint(nodeItem);
                   return (
                     <button
-                      key={nodeItem.type}
+                      key={nodeItem.paletteKey}
                       type="button"
                       className="workflow-node-palette-item"
-                      onClick={() => appendNode(nodeItem.type)}
+                      onClick={() => appendPaletteNode(nodeItem)}
                       disabled={disabled}
                       title={disabledHint || undefined}
                     >
@@ -3095,6 +3836,39 @@ export function ProjectWorkflowsPanel({ apiSession, projectId, currentRole }: Pr
                     </button>
                   );
                 })}
+                {activeIntegrationKeys.has("steam-accounts-manager") && steamInstancesQuery.isPending ? (
+                  <p className="route-hint">Загружаем Steam runtime instances...</p>
+                ) : null}
+                {activeIntegrationKeys.has("steam-accounts-manager") && steamInstancesQuery.error ? (
+                  <p className="route-error">
+                    {steamInstancesQuery.error instanceof Error
+                      ? steamInstancesQuery.error.message
+                      : "Не удалось загрузить Steam runtime instances."}
+                  </p>
+                ) : null}
+                {activeIntegrationKeys.has("steam-accounts-manager") && !steamInstancesQuery.isPending && !steamInstancesQuery.error && !activeSteamInstance ? (
+                  <p className="route-hint">Steam integration активна, но runtime instance не найден.</p>
+                ) : null}
+                {activeSteamInstance && steamBlocksCatalogQuery.isPending ? (
+                  <p className="route-hint">Загружаем service catalog нод из Steam...</p>
+                ) : null}
+                {activeSteamInstance && steamBlocksCatalogQuery.error ? (
+                  <p className="route-error">
+                    {steamBlocksCatalogQuery.error instanceof Error
+                      ? steamBlocksCatalogQuery.error.message
+                      : "Не удалось загрузить service catalog Steam нод."}
+                  </p>
+                ) : null}
+                {activeSteamInstance && steamActionsCatalogQuery.isPending ? (
+                  <p className="route-hint">Загружаем service catalog Steam action-операций...</p>
+                ) : null}
+                {activeSteamInstance && steamActionsCatalogQuery.error ? (
+                  <p className="route-error">
+                    {steamActionsCatalogQuery.error instanceof Error
+                      ? steamActionsCatalogQuery.error.message
+                      : "Не удалось загрузить catalog Steam action-операций."}
+                  </p>
+                ) : null}
                 {filteredNodeCatalog.length === 0 ? <p className="route-hint">Ничего не найдено.</p> : null}
               </div>
             <div className="workflow-dock-footer">
@@ -3349,12 +4123,61 @@ export function ProjectWorkflowsPanel({ apiSession, projectId, currentRole }: Pr
                       <small className="workflow-field-hint">{readFieldHintText("SteamAction", "action")}</small>
                     </label>
                     <div className="inline-actions">
-                      <button type="button" className="button button-ghost" onClick={() => setTypedEditor((prev) => ({ ...prev, steamAction: "accounts.profile.update" }))}>Профиль</button>
-                      <button type="button" className="button button-ghost" onClick={() => setTypedEditor((prev) => ({ ...prev, steamAction: "accounts.nickname.update" }))}>Ник</button>
-                      <button type="button" className="button button-ghost" onClick={() => setTypedEditor((prev) => ({ ...prev, steamAction: "accounts.avatar.update" }))}>Аватар</button>
-                      <button type="button" className="button button-ghost" onClick={() => setTypedEditor((prev) => ({ ...prev, steamAction: "accounts.privacy.update" }))}>Приватность</button>
-                      <button type="button" className="button button-ghost" onClick={() => setTypedEditor((prev) => ({ ...prev, steamAction: "accounts.sessions.deauthorize" }))}>Сессии</button>
-                      <button type="button" className="button button-ghost" onClick={() => setTypedEditor((prev) => ({ ...prev, steamAction: "workflow.blocks.enqueue" }))}>Block-flow</button>
+                      {steamActionCatalog.length > 0 ? (
+                        steamActionCatalog.map((operation) => (
+                          <button
+                            key={`steam-op-${operation.action}`}
+                            type="button"
+                            className="button button-ghost"
+                            title={`${operation.action} · ${operation.description}`}
+                            onClick={() => applySteamActionPreset(operation)}
+                          >
+                            {operation.preset?.name ?? operation.title}
+                          </button>
+                        ))
+                      ) : (
+                        <>
+                          <button
+                            type="button"
+                            className="button button-ghost"
+                            onClick={() => setTypedEditor((prev) => ({
+                              ...prev,
+                              steamAction: "rentals.availability.list",
+                              steamPayloadText: "{\n  \"appId\": 730,\n  \"limit\": 5\n}",
+                            }))}
+                          >
+                            Availability
+                          </button>
+                          <button
+                            type="button"
+                            className="button button-ghost"
+                            onClick={() => setTypedEditor((prev) => ({
+                              ...prev,
+                              steamAction: "rentals.reserve",
+                              steamPayloadText: "{\n  \"appId\": 730,\n  \"buyerId\": \"{{buyerId}}\",\n  \"sourceOrderId\": \"{{sourceOrderId}}\",\n  \"marketplaceAccountId\": \"{{payload.marketplaceAccountId}}\",\n  \"conversationId\": \"{{payload.conversationId}}\",\n  \"durationMinutes\": 120,\n  \"warningMinutes\": 15,\n  \"graceMinutes\": 15\n}",
+                            }))}
+                          >
+                            Reserve
+                          </button>
+                          <button
+                            type="button"
+                            className="button button-ghost"
+                            onClick={() => setTypedEditor((prev) => ({
+                              ...prev,
+                              steamAction: "rentals.extend",
+                              steamPayloadText: "{\n  \"leaseId\": \"{{payload.leaseId}}\",\n  \"sourceOrderId\": \"{{sourceOrderId}}\",\n  \"extendMinutes\": 60\n}",
+                            }))}
+                          >
+                            Extend
+                          </button>
+                          <button type="button" className="button button-ghost" onClick={() => setTypedEditor((prev) => ({ ...prev, steamAction: "accounts.profile.update" }))}>Профиль</button>
+                          <button type="button" className="button button-ghost" onClick={() => setTypedEditor((prev) => ({ ...prev, steamAction: "accounts.nickname.update" }))}>Ник</button>
+                          <button type="button" className="button button-ghost" onClick={() => setTypedEditor((prev) => ({ ...prev, steamAction: "accounts.avatar.update" }))}>Аватар</button>
+                          <button type="button" className="button button-ghost" onClick={() => setTypedEditor((prev) => ({ ...prev, steamAction: "accounts.privacy.update" }))}>Приватность</button>
+                          <button type="button" className="button button-ghost" onClick={() => setTypedEditor((prev) => ({ ...prev, steamAction: "accounts.sessions.deauthorize" }))}>Сессии</button>
+                          <button type="button" className="button button-ghost" onClick={() => setTypedEditor((prev) => ({ ...prev, steamAction: "workflow.blocks.enqueue" }))}>Block-flow</button>
+                        </>
+                      )}
                     </div>
                     <label className="field">
                       <span>accountId</span>
@@ -3366,7 +4189,110 @@ export function ProjectWorkflowsPanel({ apiSession, projectId, currentRole }: Pr
                       <input className="input" value={typedEditor.steamDelaySeconds} onChange={(event) => setTypedEditor((prev) => ({ ...prev, steamDelaySeconds: event.target.value }))} placeholder="10800" />
                       <small className="workflow-field-hint">{readFieldHintText("SteamAction", "delaySeconds")}</small>
                     </label>
-                    {steamActionValue === "accounts.profile.update" ? (
+                    {activeSteamActionMeta && !useLegacySteamStructuredEditor ? (
+                      <div className="stacked-block">
+                        <strong>{activeSteamActionMeta.title}</strong>
+                        <p className="route-hint">
+                          {activeSteamActionMeta.description || "Операция из каталога Steam сервиса."} · {readSteamActionScopeDescription(activeSteamActionMeta.scope)}
+                        </p>
+                        {activeSteamActionMeta.fields.length > 0 ? (
+                          steamActionPayloadObject ? (
+                            <div className="grid-2">
+                              {activeSteamActionMeta.fields
+                                .filter((field) => field.target === "payload")
+                                .map((field) => {
+                                  const currentValue = steamActionPayloadObject[field.key];
+                                  if (field.type === "bool") {
+                                    return (
+                                      <label key={`steam-field-${field.key}`} className="field">
+                                        <span>{field.label}</span>
+                                        <select
+                                          className="input"
+                                          value={typeof currentValue === "boolean" ? String(currentValue) : ""}
+                                          onChange={(event) => {
+                                            const nextValue = event.target.value === ""
+                                              ? undefined
+                                              : event.target.value === "true";
+                                            updateSteamActionPayloadField(field, nextValue);
+                                          }}
+                                        >
+                                          <option value="">Не задано</option>
+                                          <option value="true">true</option>
+                                          <option value="false">false</option>
+                                        </select>
+                                        <small className="workflow-field-hint">{readSteamCatalogFieldHint(field)}</small>
+                                      </label>
+                                    );
+                                  }
+
+                                  if (field.type === "json") {
+                                    return (
+                                      <label key={`steam-field-${field.key}`} className="field">
+                                        <span>{field.label}</span>
+                                        <textarea
+                                          className="input"
+                                          rows={4}
+                                          value={currentValue !== undefined ? JSON.stringify(currentValue, null, 2) : ""}
+                                          placeholder={field.placeholder ?? "{}"}
+                                          onChange={(event) => {
+                                            const text = event.target.value.trim();
+                                            if (text.length === 0) {
+                                              updateSteamActionPayloadField(field, undefined);
+                                              return;
+                                            }
+
+                                            try {
+                                              const parsed = JSON.parse(text);
+                                              updateSteamActionPayloadField(field, parsed);
+                                            } catch {
+                                              // keep invalid intermediate text only in raw payload editor
+                                            }
+                                          }}
+                                        />
+                                        <small className="workflow-field-hint">{readSteamCatalogFieldHint(field)}</small>
+                                      </label>
+                                    );
+                                  }
+
+                                  return (
+                                    <label key={`steam-field-${field.key}`} className="field">
+                                      <span>{field.label}</span>
+                                      <input
+                                        className="input"
+                                        value={typeof currentValue === "string" || typeof currentValue === "number" ? String(currentValue) : ""}
+                                        placeholder={field.placeholder ?? ""}
+                                        onChange={(event) => {
+                                          const raw = event.target.value;
+                                          if (field.type === "int") {
+                                            if (raw.trim().length === 0) {
+                                              updateSteamActionPayloadField(field, undefined);
+                                              return;
+                                            }
+
+                                            const parsed = Number(raw);
+                                            if (Number.isInteger(parsed)) {
+                                              updateSteamActionPayloadField(field, parsed);
+                                            }
+                                            return;
+                                          }
+
+                                          updateSteamActionPayloadField(field, raw);
+                                        }}
+                                      />
+                                      <small className="workflow-field-hint">{readSteamCatalogFieldHint(field)}</small>
+                                    </label>
+                                  );
+                                })}
+                            </div>
+                          ) : (
+                            <p className="route-error">Payload JSON сейчас невалидный. Исправьте его в Advanced payload fallback.</p>
+                          )
+                        ) : (
+                          <p className="route-hint">Операция не требует дополнительных payload-полей.</p>
+                        )}
+                      </div>
+                    ) : null}
+                    {useLegacySteamStructuredEditor && steamActionValue === "accounts.profile.update" ? (
                       <div className="page-stack">
                         <div className="grid-2">
                           <label className="field">
@@ -3400,19 +4326,19 @@ export function ProjectWorkflowsPanel({ apiSession, projectId, currentRole }: Pr
                         </label>
                       </div>
                     ) : null}
-                    {steamActionValue === "accounts.nickname.update" ? (
+                    {useLegacySteamStructuredEditor && steamActionValue === "accounts.nickname.update" ? (
                       <label className="field">
                         <span>displayName</span>
                         <input className="input" value={typedEditor.steamProfileDisplayName} onChange={(event) => setTypedEditor((prev) => ({ ...prev, steamProfileDisplayName: event.target.value }))} placeholder="SteamNick" />
                       </label>
                     ) : null}
-                    {steamActionValue === "accounts.avatar.update" ? (
+                    {useLegacySteamStructuredEditor && steamActionValue === "accounts.avatar.update" ? (
                       <label className="field">
                         <span>avatarBase64</span>
                         <textarea className="input" rows={5} value={typedEditor.steamAvatarBase64} onChange={(event) => setTypedEditor((prev) => ({ ...prev, steamAvatarBase64: event.target.value }))} placeholder="data:image/png;base64,..." />
                       </label>
                     ) : null}
-                    {steamActionValue === "accounts.privacy.update" ? (
+                    {useLegacySteamStructuredEditor && steamActionValue === "accounts.privacy.update" ? (
                       <div className="grid-2">
                         <label className="field">
                           <span>profilePrivate</span>
@@ -3440,7 +4366,7 @@ export function ProjectWorkflowsPanel({ apiSession, projectId, currentRole }: Pr
                         </label>
                       </div>
                     ) : null}
-                    {steamActionValue === "workflow.blocks.enqueue" ? (
+                    {useLegacySteamStructuredEditor && steamActionValue === "workflow.blocks.enqueue" ? (
                       <div className="page-stack">
                         <div className="grid-2">
                           <label className="field">

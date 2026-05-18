@@ -7,6 +7,7 @@ import { useMemo, useState } from "react";
 import type { Account, AccountCreateRequest } from "@/generated/external-api";
 import {
   createAccountRequest,
+  listProjectIntegrationsStatusRequest,
   listProjectAccountTypesRequest,
   type ApiSession,
   type ProjectAccountType,
@@ -75,10 +76,22 @@ export function ProjectAccountCreatePanel({
     queryFn: () => listProjectAccountTypesRequest(apiSession, projectId),
     enabled: canManageLifecycle,
   });
+  const integrationsStatusQuery = useQuery({
+    queryKey: ["project-integrations-status", apiSession.baseUrl, apiSession.token, projectId],
+    queryFn: () => listProjectIntegrationsStatusRequest(apiSession, projectId),
+    enabled: canManageLifecycle,
+    staleTime: 15_000,
+    gcTime: 60_000,
+  });
 
   const accountTypes = useMemo(
     () => accountTypesQuery.data ?? [],
     [accountTypesQuery.data],
+  );
+  const hasActivePlatformGrant = useMemo(
+    () => (integrationsStatusQuery.data?.items ?? []).some((item) =>
+      item.status === "active" && item.integrationKey.startsWith("platform.")),
+    [integrationsStatusQuery.data],
   );
 
   const selectedAccountType = useMemo(
@@ -332,18 +345,35 @@ export function ProjectAccountCreatePanel({
 
       {!accountTypesQuery.isPending && !accountTypesQuery.error && accountTypes.length === 0 ? (
         <section className="panel-card">
-          <p className="route-hint">
-            Для проекта нет доступных типов аккаунтов. Обычно это значит, что админ не выдал платформенный grant
-            (например, <code>platform.funpay</code>) на странице интеграций.
-          </p>
+          {hasActivePlatformGrant ? (
+            <p className="route-hint">
+              Для проекта есть платформенный grant, но каталог account type пуст. Обычно это значит, что после очистки БД
+              не созданы platform templates в Accounts Manager.
+            </p>
+          ) : (
+            <p className="route-hint">
+              Для проекта нет доступных типов аккаунтов. Обычно это значит, что админ не выдал платформенный grant
+              (например, <code>platform.funpay</code>) на странице интеграций.
+            </p>
+          )}
           {canOpenIntegrationGrants ? (
             <div className="panel-actions">
-              <Link href="/admin/account-manager/integrations" className="button button-ghost">
-                Открыть выдачу integration grants
-              </Link>
+              {hasActivePlatformGrant ? (
+                <Link href="/admin/account-manager/templates" className="button button-ghost">
+                  Открыть platform templates
+                </Link>
+              ) : (
+                <Link href="/admin/account-manager/integrations" className="button button-ghost">
+                  Открыть выдачу integration grants
+                </Link>
+              )}
             </div>
           ) : (
-            <p className="route-hint">Попросите system admin выдать платформенный grant, чтобы открыть создание аккаунта.</p>
+            <p className="route-hint">
+              {hasActivePlatformGrant
+                ? "Попросите system admin создать platform template для нужной площадки."
+                : "Попросите system admin выдать платформенный grant, чтобы открыть создание аккаунта."}
+            </p>
           )}
         </section>
       ) : null}

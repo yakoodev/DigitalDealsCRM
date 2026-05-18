@@ -1408,7 +1408,7 @@ static AccountTypeRuntimeConfigDto DeserializeRuntimeConfig(string? json, string
 
     try
     {
-        return JsonSerializer.Deserialize<AccountTypeRuntimeConfigDto>(json)
+        return JsonSerializer.Deserialize<AccountTypeRuntimeConfigDto>(json, AccountTypeJson.DeserializeOptions)
                ?? CreateDefaultAccountTypeRuntime(platform);
     }
     catch
@@ -1568,7 +1568,7 @@ static IReadOnlyList<AccountTypeFieldDto> DeserializeFormFields(string? json)
 
     try
     {
-        return JsonSerializer.Deserialize<List<AccountTypeFieldDto>>(json) ?? [];
+        return JsonSerializer.Deserialize<List<AccountTypeFieldDto>>(json, AccountTypeJson.DeserializeOptions) ?? [];
     }
     catch
     {
@@ -2182,6 +2182,14 @@ static WorkerServerDto ToWorkerServerDto(WorkerServerEntity entity)
         entity.LastHeartbeatAtUtc,
         registry,
         metadata);
+}
+
+static class AccountTypeJson
+{
+    internal static readonly JsonSerializerOptions DeserializeOptions = new()
+    {
+        PropertyNameCaseInsensitive = true,
+    };
 }
 
 public sealed record AckResponse(string RequestId, string Status);
